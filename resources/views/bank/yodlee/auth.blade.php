@@ -42,7 +42,7 @@
 
 <div class="flex flex-col justify-center items-center mt-10" id="container-fastlink">
     <div class="mb-4">
-        @if($account && !$account->isPaid())
+        @if($account && $account->isPaid())
           <div class="max-h-28">
               <img src="{{ asset('images/invoiceninja-black-logo-2.png') }}"
                    class="border-b border-gray-100 h-18 pb-4" alt="Invoice Ninja logo">
@@ -96,7 +96,7 @@
 
     var fastlinkBtn = document.getElementById('btn-fastlink');
     fastlinkBtn.addEventListener(
-      'click', 
+      'click',
       function() {
           window.fastlink.open({
             flow: '{{ $flow }}',//flow changes depending on what we are doing sometimes it could be add/edit etc etc
@@ -113,7 +113,7 @@
             onError: function (data) {
               // will be called on error. For list of possible message, refer to onError(data) Method.
               console.log('error');
-              
+
               console.log(data);
             },
             onClose: function (data) {

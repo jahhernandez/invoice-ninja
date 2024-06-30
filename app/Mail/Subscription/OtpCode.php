@@ -57,7 +57,7 @@ class OtpCode extends Mailable
                 'logo' => $this->company->present()->logo(),
                 'title' => ctrans('texts.otp_code_subject'),
                 'content' => ctrans('texts.otp_code_body', ['code' => $this->code]),
-                'whitelabel' => $this->company->account->isPaid(),
+                'whitelabel' => $this->company->account->isPaid()? false : true,
                 'url' => '',
                 'button' => false,
                 'template' => $this->company->account->isPremium() ? 'email.template.admin_premium' : 'email.template.admin',

@@ -114,7 +114,7 @@ class TemplateEmail extends Mailable
         if (strlen($settings->bcc_email) > 1) {
             if (Ninja::isHosted()) {
 
-                if($company->account->isPaid()) {
+                if(true) {
                     $bccs = explode(',', str_replace(' ', '', $settings->bcc_email));
                     $this->bcc(array_slice($bccs, 0, 5));
                 }
@@ -127,7 +127,7 @@ class TemplateEmail extends Mailable
         $this->subject(str_replace("<br>", "", $this->build_email->getSubject()))
             ->text('email.template.text', [
                 'text_body' => $this->build_email->getTextBody(),
-                'whitelabel' => $this->client->user->account->isPaid() ? true : false,
+                'whitelabel' => $this->client->user->account->isPaid() ? false : true,
                 'settings' => $settings,
             ])
             ->view($template_name, [

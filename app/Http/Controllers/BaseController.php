@@ -1003,7 +1003,7 @@ class BaseController extends Controller
                 }
 
                 $response['static'] = $response_data;
-                
+
             }
         }
 
@@ -1136,7 +1136,8 @@ class BaseController extends Controller
             $data['report_errors'] = Ninja::isSelfHost() ? $account->report_errors : true;
 
             //pass whitelabel bool to front end
-            $data['white_label'] = Ninja::isSelfHost() ? $account->isPaid() : false;
+            $data['white_label'] = true;
+//            $data['white_label'] = Ninja::isSelfHost() ? $account->isPaid() : false;
 
             //pass referral code to front end
             $data['rc'] = request()->has('rc') && is_string(request()->input('rc')) ? request()->input('rc') : '';

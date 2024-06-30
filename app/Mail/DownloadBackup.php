@@ -46,7 +46,7 @@ class DownloadBackup extends Mailable
             ->view('email.admin.download_files', [
                 'url' => $this->file_path,
                 'logo' => $company->present()->logo,
-                'whitelabel' => $company->account->isPaid() ? true : false,
+                'whitelabel' => $company->account->isPaid() ? false : true,
                 'settings' => $company->settings,
                 'greeting' => $company->present()->name(),
             ]);

@@ -992,7 +992,7 @@ class PdfBuilder
             PdfService::PRODUCT => $this->getProductSections(),
             PdfService::DELIVERY_NOTE => $this->getDeliveryNoteSections(),
             PdfService::STATEMENT => $this->getStatementSections(),
-            PdfService::PURCHASE_ORDER => $this->getPurchaseOrderSections(),
+            PdfService::PURCHASEE_ORDER => $this->getPurchaseOrderSections(),
         };
     }
 
@@ -1082,7 +1082,7 @@ class PdfBuilder
                 ]],
                 ['element' => 'img', 'properties' => ['style' => 'max-width: 50%; height: auto;', 'src' => '$contact.signature', 'id' => 'contact-signature']],
                 ['element' => 'div', 'properties' => ['style' => 'display: flex; align-items: flex-start; page-break-inside: auto;'], 'elements' => [
-                    ['element' => 'img', 'properties' => ['src' => '$invoiceninja.whitelabel', 'style' => 'height: 2.5rem; margin-top: 1.5rem;', 'hidden' => $this->service->company->account->isPaid() ? 'true' : 'false', 'id' => 'invoiceninja-whitelabel-logo']],
+                    ['element' => 'img', 'properties' => ['src' => '$invoiceninja.whitelabel', 'style' => 'height: 2.5rem; margin-top: 1.5rem;', 'hidden' => $this->service->company->account->isPaid() ? 'false' : 'true', 'id' => 'invoiceninja-whitelabel-logo']],
                 ]],
             ]],
             ['element' => 'div', 'properties' => ['class' => 'totals-table-right-side', 'dir' => '$dir'], 'elements' => []],

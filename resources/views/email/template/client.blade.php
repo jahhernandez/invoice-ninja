@@ -105,14 +105,14 @@
             opacity: 0.2;
             z-index:200 !important;
             position: relative;
-        } 
+        }
         a.doc_links {
             text-decoration: none;
             padding-bottom: 10px;
             display: inline-block;
             color: inherit !important;
         }
-        
+
         .new_button a {
             background-color: {{ $primary_color }};
         }
@@ -139,13 +139,13 @@
         <td>
             <table align="center" border="0" cellpadding="0" cellspacing="0" width="570"
                    style="border: 1px solid #c2c2c2;" class="dark-bg-base">
-                
+
                 <!--[if mso]>
                 <tr class="dark-bg" style="margin-top:10px; border: none;">
                 <td style="border: none;"></td>
                 </tr>
                 <![endif]-->
-                
+
                 <tr>
                     <td align="center" cellpadding="20">
                         <div style="border: 1px solid #c2c2c2; border-bottom: none; padding-bottom: 10px; border-top-left-radius: 3px; border-top-right-radius: 3px; padding-top:10px;">
@@ -162,7 +162,7 @@
 
                                 {{ $slot ?? '' }}
                                 {!! $body ?? '' !!}
-                                
+
                                 <div>
                                     <a href="#"
                                         style="display: inline-block;background-color: {{ $primary_color }}; color: #ffffff; text-transform: uppercase;letter-spacing: 2px; text-decoration: none; font-size: 13px; font-weight: 600;">
@@ -180,8 +180,8 @@
                                 @endisset
                         </div>
                     </td>
-                </tr>  
-                
+                </tr>
+
                 <tr>
                   <td height="0">
                    <div style="border: 1px solid #c2c2c2; border-top: none; border-bottom: none; padding: 5px; text-align: center" id="content"> </div>
@@ -215,7 +215,7 @@
                         <div class="dark-bg-base"
                              style="padding-top: 10px;padding-bottom: 10px; background-color: #242424; border: 1px solid #c2c2c2; border-top-color: #242424; border-bottom-color: #242424;">
                             @if(isset($company))
-                                @if($company->account->isPaid())
+                                @if(!$company->account->isPaid())
                                     <p style="text-align: center; color: #ffffff; font-size: 10px;
                             font-family: Verdana, Geneva, Tahoma, sans-serif;">© {{ date('Y') }} {{ $company->present()->name() }}, All Rights Reserved</p>
                                 @else
