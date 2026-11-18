@@ -1,10 +1,11 @@
 <?php
+
 /**
  * Invoice Ninja (https://invoiceninja.com).
  *
  * @link https://github.com/invoiceninja/invoiceninja source repository
  *
- * @copyright Copyright (c) 2024. Invoice Ninja LLC (https://invoiceninja.com)
+ * @copyright Copyright (c) 2026. Invoice Ninja LLC (https://invoiceninja.com)
  *
  * @license https://www.elastic.co/licensing/elastic-license
  */
@@ -39,7 +40,6 @@ class BankTransactionTransformer extends EntityTransformer
         // 'expense',
         'payment',
         'vendor',
-        'bank_account',
     ];
 
     /**
@@ -72,9 +72,11 @@ class BankTransactionTransformer extends EntityTransformer
             'vendor_id' => (string) $this->encodePrimaryKey($bank_transaction->vendor_id) ?: '',
             'bank_transaction_rule_id' => (string) $this->encodePrimaryKey($bank_transaction->bank_transaction_rule_id) ?: '',
             'is_deleted' => (bool) $bank_transaction->is_deleted,
+            'nordigen_transaction_id' => (string) $bank_transaction->nordigen_transaction_id,
             'created_at' => (int) $bank_transaction->created_at,
             'updated_at' => (int) $bank_transaction->updated_at,
             'archived_at' => (int) $bank_transaction->deleted_at,
+            'tags' => $this->transformTags($bank_transaction),
         ];
     }
 
@@ -96,12 +98,20 @@ class BankTransactionTransformer extends EntityTransformer
     {
         $transformer = new VendorTransformer($this->serializer);
 
+        if (!$bank_transaction->vendor) {
+            return null;
+        }
+
         return $this->includeItem($bank_transaction->vendor, $transformer, Vendor::class);
     }
 
     public function includePayment(BankTransaction $bank_transaction)
     {
         $transformer = new PaymentTransformer($this->serializer);
+
+        if (!$bank_transaction->payment) {
+            return null;
+        }
 
         return $this->includeItem($bank_transaction->payment, $transformer, Payment::class);
     }

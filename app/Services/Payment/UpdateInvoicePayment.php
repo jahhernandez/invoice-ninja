@@ -1,10 +1,11 @@
 <?php
+
 /**
  * Invoice Ninja (https://invoiceninja.com).
  *
  * @link https://github.com/invoiceninja/invoiceninja source repository
  *
- * @copyright Copyright (c) 2024. Invoice Ninja LLC (https://invoiceninja.com)
+ * @copyright Copyright (c) 2026. Invoice Ninja LLC (https://invoiceninja.com)
  *
  * @license https://www.elastic.co/licensing/elastic-license
  */
@@ -16,7 +17,9 @@ use App\Factory\RecurringInvoiceFactory;
 use App\Models\Invoice;
 use App\Models\Payment;
 use App\Models\PaymentHash;
+use App\Models\Paymentable;
 use App\Models\RecurringInvoice;
+use App\Services\EDocument\Standards\France\FrancePaymentApplicationRecorder;
 use App\Utils\Ninja;
 use App\Utils\Traits\MakesHash;
 
@@ -72,19 +75,25 @@ class UpdateInvoicePayment
                 $paid_amount = $invoice->balance;
             }
 
-            $client->service()->updateBalance($paid_amount * -1); //only ever use the amount applied to the invoice
+            // Catches an edge case where a payment on a deleted invoice reduces the client balance TWICE.
+            if (!$invoice->is_deleted) {
+                $client->service()->updateBalance($paid_amount * -1); //only ever use the amount applied to the invoice
+            }
 
             /*Improve performance here - 26-01-2022 - also change the order of events for invoice first*/
             //caution what if we amount paid was less than partial - we wipe it!
             $invoice->balance -= $paid_amount;
             $invoice->paid_to_date += $paid_amount;
+
             $invoice->saveQuietly();
 
             $invoice = $invoice->service()
                                ->clearPartial()
                                ->updateStatus()
                                ->workFlow()
+                               ->unlockDocuments()
                                ->save();
+
 
             if ($has_partial) {
                 $invoice->service()->checkReminderStatus()->save();
@@ -93,8 +102,30 @@ class UpdateInvoicePayment
             if ($invoice->is_proforma) {
                 //keep proforma's hidden
                 if (property_exists($this->payment_hash->data, 'pre_payment') && $this->payment_hash->data->pre_payment == "1") {
+
+                    if ($invoice->balance != 0) {
+                        $invoice->client->service()->updateBalance($invoice->balance * -1);
+                        $invoice->balance = 0;
+                        $invoice->status_id = \App\Models\Invoice::STATUS_PAID;
+                        $invoice->saveQuietly();
+
+                        $invoice
+                            ->ledger()
+                            ->updateInvoiceBalance(($invoice->balance + $paid_amount) * -1, "Prepayment Balance Adjustment");
+
+                    } else {
+
+                        $invoice
+                        ->ledger()
+                        ->updateInvoiceBalance($paid_amount * -1, "Prepayment Balance Adjustment");
+
+                    }
+
                     $invoice->payments()->each(function ($p) {
                         $p->pivot->forceDelete();
+                        $p->invoices()->each(function ($i) {
+                            $i->pivot->forceDelete();
+                        });
                     });
 
                     $invoice->is_deleted = true;
@@ -127,8 +158,6 @@ class UpdateInvoicePayment
                     return;
                 }
 
-
-
                 if (strlen($invoice->number) > 1 && str_starts_with($invoice->number, "####")) {
                     $invoice->number = '';
                 }
@@ -138,8 +167,9 @@ class UpdateInvoicePayment
                 $invoice->service()
                         ->applyNumber()
                         ->save();
-            }
 
+
+            }
 
             /* Updates the company ledger */
             $this->payment
@@ -154,7 +184,31 @@ class UpdateInvoicePayment
             $pivot_invoice->pivot->amount = $paid_amount;
             $pivot_invoice->pivot->save();
 
+            try {
+                $invoice->loadMissing(['client.country', 'client.company']);
+
+                if ($invoice->client->reportableFrTransaction()) {
+                    $paymentable = Paymentable::withTrashed()
+                        ->where('payment_id', $this->payment->id)
+                        ->where('paymentable_id', $invoice->id)
+                        ->where('paymentable_type', 'invoices')
+                        ->latest('id')
+                        ->first();
+
+                    app(FrancePaymentApplicationRecorder::class)->recordMovement(
+                        payment: $this->payment,
+                        invoice: $invoice,
+                        paymentable: $paymentable,
+                        movementAmount: $paid_amount,
+                        movementDate: $this->payment->date ?: now()->toDateString(),
+                    );
+                }
+            } catch (\Throwable $exception) {
+                report($exception);
+            }
+
             $this->payment->applied += $paid_amount;
+
         });
 
         /* Remove the event updater from within the loop to prevent race conditions */
@@ -162,6 +216,8 @@ class UpdateInvoicePayment
         $this->payment->saveQuietly();
 
         $invoices->each(function ($invoice) {
+            /** @var Invoice $invoice */
+            event('eloquent.updated: App\Models\Invoice', $invoice);
             event(new InvoiceWasUpdated($invoice, $invoice->company, Ninja::eventVars(auth()->user() ? auth()->user()->id : null)));
         });
 

@@ -1,4 +1,5 @@
 <?php
+
 /**
  * Invoice Ninja (https://invoiceninja.com).
  *
@@ -16,12 +17,12 @@ use App\DataMapper\CompanySettings;
 use Tests\TestCase;
 
 /**
- * @test
- * @covers  App\DataMapper\ClientSettings
+ *
+ *   App\DataMapper\ClientSettings
  */
 class CompareObjectTest extends TestCase
 {
-    protected function setUp() :void
+    protected function setUp(): void
     {
         parent::setUp();
 

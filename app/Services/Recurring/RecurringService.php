@@ -1,10 +1,11 @@
 <?php
+
 /**
  * Invoice Ninja (https://invoiceninja.com).
  *
  * @link https://github.com/invoiceninja/invoiceninja source repository
  *
- * @copyright Copyright (c) 2024. Invoice Ninja LLC (https://invoiceninja.com)
+ * @copyright Copyright (c) 2026. Invoice Ninja LLC (https://invoiceninja.com)
  *
  * @license https://www.elastic.co/licensing/elastic-license
  */
@@ -18,6 +19,7 @@ use Illuminate\Support\Carbon;
 use App\Utils\Traits\MakesHash;
 use App\Models\RecurringExpense;
 use App\Models\RecurringInvoice;
+use App\Services\Invoice\LocationData;
 use Illuminate\Support\Facades\Storage;
 use App\Jobs\RecurringInvoice\SendRecurring;
 
@@ -25,9 +27,7 @@ class RecurringService
 {
     use MakesHash;
 
-    public function __construct(public RecurringInvoice | RecurringExpense | RecurringQuote $recurring_entity)
-    {
-    }
+    public function __construct(public RecurringInvoice|RecurringExpense|RecurringQuote $recurring_entity) {}
 
     //set schedules - update next_send_dates
 
@@ -96,8 +96,8 @@ class RecurringService
 
             //30-06-2023
             try {
-                Storage::disk(config('filesystems.default'))->delete($this->recurring_entity->client->recurring_invoice_filepath($invitation) . $this->recurring_entity->numberFormatter().'.pdf');
-                Storage::disk('public')->delete($this->recurring_entity->client->recurring_invoice_filepath($invitation) . $this->recurring_entity->numberFormatter().'.pdf');
+                Storage::disk(config('filesystems.default'))->delete($this->recurring_entity->client->recurring_invoice_filepath($invitation) . $this->recurring_entity->numberFormatter() . '.pdf');
+                Storage::disk('public')->delete($this->recurring_entity->client->recurring_invoice_filepath($invitation) . $this->recurring_entity->numberFormatter() . '.pdf');
                 if (Ninja::isHosted()) {
                 }
             } catch (\Exception $e) {
@@ -127,8 +127,7 @@ class RecurringService
         }
 
         if (isset($this->recurring_entity->client)) {
-            $offset = $this->recurring_entity->client->timezone_offset();
-            $this->recurring_entity->next_send_date = Carbon::parse($this->recurring_entity->next_send_date_client)->startOfDay()->addSeconds($offset);
+            $this->recurring_entity->next_send_date = $this->recurring_entity->client->scheduledDateTimeUtc($this->recurring_entity->next_send_date_client);
         }
 
         return $this;
@@ -170,12 +169,17 @@ class RecurringService
 
         $sub_id = $this->decodePrimaryKey($subscription_id);
 
-        if(Subscription::withTrashed()->where('id', $sub_id)->where('company_id', $this->recurring_entity->company_id)->exists()) {
+        if (Subscription::withTrashed()->where('id', $sub_id)->where('company_id', $this->recurring_entity->company_id)->exists()) {
             $this->recurring_entity->subscription_id = $sub_id;
         }
 
         return $this;
 
+    }
+
+    public function location(bool $set_countries = true): array
+    {
+        return (new LocationData($this->recurring_entity))->run($set_countries);
     }
 
     public function save()

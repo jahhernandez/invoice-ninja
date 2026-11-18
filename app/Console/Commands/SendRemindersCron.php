@@ -1,10 +1,11 @@
 <?php
+
 /**
  * Invoice Ninja (https://invoiceninja.com).
  *
  * @link https://github.com/invoiceninja/invoiceninja source repository
  *
- * @copyright Copyright (c) 2024. Invoice Ninja LLC (https://invoiceninja.com)
+ * @copyright Copyright (c) 2026. Invoice Ninja LLC (https://invoiceninja.com)
  *
  * @license https://www.elastic.co/licensing/elastic-license
  */
@@ -62,10 +63,10 @@ class SendRemindersCron extends Command
     public function handle()
     {
         Invoice::where('next_send_date', '<=', now()->toDateTimeString())
-                 ->whereNull('deleted_at')
-                 ->where('is_deleted', 0)
-                 ->whereIn('status_id', [Invoice::STATUS_SENT, Invoice::STATUS_PARTIAL])
-                 ->where('balance', '>', 0)
+                ->whereNull('invoices.deleted_at')
+                ->where('invoices.is_deleted', 0)
+                ->whereIn('invoices.status_id', [Invoice::STATUS_SENT, Invoice::STATUS_PARTIAL])
+                ->where('invoices.balance', '>', 0)
                  ->whereHas('client', function ($query) {
                      $query->where('is_deleted', 0)
                            ->where('deleted_at', null);
@@ -73,6 +74,7 @@ class SendRemindersCron extends Command
                  ->whereHas('company', function ($query) {
                      $query->where('is_disabled', 0);
                  })
+
                  ->with('invitations')->cursor()->each(function ($invoice) {
                      if ($invoice->isPayable()) {
                          $reminder_template = $invoice->calculateTemplate('invoice');
@@ -80,14 +82,18 @@ class SendRemindersCron extends Command
                          $invoice = $this->calcLateFee($invoice, $reminder_template);
 
                          //check if this reminder needs to be emailed
-                         if (in_array($reminder_template, ['reminder1', 'reminder2', 'reminder3']) && $invoice->client->getSetting('enable_'.$reminder_template)) {
+                         if (in_array($reminder_template, ['reminder1', 'reminder2', 'reminder3']) && $invoice->client->getSetting('enable_' . $reminder_template)) {
                              $invoice->invitations->each(function ($invitation) use ($invoice, $reminder_template) {
-                                 EmailEntity::dispatch($invitation, $invitation->company, $reminder_template);
+                                 EmailEntity::dispatch($invitation->withoutRelations(), $invitation->company->db, $reminder_template);
                                  nlog("Firing reminder email for invoice {$invoice->number}");
                              });
 
                              if ($invoice->invitations->count() > 0) {
-                                 event(new InvoiceWasEmailed($invoice->invitations->first(), $invoice->company, Ninja::eventVars(), $reminder_template));
+                                 //  event(new InvoiceWasEmailed($invoice->invitations->first(), $invoice->company, Ninja::eventVars(), $reminder_template));
+
+                                 event(new \App\Events\General\EntityWasEmailed($invoice->invitations->first(), $invoice->company, Ninja::eventVars(auth()->user() ? auth()->user()->id : null), $reminder_template));
+
+                                 $invoice->entityEmailEvent($invoice->invitations->first(), $reminder_template);
                              }
                          }
                          $invoice->service()->setReminder()->save();
@@ -199,9 +205,7 @@ class SendRemindersCron extends Command
         }
     }
 
-    private function webHookExpiredQuotes()
-    {
-    }
+    private function webHookExpiredQuotes() {}
 
     private function executeWebhooks()
     {

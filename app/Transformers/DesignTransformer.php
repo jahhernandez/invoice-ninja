@@ -1,10 +1,11 @@
 <?php
+
 /**
  * Invoice Ninja (https://invoiceninja.com).
  *
  * @link https://github.com/invoiceninja/invoiceninja source repository
  *
- * @copyright Copyright (c) 2024. Invoice Ninja LLC (https://invoiceninja.com)
+ * @copyright Copyright (c) 2026. Invoice Ninja LLC (https://invoiceninja.com)
  *
  * @license https://www.elastic.co/licensing/elastic-license
  */
@@ -47,7 +48,6 @@ class DesignTransformer extends EntityTransformer
             'name' => (string) $design->name,
             'is_custom' => (bool) $design->is_custom,
             'is_active' => (bool) $design->is_active,
-            'is_template' => (bool) $design->is_template,
             'design' => $design->design,
             'updated_at' => (int) $design->updated_at,
             'archived_at' => (int) $design->deleted_at,

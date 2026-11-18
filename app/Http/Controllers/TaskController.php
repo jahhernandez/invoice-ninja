@@ -1,10 +1,11 @@
 <?php
+
 /**
  * Invoice Ninja (https://invoiceninja.com).
  *
  * @link https://github.com/invoiceninja/invoiceninja source repository
  *
- * @copyright Copyright (c) 2024. Invoice Ninja LLC (https://invoiceninja.com)
+ * @copyright Copyright (c) 2026. Invoice Ninja LLC (https://invoiceninja.com)
  *
  * @license https://www.elastic.co/licensing/elastic-license
  */
@@ -100,11 +101,11 @@ class TaskController extends BaseController
      *       ),
      *     )
      * @param TaskFilters $filters
-     * @return Response|mixed
+     * @return Response| \Illuminate\Http\JsonResponse|mixed
      */
     public function index(TaskFilters $filters)
     {
-        $tasks = Task::filter($filters);
+        $tasks = Task::filter($filters)->with(['tags', 'project.tags']);
 
         return $this->listResponse($tasks);
     }
@@ -114,7 +115,7 @@ class TaskController extends BaseController
      *
      * @param ShowTaskRequest $request
      * @param Task $task
-     * @return Response
+     * @return Response| \Illuminate\Http\JsonResponse
      *
      *
      * @OA\Get(
@@ -168,7 +169,7 @@ class TaskController extends BaseController
      *
      * @param EditTaskRequest $request
      * @param Task $task
-     * @return Response
+     * @return Response| \Illuminate\Http\JsonResponse
      *
      *
      * @OA\Get(
@@ -222,7 +223,7 @@ class TaskController extends BaseController
      *
      * @param UpdateTaskRequest $request
      * @param Task $task
-     * @return Response
+     * @return Response| \Illuminate\Http\JsonResponse
      *
      *
      *
@@ -273,14 +274,36 @@ class TaskController extends BaseController
             return $request->disallowUpdate();
         }
 
-        $old_task = json_decode(json_encode($task));
+        $old_task_status_order = $task->status_order;
 
-        $task = $this->task_repo->save($request->all(), $task);
+        $request_data = $request->all();
 
-        $task = $this->task_repo->triggeredActions($request, $task);
+        //2025-07-31 - if the start or stop query parameter is not present, then we need to save the task
+        if (!($request->query('start', false) || $request->query('stop', false))) {
+            $task = $this->task_repo->save($request_data, $task);
+        } else {
 
-        if ($task->status_order != $old_task->status_order) {
-            $this->task_repo->sortStatuses($old_task, $task);
+            $task = $this->task_repo->triggeredActions($request, $task);
+
+            /*
+            *
+            *  2025-10-30 - if the start or stop query parameter is present,
+            * then we need to trigger the actions and save the task
+            * but we need to remove the time_log from the request data
+            * because it will be updated by the triggeredActions method.
+            *
+            * Handles the scenario where the description is updated and then start/stop is pressed
+            */
+
+            if (isset($request_data['time_log'])) {
+                unset($request_data['time_log']);
+            }
+
+            $task = $this->task_repo->save($request_data, $task);
+        }
+
+        if (is_null($task->status_order) || $task->status_order != $old_task_status_order) {
+            $this->task_repo->sortStatuses($task);
         }
 
         event(new TaskWasUpdated($task, $task->company, Ninja::eventVars(auth()->user() ? auth()->user()->id : null)));
@@ -294,7 +317,7 @@ class TaskController extends BaseController
      * Show the form for creating a new resource.
      *
      * @param CreateTaskRequest $request
-     * @return Response
+     * @return Response| \Illuminate\Http\JsonResponse
      *
      *
      *
@@ -342,7 +365,7 @@ class TaskController extends BaseController
      * Store a newly created resource in storage.
      *
      * @param StoreTaskRequest $request
-     * @return Response
+     * @return Response| \Illuminate\Http\JsonResponse
      *
      *
      *
@@ -397,7 +420,7 @@ class TaskController extends BaseController
      *
      * @param DestroyTaskRequest $request
      * @param Task $task
-     * @return Response
+     * @return Response| \Illuminate\Http\JsonResponse
      *
      *
      * @throws \Exception
@@ -452,7 +475,7 @@ class TaskController extends BaseController
     /**
      * Perform bulk actions on the list view.
      *
-     * @return Response
+     * @return Response| \Illuminate\Http\JsonResponse
      *
      *
      * @OA\Post(
@@ -508,9 +531,21 @@ class TaskController extends BaseController
 
         $ids = $request->input('ids');
 
-        $tasks = Task::withTrashed()->whereIn('id', $this->transformKeys($ids))->company()->get();
+        $tasks = Task::withTrashed()->whereIn('id', $this->transformKeys($ids))->company();
 
-        if($action == 'template' && $user->can('view', $tasks->first())) {
+        $_tasks = (clone $tasks);
+
+        if ($request->action == 'bulk_update') {
+
+            $this->task_repo->bulkUpdate($tasks, $request->column, $request->new_value);
+
+            return $this->listResponse(Task::withTrashed()->whereIn('id', $this->transformKeys($ids))->company());
+
+        }
+
+        $tasks = $tasks->get();
+
+        if ($action == 'template' && $user->can('view', $tasks->first())) {
 
             $hash_or_response = request()->boolean('send_email') ? 'email sent' : \Illuminate\Support\Str::uuid();
 
@@ -534,7 +569,7 @@ class TaskController extends BaseController
             }
         });
 
-        return $this->listResponse(Task::withTrashed()->whereIn('id', $this->transformKeys($ids)));
+        return $this->listResponse(Task::withTrashed()->company()->whereIn('id', $this->transformKeys($ids)));
     }
 
     /**
@@ -542,7 +577,7 @@ class TaskController extends BaseController
      *
      * @param UploadTaskRequest $request
      * @param Task $task
-     * @return Response
+     * @return Response| \Illuminate\Http\JsonResponse
      *
      *
      *
@@ -594,7 +629,7 @@ class TaskController extends BaseController
         }
 
         if ($request->has('documents')) {
-            $this->saveDocuments($request->file('documents'), $task, $request->input('is_public', true));
+            $this->saveDocuments($request->file('documents'), $task, $request->has('is_public') ? $request->boolean('is_public') : null);
         }
 
         return $this->itemResponse($task->fresh());
@@ -604,7 +639,7 @@ class TaskController extends BaseController
      * Store a newly created resource in storage.
      *
      * @param SortTaskRequest $request
-     * @return Response
+     * @return Response| \Illuminate\Http\JsonResponse
      *
      *
      *
@@ -658,13 +693,13 @@ class TaskController extends BaseController
         foreach ($tasks as $key => $task_list) {
             $sort_status_id = $this->decodePrimaryKey($key);
 
-            foreach ($task_list as $key => $task) {
+            foreach ($task_list as $_key => $task) {
                 $task_record = Task::query()->where('id', $this->decodePrimaryKey($task))
                              ->where('company_id', $user->company()->id)
                              ->withTrashed()
                              ->first();
 
-                $task_record->status_order = $key;
+                $task_record->status_order = $_key;
                 $task_record->status_id = $sort_status_id;
                 $task_record->save();
             }

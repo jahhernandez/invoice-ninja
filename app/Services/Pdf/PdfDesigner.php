@@ -1,4 +1,5 @@
 <?php
+
 /**
  * Invoice Ninja (https://invoiceninja.com).
  *
@@ -31,9 +32,7 @@ class PdfDesigner
 
     public string $template;
 
-    public function __construct(public PdfService $service)
-    {
-    }
+    public function __construct(public PdfService $service) {}
 
     public function build(): self
     {
@@ -43,6 +42,12 @@ class PdfDesigner
         } else {
             $this->template = file_get_contents(config('ninja.designs.base_path') . strtolower($this->service->config->design->name) . '.html');
         }
+
+        // Remove NULL bytes
+        $this->template = str_replace("\0", '', $this->template);
+
+        // Remove UTF-7 BOM
+        $this->template = preg_replace('/^\\+ADw-/', '', $this->template);
 
         return $this;
     }
@@ -70,10 +75,15 @@ class PdfDesigner
     {
         $html = '';
 
-        $html .= $partials['includes'];
-        $html .= $partials['header'];
-        $html .= $partials['body'];
-        $html .= $partials['footer'];
+        $html .= $partials['includes'] ?? '';
+        $html .= $partials['header'] ?? '';
+        $html .= $partials['body'] ?? '';
+        $html .= $partials['footer'] ?? '';
+
+        // Valid HTML is always required.
+        if (strlen($html) == 0) {
+            return '<p></p>';
+        }
 
         return $html;
     }

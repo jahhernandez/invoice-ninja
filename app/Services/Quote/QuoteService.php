@@ -1,24 +1,29 @@
 <?php
+
 /**
  * Invoice Ninja (https://invoiceninja.com).
  *
  * @link https://github.com/invoiceninja/invoiceninja source repository
  *
- * @copyright Copyright (c) 2024. Invoice Ninja LLC (https://invoiceninja.com)
+ * @copyright Copyright (c) 2026. Invoice Ninja LLC (https://invoiceninja.com)
  *
  * @license https://www.elastic.co/licensing/elastic-license
  */
 
 namespace App\Services\Quote;
 
-use App\Events\Quote\QuoteWasApproved;
-use App\Exceptions\QuoteConversion;
-use App\Jobs\EDocument\CreateEDocument;
-use App\Models\Project;
-use App\Models\Quote;
-use App\Repositories\QuoteRepository;
 use App\Utils\Ninja;
+use App\Models\Quote;
+use App\Models\Project;
 use App\Utils\Traits\MakesHash;
+use App\Exceptions\QuoteConversion;
+use App\Repositories\QuoteRepository;
+use App\Events\Quote\QuoteWasApproved;
+use App\Events\Quote\QuoteWasCancelled;
+use App\Events\Quote\QuoteWasRejected;
+use App\Services\Invoice\LocationData;
+use App\Services\Quote\UpdateReminder;
+use App\Jobs\EDocument\CreateEDocument;
 use Illuminate\Support\Facades\Storage;
 
 class QuoteService
@@ -32,6 +37,11 @@ class QuoteService
     public function __construct($quote)
     {
         $this->quote = $quote;
+    }
+
+    public function location(bool $set_countries = true): array
+    {
+        return (new LocationData($this->quote))->run($set_countries);
     }
 
     public function createInvitations()
@@ -83,18 +93,16 @@ class QuoteService
         return $this->getEQuote($contact);
     }
 
-    public function sendEmail($contact = null): self
+    public function sendEmail($contact = null, $email_type = 'quote'): self
     {
-        $send_email = new SendEmail($this->quote, null, $contact);
-
-        $send_email->run();
+        (new SendEmail($this->quote, $email_type, $contact))->run();
 
         return $this;
     }
 
     /**
      * Applies the invoice number.
-     * @return $this InvoiceService object
+     * @return self QuoteService object
      */
     public function applyNumber(): self
     {
@@ -105,9 +113,9 @@ class QuoteService
         return $this;
     }
 
-    public function markSent(): self
+    public function markSent($fire_event = false): self
     {
-        $this->quote = (new MarkSent($this->quote->client, $this->quote))->run();
+        $this->quote = (new MarkSent($this->quote->client, $this->quote))->run($fire_event);
 
         return $this;
     }
@@ -121,19 +129,18 @@ class QuoteService
 
     public function approve($contact = null): self
     {
-        $this->setStatus(Quote::STATUS_APPROVED)->save();
+        $this->setStatus(Quote::STATUS_APPROVED)->applyNumber()->save();
 
         if (! $contact) {
             $contact = $this->quote->invitations->first()->contact;
         }
 
         if ($this->quote->client->getSetting('auto_convert_quote')) {
-            $this->convert();
+            $this->convertToInvoice();
 
             $this->invoice
                  ->service()
                  ->markSent()
-                //  ->deletePdf()
                  ->save();
         }
 
@@ -143,10 +150,41 @@ class QuoteService
     }
 
 
+    public function reject($contact = null, ?string $notes = null): self
+    {
+
+        if ($this->quote->status_id != Quote::STATUS_SENT) {
+            return $this;
+        }
+
+        $this->setStatus(Quote::STATUS_REJECTED)->save();
+
+        if (! $contact) {
+            $contact = $this->quote->invitations->first()->contact;
+        }
+
+        event(new QuoteWasRejected($contact, $this->quote, $this->quote->company, $notes ?? '', Ninja::eventVars()));
+
+        return $this;
+    }
+
+    public function cancel(): self
+    {
+        if ($this->quote->status_id !== Quote::STATUS_SENT) {
+            return $this;
+        }
+
+        $this->setStatus(Quote::STATUS_CANCELLED)->save();
+
+        event(new QuoteWasCancelled($this->quote, $this->quote->company, Ninja::eventVars(auth()->id())));
+
+        return $this;
+    }
+
 
     public function approveWithNoCoversion($contact = null): self
     {
-        $this->setStatus(Quote::STATUS_APPROVED)->save();
+        $this->setStatus(Quote::STATUS_APPROVED)->applyNumber()->save();
 
         if (! $contact) {
             $contact = $this->quote->invitations->first()->contact;
@@ -157,11 +195,18 @@ class QuoteService
         return $this;
     }
 
+    /**
+     * convertToInvoice
+     *
+     * @NOTE - this method will force the quote to include all invitations for the
+     * client where ADD TO INVOICE = true
+     *
+     */
     public function convertToInvoice()
     {
         $this->convert();
 
-        $this->invoice->service()->createInvitations();
+        // $this->invoice->service()->createInvitations();
 
         return $this->invoice;
     }
@@ -172,7 +217,7 @@ class QuoteService
             return false;
         }
 
-        if ($this->quote->status_id == Quote::STATUS_EXPIRED) {
+        if (in_array($this->quote->status_id, [Quote::STATUS_EXPIRED, Quote::STATUS_CANCELLED])) {
             return false;
         }
 
@@ -222,12 +267,12 @@ class QuoteService
             //30-06-2023
             try {
                 // if (Storage::disk(config('filesystems.default'))->exists($this->invoice->client->invoice_filepath($invitation).$this->invoice->numberFormatter().'.pdf')) {
-                Storage::disk(config('filesystems.default'))->delete($this->quote->client->quote_filepath($invitation).$this->quote->numberFormatter().'.pdf');
+                Storage::disk(config('filesystems.default'))->delete($this->quote->client->quote_filepath($invitation) . $this->quote->numberFormatter() . '.pdf');
                 // }
 
                 // if (Ninja::isHosted() && Storage::disk('public')->exists($this->invoice->client->invoice_filepath($invitation).$this->invoice->numberFormatter().'.pdf')) {
                 if (Ninja::isHosted()) {
-                    Storage::disk('public')->delete($this->quote->client->quote_filepath($invitation).$this->quote->numberFormatter().'.pdf');
+                    Storage::disk('public')->delete($this->quote->client->quote_filepath($invitation) . $this->quote->numberFormatter() . '.pdf');
                 }
             } catch (\Exception $e) {
                 nlog($e->getMessage());
@@ -244,12 +289,12 @@ class QuoteService
         $this->quote->invitations->each(function ($invitation) {
             try {
                 // if (Storage::disk(config('filesystems.default'))->exists($this->invoice->client->e_invoice_filepath($invitation).$this->invoice->getFileName("xml"))) {
-                Storage::disk(config('filesystems.default'))->delete($this->quote->client->e_document_filepath($invitation).$this->quote->getFileName("xml"));
+                Storage::disk(config('filesystems.default'))->delete($this->quote->client->e_document_filepath($invitation) . $this->quote->getFileName("xml"));
                 // }
 
                 // if (Ninja::isHosted() && Storage::disk('public')->exists($this->invoice->client->e_invoice_filepath($invitation).$this->invoice->getFileName("xml"))) {
                 if (Ninja::isHosted()) {
-                    Storage::disk('public')->delete($this->quote->client->e_document_filepath($invitation).$this->quote->getFileName("xml"));
+                    Storage::disk('public')->delete($this->quote->client->e_document_filepath($invitation) . $this->quote->getFileName("xml"));
                 }
             } catch (\Exception $e) {
                 nlog($e->getMessage());
@@ -257,6 +302,58 @@ class QuoteService
         });
 
         return $this;
+    }
+
+    public function setReminder($settings = null)
+    {
+        $this->quote = (new UpdateReminder($this->quote, $settings))->run();
+
+        return $this;
+    }
+
+
+    /*When a reminder is sent we want to touch the dates they were sent*/
+    public function touchReminder(string $reminder_template)
+    {
+        nrlog(now()->format('Y-m-d h:i:s') . " INV #{$this->quote->number} : Touching Reminder => {$reminder_template}");
+        switch ($reminder_template) {
+            case 'reminder1':
+                $this->quote->reminder1_sent = now();
+                $this->quote->reminder_last_sent = now();
+                $this->quote->last_sent_date = now();
+                break;
+            case 'reminder2':
+                $this->quote->reminder2_sent = now();
+                $this->quote->reminder_last_sent = now();
+                $this->quote->last_sent_date = now();
+                break;
+            case 'reminder3':
+                $this->quote->reminder3_sent = now();
+                $this->quote->reminder_last_sent = now();
+                $this->quote->last_sent_date = now();
+                break;
+            case 'endless_reminder':
+                $this->quote->reminder_last_sent = now();
+                $this->invoice->last_sent_date = now();
+                break;
+            default:
+                $this->quote->reminder1_sent = now();
+                $this->quote->reminder_last_sent = now();
+                $this->quote->last_sent_date = now();
+                break;
+        }
+
+        return $this;
+    }
+
+    public function getDocuNinjaSignable(?\App\Models\QuoteInvitation $invite = null)
+    {
+
+        if (class_exists(\InvoiceNinja\AdminApi\Services\DocuNinja\DocuNinja::class)) {
+            $invite = $invite ?: $this->quote->invitations->first();
+            return (new \InvoiceNinja\AdminApi\Services\DocuNinja\DocuNinja())->signable->get($invite);
+        }
+
     }
 
     /**

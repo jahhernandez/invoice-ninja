@@ -1,4 +1,5 @@
 <?php
+
 /**
  * Invoice Ninja (https://invoiceninja.com).
  *
@@ -24,21 +25,36 @@ use Illuminate\Validation\ValidationException;
 use Tests\TestCase;
 
 /**
- * @test
- * @covers  App\Libraries\MultiDB
+ *
+ *   App\Libraries\MultiDB
  *
  * Proves that we can reliably switch database connections at runtime
  */
 class MultiDBUserTest extends TestCase
 {
-    protected function setUp() :void
+    protected $token;
+    protected $company_token;
+
+    protected function setUp(): void
     {
         parent::setUp();
 
-        $this->withoutExceptionHandling();
-
         if (! config('ninja.db.multi_db_enabled')) {
             $this->markTestSkipped('Multi DB not enabled - skipping');
+        }
+
+        foreach (MultiDB::getDBs() as $db) {
+            MultiDB::setDB($db);
+            $u = User::where('email', 'db1@gmail.com')->first();
+            if ($u) {
+                $u->account->delete();
+            }
+
+
+            $u = User::where('email', 'db2@gmail.com')->first();
+            if ($u) {
+                $u->account->delete();
+            }
         }
 
         User::unguard();
@@ -73,7 +89,7 @@ class MultiDBUserTest extends TestCase
             'email_verified_at' => now(),
             'password' => Hash::make('ALongAndBriliantPassword'), // secret
             'remember_token' => \Illuminate\Support\Str::random(10),
-            'email' => 'db1@example.com',
+            'email' => 'db1@gmail.com',
             'oauth_user_id' => '123',
             //     'account_id' => $account->id,
         ];
@@ -86,7 +102,7 @@ class MultiDBUserTest extends TestCase
             'email_verified_at' => now(),
             'password' => 'ALongAndBriliantPassword', // secret
             'remember_token'    => \Illuminate\Support\Str::random(10),
-            'email'             => 'db2@example.com',
+            'email'             => 'db2@gmail.com',
             'oauth_user_id'     => 'abc',
             //      'account_id' => $account2->id,
 
@@ -120,7 +136,8 @@ class MultiDBUserTest extends TestCase
 
         $this->token = \Illuminate\Support\Str::random(40);
 
-        $this->company_token = CompanyToken::on('db-ninja-01')->create([
+        /** @var CompanyToken $company_token */
+        $company_token = CompanyToken::on('db-ninja-01')->create([
             'user_id' => $user->id,
             'company_id' => $coco->id,
             'account_id' => $account->id,
@@ -128,54 +145,47 @@ class MultiDBUserTest extends TestCase
             'token' => $this->token,
         ]);
 
+        $this->company_token = $company_token;
         User::unguard(false);
     }
 
     public function test_oauth_user_db2_exists()
     {
-        $user = MultiDB::hasUser(['email' => 'db2@example.com', 'oauth_user_id' => 'abc']);
+        $user = MultiDB::hasUser(['email' => 'db2@gmail.com', 'oauth_user_id' => 'abc']);
 
-        $this->assertEquals($user->email, 'db2@example.com');
+        $this->assertEquals($user->email, 'db2@gmail.com');
     }
 
     public function test_oauth_user_db1_exists()
     {
-        $user = MultiDB::hasUser(['email' => 'db1@example.com', 'oauth_user_id' => '123']);
+        $user = MultiDB::hasUser(['email' => 'db1@gmail.com', 'oauth_user_id' => '123']);
 
-        $this->assertEquals($user->email, 'db1@example.com');
+        $this->assertEquals($user->email, 'db1@gmail.com');
     }
 
     public function test_check_user_exists()
     {
-        $this->assertTrue(MultiDB::checkUserEmailExists('db1@example.com'));
+        $this->assertTrue(MultiDB::checkUserEmailExists('db1@gmail.com'));
     }
 
     public function test_check_user_does_not_exist()
     {
-        $this->assertFalse(MultiDB::checkUserEmailExists('bademail@example.com'));
+        $this->assertFalse(MultiDB::checkUserEmailExists('bademail@gmail.com'));
     }
 
     public function test_check_that_set_db_by_email_works()
     {
-        $this->assertTrue(MultiDB::userFindAndSetDb('db1@example.com'));
+        $this->assertTrue(MultiDB::userFindAndSetDb('db1@gmail.com'));
     }
 
     public function test_check_that_set_db_by_email_works_db_2()
     {
-        $this->assertTrue(MultiDB::userFindAndSetDb('db2@example.com'));
+        $this->assertTrue(MultiDB::userFindAndSetDb('db2@gmail.com'));
     }
 
     public function test_check_that_set_db_by_email_works_db_3()
     {
-        $this->assertFalse(MultiDB::userFindAndSetDb('bademail@example.com'));
-    }
-
-    /*
-     * This is what you do when you demand 100% code coverage :/
-     */
-    public function test_set_db_invokes()
-    {
-        $this->expectNotToPerformAssertions(MultiDB::setDB('db-ninja-01'));
+        $this->assertFalse(MultiDB::userFindAndSetDb('bademail@gmail.com'));
     }
 
     public function test_cross_db_user_linking_fails_appropriately()
@@ -185,7 +195,7 @@ class MultiDBUserTest extends TestCase
         $data = [
             'first_name' => 'hey',
             'last_name' => 'you',
-            'email' => 'db2@example.com',
+            'email' => 'db2@gmail.com',
             'company_user' => [
                 'is_admin' => true,
                 'is_owner' => false,
@@ -195,59 +205,66 @@ class MultiDBUserTest extends TestCase
 
         $response = false;
 
-        try {
-            $response = $this->withHeaders([
-                'X-API-SECRET' => config('ninja.api_secret'),
-                'X-API-TOKEN' => $this->token,
-                'X-API-PASSWORD' => 'ALongAndBriliantPassword',
-            ])->post('/api/v1/users?include=company_user', $data);
-        } catch (ValidationException $e) {
-            $message = json_decode($e->validator->getMessageBag(), 1);
-            $this->assertNotNull($message);
-            nlog($message);
-        }
+        $response = $this->withHeaders([
+            'X-API-SECRET' => config('ninja.api_secret'),
+            'X-API-TOKEN' => $this->token,
+            'X-API-PASSWORD' => 'ALongAndBriliantPassword',
+        ])->postJson('/api/v1/users?include=company_user', $data);
 
-        if ($response) {
-            $response->assertStatus(403);
-        }
+
+        $response->assertStatus(422);
+
     }
 
-    // public function test_cross_db_user_linking_succeeds_appropriately()
-    // {
-    //     $data = [
-    //         'first_name' => 'hey',
-    //         'last_name' => 'you',
-    //         'email' => 'db1@example.com',
-    //         'company_user' => [
-    //                 'is_admin' => false,
-    //                 'is_owner' => false,
-    //                 'permissions' => 'create_client,create_invoice',
-    //             ],
-    //     ];
-
-    //     try {
-    //         $response = $this->withHeaders([
-    //             'X-API-SECRET' => config('ninja.api_secret'),
-    //             'X-API-TOKEN' => $this->token,
-    //             'X-API-PASSWORD' => 'ALongAndBriliantPassword',
-    //       ])->post('/api/v1/users?include=company_user', $data);
-    //     } catch (ValidationException $e) {
-    //         \Log::error('in the validator');
-    //         $message = json_decode($e->validator->getMessageBag(), 1);
-    //         \Log::error($message);
-    //         $this->assertNotNull($message);
-    //     }
-
-    //     if ($response) {
-    //         $response->assertStatus(200);
-    //     }
-    // }
-
-    protected function tearDown() :void
+    protected function tearDown(): void
     {
-        DB::connection('db-ninja-01')->table('users')->delete();
-        DB::connection('db-ninja-02')->table('users')->delete();
+        try {
+            // Clean up database records before calling parent::tearDown()
+            $this->cleanupTestData();
+        } catch (\Exception $e) {
+            // Log error but don't fail teardown
+            error_log("Error during test cleanup: " . $e->getMessage());
+        }
 
-        config(['database.default' => config('ninja.db.default')]);
+        parent::tearDown();
+    }
+
+    private function cleanupTestData(): void
+    {
+        // Only proceed if we have database connections available
+        if (!app()->bound('db') || !config('database.connections.db-ninja-01')) {
+            return;
+        }
+
+        try {
+            // Clean up db-ninja-01
+            if (\DB::connection('db-ninja-01')->getPdo()) {
+                $u = User::on('db-ninja-01')->where('email', 'db1@gmail.com')->first();
+                if ($u && $u->account) {
+                    $u->account->delete();
+                }
+
+                $u = User::on('db-ninja-01')->where('email', 'db2@gmail.com')->first();
+                if ($u && $u->account) {
+                    $u->account->delete();
+                }
+            }
+
+            // Clean up db-ninja-02
+            if (\DB::connection('db-ninja-02')->getPdo()) {
+                $u = User::on('db-ninja-02')->where('email', 'db1@gmail.com')->first();
+                if ($u && $u->account) {
+                    $u->account->delete();
+                }
+
+                $u = User::on('db-ninja-02')->where('email', 'db2@gmail.com')->first();
+                if ($u && $u->account) {
+                    $u->account->delete();
+                }
+            }
+        } catch (\Exception $e) {
+            // Log error but don't fail cleanup
+            error_log("Error during database cleanup: " . $e->getMessage());
+        }
     }
 }

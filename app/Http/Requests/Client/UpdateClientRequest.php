@@ -1,28 +1,34 @@
 <?php
+
 /**
  * Invoice Ninja (https://invoiceninja.com).
  *
  * @link https://github.com/invoiceninja/invoiceninja source repository
  *
- * @copyright Copyright (c) 2024. Invoice Ninja LLC (https://invoiceninja.com)
+ * @copyright Copyright (c) 2026. Invoice Ninja LLC (https://invoiceninja.com)
  *
  * @license https://www.elastic.co/licensing/elastic-license
  */
 
 namespace App\Http\Requests\Client;
 
-use App\DataMapper\CompanySettings;
 use App\Http\Requests\Request;
-use App\Http\ValidationRules\ValidClientGroupSettingsRule;
-use App\Utils\Traits\ChecksEntityStatus;
+use App\Models\Client;
 use App\Utils\Traits\MakesHash;
-use Illuminate\Support\Facades\Cache;
 use Illuminate\Validation\Rule;
+use App\DataMapper\CompanySettings;
+use Illuminate\Support\Facades\Cache;
+use App\Utils\Traits\ChecksEntityStatus;
+use App\Http\ValidationRules\EInvoice\ValidClientScheme;
+use App\Http\ValidationRules\ValidClientGroupSettingsRule;
 
 class UpdateClientRequest extends Request
 {
     use MakesHash;
     use ChecksEntityStatus;
+
+    /** @var class-string */
+    protected ?string $tag_entity_type = Client::class;
 
     /**
      * Determine if the user is authorized to make this request.
@@ -43,31 +49,28 @@ class UpdateClientRequest extends Request
         /** @var  \App\Models\User $user */
         $user = auth()->user();
 
-        if ($this->file('documents') && is_array($this->file('documents'))) {
-            $rules['documents.*'] = $this->fileValidation();
-        } elseif ($this->file('documents')) {
-            $rules['documents'] = $this->fileValidation();
-        }
 
-        if ($this->file('file') && is_array($this->file('file'))) {
-            $rules['file.*'] = $this->fileValidation();
-        } elseif ($this->file('file')) {
-            $rules['file'] = $this->fileValidation();
-        } else {
-            $rules['documents'] = 'bail|sometimes|array';
-        }
+        $rules['file'] = 'bail|sometimes|array';
+        $rules['file.*'] = $this->fileValidation();
+        $rules['documents'] = 'bail|sometimes|array';
+        $rules['documents.*'] = $this->fileValidation();
 
         $rules['company_logo'] = 'mimes:jpeg,jpg,png,gif|max:10000';
         $rules['industry_id'] = 'integer|nullable';
-        $rules['size_id'] = 'integer|nullable';
+        $rules['size_id'] = ['bail', 'nullable', 'sometimes', 'exists:sizes,id'];
+        $rules['industry_id'] = ['bail', 'nullable', 'sometimes', 'exists:industries,id'];
         $rules['country_id'] = 'integer|nullable|exists:countries,id';
         $rules['shipping_country_id'] = 'integer|nullable|exists:countries,id';
         $rules['classification'] = 'bail|sometimes|nullable|in:individual,business,company,partnership,trust,charity,government,other';
         $rules['id_number'] = ['sometimes', 'bail', 'nullable', Rule::unique('clients')->where('company_id', $user->company()->id)->ignore($this->client->id)];
         $rules['number'] = ['sometimes', 'bail', Rule::unique('clients')->where('company_id', $user->company()->id)->ignore($this->client->id)];
+        $rules['group_settings_id'] = ['bail','nullable','sometimes', Rule::exists('group_settings', 'id')->where('company_id', $user->company()->id)];
+        
+        $rules['e_invoice'] = ['sometimes','nullable', new ValidClientScheme()];
 
         $rules['settings'] = new ValidClientGroupSettingsRule();
         $rules['contacts'] = 'array';
+        $rules['contacts.*.id'] = ['bail','nullable','sometimes', Rule::exists('client_contacts', 'id')->where('client_id', $this->client->id)->where('company_id', $user->company()->id)];
         $rules['contacts.*.email'] = 'bail|nullable|distinct|sometimes|email';
         $rules['contacts.*.password'] = [
             'nullable',
@@ -80,7 +83,49 @@ class UpdateClientRequest extends Request
             //'regex:/[@$!%*#?&.]/', // must contain a special character
         ];
 
-        return $rules;
+
+        $rules['custom_value1'] = ['bail','nullable','sometimes',function ($attribute, $value, $fail) {
+            if (is_array($value)) {
+                $fail("The $attribute must not be an array.");
+            }
+        }];
+        $rules['custom_value2'] = ['bail','nullable','sometimes',function ($attribute, $value, $fail) {
+            if (is_array($value)) {
+                $fail("The $attribute must not be an array.");
+            }
+        }];
+        $rules['custom_value3'] = ['bail','nullable','sometimes',function ($attribute, $value, $fail) {
+            if (is_array($value)) {
+                $fail("The $attribute must not be an array.");
+            }
+        }];
+        $rules['custom_value4'] = ['bail','nullable','sometimes',function ($attribute, $value, $fail) {
+            if (is_array($value)) {
+                $fail("The $attribute must not be an array.");
+            }
+        }];
+
+        $rules['settings.currency_id'] = 'required|exists:currencies,id';
+
+        return $this->globalRules($rules);
+    }
+
+    public function withValidator($validator)
+    {
+        if ($validator->errors()->isNotEmpty()) {
+            return;
+        }
+        
+        $validator->after(function ($validator) {
+
+            $user = auth()->user();
+            $company = $user->company();
+
+            if (isset($this->settings['lock_invoices']) && $company->verifactuEnabled() && $this->settings['lock_invoices'] != 'when_sent') {
+                $validator->errors()->add('settings.lock_invoices', 'Locked Invoices Cannot Be Disabled');
+            }
+
+        });
     }
 
     public function messages()
@@ -102,11 +147,15 @@ class UpdateClientRequest extends Request
         /** @var  \App\Models\User $user */
         $user = auth()->user();
 
-        /* If the user removes the currency we must always set the default */
-        if (array_key_exists('settings', $input) && ! array_key_exists('currency_id', $input['settings'])) {
-            $input['settings']['currency_id'] = (string) $user->company()->settings->currency_id;
+        if ($this->file('file') instanceof \Illuminate\Http\UploadedFile) {
+            $this->files->set('file', [$this->file('file')]);
         }
-        elseif (empty($input['settings']['currency_id']) ?? true) {
+
+        if (isset($input['documents'])) {
+            unset($input['documents']);
+        }
+
+        if (empty($input['settings']['currency_id'])) {
             $input['settings']['currency_id'] = (string) $user->company()->settings->currency_id;
         }
 
@@ -121,7 +170,7 @@ class UpdateClientRequest extends Request
         }
 
         if (array_key_exists('name', $input)) {
-            $input['name'] = strip_tags($input['name']);
+            $input['name'] = strip_tags($input['name'] ?? '');
         }
 
         // allow setting country_id by iso code
@@ -134,38 +183,45 @@ class UpdateClientRequest extends Request
             $input['shipping_country_id'] = $this->getCountryCode($input['shipping_country_code']);
         }
 
+        if (isset($input['e_invoice']) && is_array($input['e_invoice'])) {
+            //ensure it is normalized first!
+            $input['e_invoice'] = $this->client->filterNullsRecursive($input['e_invoice']);
+        }
+
+        if (isset($input['public_notes']) && $this->hasHeader('X-REACT')) {
+            $input['public_notes'] = str_replace("\n", "", $input['public_notes']);
+        }
+        if (isset($input['private_notes']) && $this->hasHeader('X-REACT')) {
+            $input['private_notes'] = str_replace("\n", "", $input['private_notes']);
+        }
 
         $this->replace($input);
     }
 
     private function getCountryCode($country_code)
     {
-        $countries = Cache::get('countries');
 
-        $country = $countries->filter(function ($item) use ($country_code) {
+        /** @var \Illuminate\Support\Collection<\App\Models\Country> */
+        $countries = app('countries');
+
+        $country = $countries->first(function ($item) use ($country_code) {
             return $item->iso_3166_2 == $country_code || $item->iso_3166_3 == $country_code;
-        })->first();
+        });
 
-        if ($country) {
-            return (string) $country->id;
-        }
-
-        return '';
+        return $country ? (string) $country->id : '';
     }
 
     private function getLanguageId($language_code)
     {
-        $languages = Cache::get('languages');
 
-        $language = $languages->filter(function ($item) use ($language_code) {
+        /** @var \Illuminate\Support\Collection<\App\Models\Language> */
+        $languages = app('languages');
+
+        $language = $languages->first(function ($item) use ($language_code) {
             return $item->locale == $language_code;
-        })->first();
+        });
 
-        if ($language) {
-            return (string) $language->id;
-        }
-
-        return '';
+        return $language ? (string) $language->id : '';
     }
 
     /**
@@ -175,17 +231,21 @@ class UpdateClientRequest extends Request
      * down to the free plan setting properties which
      * are saveable
      *
-     * @param  \stdClass $settings
+     * @param  mixed $settings
      * @return \stdClass $settings
      */
     private function filterSaveableSettings($settings)
     {
         $account = $this->client->company->account;
 
+        // Do not allow a user to force pdf variables on the client settings.
+        unset($settings['pdf_variables']);
+
         if (! $account->isFreeHostedClient()) {
             return $settings;
         }
 
+        $settings = is_array($settings) ? (object) $settings : $settings;
         $saveable_casts = CompanySettings::$free_plan_casts;
 
         foreach ($settings as $key => $value) {
@@ -193,14 +253,11 @@ class UpdateClientRequest extends Request
                 unset($settings->{$key});
             }
 
-            //26-04-2022 - In case settings are returned as array instead of object
-            if ($key == 'default_task_rate' && is_array($settings)) {
-                $settings['default_task_rate'] = floatval($value);
-            } elseif ($key == 'default_task_rate' && is_object($settings)) {
+            if ($key == 'default_task_rate') {
                 $settings->default_task_rate = floatval($value);
             }
         }
 
-        return $settings;
+        return (array) $settings;
     }
 }

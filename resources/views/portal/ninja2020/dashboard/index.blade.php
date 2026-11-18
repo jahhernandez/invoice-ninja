@@ -2,9 +2,16 @@
 @section('meta_title', ctrans('texts.dashboard'))
 
 @section('body')
+
+    @if($settings->custom_message_dashboard)
+        @component('portal.ninja2020.components.message')
+            <pre>{{ $settings->custom_message_dashboard }}</pre>
+        @endcomponent
+    @endif
+
     <div class="flex flex-col xl:flex-row gap-4">
         <div class="w-full rounded-md border border-[#E5E7EB] bg-white p-5 text-sm text-[#6C727F]">
-            <h3 class="mb-4 text-xl font-semibold text-[#212529]">{{ $contact->first_name }} {{ $contact->last_name }}</h3>
+            <h3 class="mb-4 text-xl font-semibold text-[#212529]">{{ $contact->client->present()->name() }}</h3>
             <p>{{ $contact->phone }}</p>
             <p>{{ $client->address1 }}</p>
             <p>{{ $client->city }}, {{ $client->state }}</p>
@@ -70,33 +77,35 @@
         </div>
         <div class="flex w-full xl:w-auto mt-2 xl:mt-0 items-center xl:basis-auto xl:justify-center xl:border-r xl:border-[#E5E7EB] xl:px-20">
             <div class="flex items-center">
+                @if(! empty($settings->company_logo))
                 <div class="h-6 w-6 overflow-hidden rounded">
-                    <img src="{{ $client->company->getLogo() }}" alt="company-logo" class="h-fit w-full" />
+                    <img src="{{ $client->company->present()->logo($settings) }}" alt="company-logo" class="h-fit w-full" />
                 </div>
+                @endif
                 <div class="pl-1.5">
                     <p class="text-xs font-semibold leading-normal text-black">
-                        {{ $client->company->settings->name }}
+                        {{ $settings->name }}
                     </p>
                 </div>
             </div>
         </div>
 
         <div class="text-light-grey-text flex grow basis-full flex-col justify-center pt-5 text-sm md:basis-1/2 md:border-r md:border-[#E5E7EB] md:pt-0 xl:basis-auto xl:px-5 space-y-2">
-            <p>{{ $client->company->settings->address1 }}</p>
-            <p>{{ $client->company->settings->city }} {{ $client->company->settings->state }}</p>
-            <p>{{ $client->company->settings->postal_code }}</p>
-            <p>{{ App\Models\Country::find($client->company->settings->country_id)?->name }}</p>
+            <p>{{ $settings->address1 }}</p>
+            <p>{{ $settings->city }} {{ $settings->state }}</p>
+            <p>{{ $settings->postal_code }}</p>
+            <p>{{ $client->company->country()->name ?? '' }}</p>
         </div>
 
         <div class="text-light-grey-text flex grow basis-full flex-col justify-center text-sm md:basis-1/2 md:pl-4 xl:basis-auto xl:px-5 space-y-2 mt-3 xl:mt-0">
-            <p><span class="font-semibold">{{ ctrans('texts.vat') }}</span>: {{ $client->company->settings->vat_number }}</p>
+            <p><span class="font-semibold">{{ ctrans('texts.vat') }}</span>: {{ $settings->vat_number }}</p>
             <p>
-                <a class="underline" href="mailto:{{ $client->company->settings->email }}" target="_blank">{{ $client->company->settings->email }}</a>
+                <a class="underline" href="mailto:{{ $settings->email }}" target="_blank">{{ $settings->email }}</a>
             </p>
-            <p>{{ $client->company->settings->phone }}</p>
+            <p>{{ $settings->phone }}</p>
             <p>
-                <a class="underline" href="{{ $client->company->settings->website }}" target="_blank">
-                    {{ $client->company->settings->website }}
+                <a class="underline" href="{{ $settings->website }}" target="_blank">
+                    {{ $settings->website }}
                 </a>
             </p>
         </div>

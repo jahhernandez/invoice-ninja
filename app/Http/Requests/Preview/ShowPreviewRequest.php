@@ -1,10 +1,11 @@
 <?php
+
 /**
  * Invoice Ninja (https://invoiceninja.com).
  *
  * @link https://github.com/invoiceninja/invoiceninja source repository
  *
- * @copyright Copyright (c) 2024. Invoice Ninja LLC (https://invoiceninja.com)
+ * @copyright Copyright (c) 2026. Invoice Ninja LLC (https://invoiceninja.com)
  *
  * @license https://www.elastic.co/licensing/elastic-license
  */
@@ -12,6 +13,7 @@
 namespace App\Http\Requests\Preview;
 
 use App\Http\Requests\Request;
+use App\Http\ValidationRules\Design\TwigLint;
 use App\Utils\Traits\MakesHash;
 
 class ShowPreviewRequest extends Request
@@ -31,6 +33,8 @@ class ShowPreviewRequest extends Request
     public function rules()
     {
         $rules = [
+            'design.design.body' => ['sometimes', new TwigLint()],
+            'design.design.customCss' => 'sometimes|string',
         ];
 
         return $rules;
@@ -39,7 +43,7 @@ class ShowPreviewRequest extends Request
     public function prepareForValidation()
     {
         $input = $this->all();
-
+        $input = $this->decodePrimaryKeys($input);
         $this->replace($input);
     }
 }

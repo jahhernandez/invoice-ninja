@@ -3,10 +3,10 @@
 
 @push('head')
     <meta name="show-purchase_order-terms" content="false">
-    <meta name="require-purchase_order-signature" content="{{ $purchase_order->company->account->hasFeature(\App\Models\Account::FEATURE_INVOICE_SETTINGS) && property_exists($settings, 'require_purchase_order_signature') && $settings->require_purchase_order_signature }}">
+    <meta name="require-purchase_order-signature" content="{{ $requires_signature ? true : false }}">
+    <meta name="docuninja-active" content="{{ $docuninja_active ? true : false }}">
     @include('portal.ninja2020.components.no-cache')
     
-    <script src="{{ asset('vendor/signature_pad@2.3.2/signature_pad.min.js') }}"></script>
 
 @endpush
 
@@ -30,15 +30,6 @@
                             {{ ctrans('texts.purchase_order_number_placeholder', ['purchase_order' => $purchase_order->number])}}
                             - {{ \App\Models\PurchaseOrder::stringStatus($purchase_order->status_id) }}
                         </h3>
-
-                            @if($key)
-                            <div class="btn hidden md:block" data-clipboard-text="{{url("vendor/purchase_order/{$key}")}}" aria-label="Copied!">
-                                <div class="flex text-sm leading-6 font-medium text-gray-500">
-                                    <p class="pr-10">{{url("vendor/purchase_order/{$key}")}}</p>
-                                    <p><img class="h-5 w-5" src="{{ asset('assets/clippy.svg') }}" alt="Copy to clipboard"></p>
-                                </div>
-                            </div>
-                            @endif
                     </div>
                 </div>
             </div>
@@ -46,7 +37,16 @@
     @endif
 
     @include('portal.ninja2020.components.entity-documents', ['entity' => $purchase_order])
-    @livewire('pdf-slot', ['entity' => $purchase_order, 'invitation' => $invitation, 'db' => $purchase_order->company->db])
+
+    @if($docuninja_active)
+    <div id="docuninja-container" class="hidden">
+        @livewire('sign', ['invitation_id' => $invitation->id ?? false, 'entity_type' => 'purchase_order', 'entity_number' => $purchase_order->number, 'db' => $purchase_order->company->db, '_key' => $_key, 'request_hash' => $request_hash])
+    </div>
+    @endif
+
+    <div id="pdf-slot-container" class="">
+        @livewire('pdf-slot', ['entity_type' => 'purchase_order', 'entity_key' => $purchase_order->hashed_id, 'invitation_key' => $invitation->key ?? null, 'db' => $purchase_order->company->db])
+    </div>
 
 @endsection
 
@@ -57,16 +57,20 @@
 
 @push('head')
     @vite('resources/js/clients/purchase_orders/accept.js')
-    <script src="{{ asset('vendor/clipboard.min.js') }}"  defer></script>
 
     <script type="text/javascript">
 
         document.addEventListener('DOMContentLoaded', () => {
 
-            var clipboard = new ClipboardJS('.btn');
+            @if($_key)
+                window.history.pushState({}, "", "{{ url("vendor/purchase_order/{$_key}") }}");
+            @endif
 
+            window.addEventListener('builder:sign.submit.success', function () {
+                window.location.reload();
+            });
+            
         });
 
     </script>
 @endpush
-

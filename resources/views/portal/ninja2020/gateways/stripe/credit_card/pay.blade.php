@@ -27,6 +27,8 @@
     <meta name="only-authorization" content="">
     <meta name="client-postal-code" content="{{ $client->postal_code ?? '' }}">
     <meta name="stripe-require-postal-code" content="{{ $gateway->company_gateway->require_postal_code }}">
+
+    <meta name="instant-payment" content="yes" />
 @endsection
 
 @section('gateway_content')
@@ -51,31 +53,31 @@
     @include('portal.ninja2020.gateways.includes.payment_details')
 
     @component('portal.ninja2020.components.general.card-element', ['title' => ctrans('texts.pay_with')])
-        <ul class="list-none hover:list-disc">
+    <ul class="payment-method-list">
         @if(count($tokens) > 0)
             @foreach($tokens as $token)
-            <li class="py-2 hover:text-blue hover:bg-blue-600">
-                <label class="mr-4">
+            <li class="payment-method-item">
+            <label class="payment-method-label">
                     <input
                         type="radio"
                         data-token="{{ $token->token }}"
                         name="payment-type"
-                        class="form-check-input text-indigo-600 rounded-full cursor-pointer toggle-payment-with-token toggle-payment-with-token"/>
-                    <span class="ml-1 cursor-pointer">**** {{ $token->meta?->last4 }}</span>
+                        class="form-radio cursor-pointer toggle-payment-with-token"/>
+                    <span class="ml-1">**** {{ $token->meta?->last4 }}</span>
                 </label>
             </li>
             @endforeach
         @endisset
 
-            <li class="py-2 hover:text-blue hover:bg-blue-600">
-                <label>
+            <li class="payment-method-item">
+            <label class="payment-method-label">
                     <input
                         type="radio"
                         id="toggle-payment-with-credit-card"
-                        class="form-check-input text-indigo-600 rounded-full cursor-pointer"
+                        class="form-radio cursor-pointer"
                         name="payment-type"
                         checked/>
-                    <span class="ml-1 cursor-pointer">{{ __('texts.new_card') }}</span>
+                    <span class="ml-1">{{ __('texts.new_card') }}</span>
                 </label>
             </li>    
         </ul>

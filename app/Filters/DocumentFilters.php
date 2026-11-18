@@ -1,10 +1,11 @@
 <?php
+
 /**
  * Invoice Ninja (https://invoiceninja.com).
  *
  * @link https://github.com/invoiceninja/invoiceninja source repository
  *
- * @copyright Copyright (c) 2024. Invoice Ninja LLC (https://invoiceninja.com)
+ * @copyright Copyright (c) 2026. Invoice Ninja LLC (https://invoiceninja.com)
  *
  * @license https://www.elastic.co/licensing/elastic-license
  */
@@ -34,8 +35,16 @@ class DocumentFilters extends QueryFilters
             return $this->builder;
         }
 
-        return $this->builder->where('name', 'like', '%'.$filter.'%');
+        return $this->builder->where('name', 'like', '%' . $filter . '%');
 
+    }
+
+    /**
+     * Documents do not support the shared active/archived/deleted lifecycle.
+     */
+    public function status(string $filter = ''): Builder
+    {
+        return $this->builder;
     }
 
     /**
@@ -49,22 +58,22 @@ class DocumentFilters extends QueryFilters
      */
     public function client_id(string $client_id = ''): Builder
     {
-        
+
         return $this->builder->where(function ($query) use ($client_id) {
             $query->whereHasMorph('documentable', [
-                \App\Models\Invoice::class, 
-                \App\Models\Quote::class, 
-                \App\Models\Credit::class, 
-                \App\Models\Expense::class, 
-                \App\Models\Payment::class, 
+                \App\Models\Invoice::class,
+                \App\Models\Quote::class,
+                \App\Models\Credit::class,
+                \App\Models\Expense::class,
+                \App\Models\Payment::class,
                 \App\Models\Task::class,
                 \App\Models\RecurringExpense::class,
                 \App\Models\RecurringInvoice::class,
                 \App\Models\Project::class,
             ], function ($q2) use ($client_id) {
-                        $q2->where('client_id', $this->decodePrimaryKey($client_id));
-                })->orWhereHasMorph('documentable', [\App\Models\Client::class], function ($q3) use ($client_id) {
-                        $q3->where('id', $this->decodePrimaryKey($client_id));
+                $q2->where('client_id', $this->decodePrimaryKey($client_id));
+            })->orWhereHasMorph('documentable', [\App\Models\Client::class], function ($q3) use ($client_id) {
+                $q3->where('id', $this->decodePrimaryKey($client_id));
             });
         });
 
@@ -74,9 +83,8 @@ class DocumentFilters extends QueryFilters
     {
         $types = explode(',', $types);
 
-        foreach ($types as $type)
-        {
-            match($type) {
+        foreach ($types as $type) {
+            match ($type) {
                 'private' => $this->builder->where('is_public', 0),
                 'public' => $this->builder->where('is_public', 1),
                 'pdf' => $this->builder->where('type', 'pdf'),
@@ -87,7 +95,7 @@ class DocumentFilters extends QueryFilters
         }
 
         return $this->builder;
-    } 
+    }
 
     /**
      * Sorts the list based on $sort.
@@ -99,7 +107,7 @@ class DocumentFilters extends QueryFilters
     {
         $sort_col = explode('|', $sort);
 
-        if (!is_array($sort_col) || count($sort_col) != 2) {
+        if (!is_array($sort_col) || count($sort_col) != 2 || !in_array($sort_col[0], \Illuminate\Support\Facades\Schema::getColumnListing($this->builder->getModel()->getTable()))) {
             return $this->builder;
         }
 
@@ -117,7 +125,20 @@ class DocumentFilters extends QueryFilters
 
         return $this->builder;
     }
-
+    
+    /**
+     * is_deleted
+     *
+     * There is no is_deleted prop, so just return the builder.
+     * 
+     * @param  string $value
+     * @return Builder
+     */
+    public function is_deleted($value = 'true')
+    {
+        return $this->builder;
+    }
+    
     /**
      * Filters the query by the users company ID.
      *

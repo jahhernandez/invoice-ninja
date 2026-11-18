@@ -1,10 +1,11 @@
 <?php
+
 /**
  * Invoice Ninja (https://invoiceninja.com).
  *
  * @link https://github.com/invoiceninja/invoiceninja source repository
  *
- * @copyright Copyright (c) 2024. Invoice Ninja LLC (https://invoiceninja.com)
+ * @copyright Copyright (c) 2026. Invoice Ninja LLC (https://invoiceninja.com)
  *
  * @license https://www.elastic.co/licensing/elastic-license
  */
@@ -14,6 +15,8 @@ namespace App\Models;
 use App\Jobs\Entity\CreateRawPdf;
 use App\Jobs\Util\WebhookHandler;
 use App\Models\Traits\Excludable;
+use App\Services\PdfMaker\PdfMerge;
+use App\Utils\Traits\MakesDates;
 use App\Utils\Traits\MakesHash;
 use App\Utils\Traits\UserSessionAttributes;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
@@ -30,6 +33,7 @@ use Illuminate\Support\Str;
  * @package App\Models
  * @property-read mixed $hashed_id
  * @property string $number
+ * @property object|array|null $e_invoice
  * @property int $company_id
  * @property int $id
  * @property int $user_id
@@ -38,8 +42,8 @@ use Illuminate\Support\Str;
  * @property \App\Models\Company $company
  * @method static BaseModel find($value)
  * @method static \Illuminate\Database\Eloquent\Builder|BaseModel<static> company()
- * @method static \Illuminate\Database\Eloquent\Builder|BaseModel|Illuminate\Database\Eloquent\Relations\BelongsTo|\Awobaz\Compoships\Database\Eloquent\Relations\BelongsTo|\App\Models\Company company()
- * @method static \Illuminate\Database\Eloquent\Builder|BaseModel|Illuminate\Database\Eloquent\Relations\HasMany|BaseModel orderBy()
+ * @method static \Illuminate\Database\Eloquent\Builder|BaseModel|\Illuminate\Database\Eloquent\Relations\BelongsTo|\Awobaz\Compoships\Database\Eloquent\Relations\BelongsTo|\App\Models\Company company()
+ * @method static \Illuminate\Database\Eloquent\Builder|BaseModel|\Illuminate\Database\Eloquent\Relations\HasMany<BaseModel> orderBy()
  * @method static \Illuminate\Database\Eloquent\Builder|BaseModel on(?string $connection = null)
  * @method static \Illuminate\Database\Eloquent\Builder|BaseModel exclude($columns)
  * @method static \Illuminate\Database\Eloquent\Builder|BaseModel with($value)
@@ -60,7 +64,7 @@ use Illuminate\Support\Str;
  * @property-read int|null $invitations_count
  * @method int companyId()
  * @method createInvitations()
- * @method Builder scopeCompany(Builder $builder)
+ * @method \Illuminate\Database\Eloquent\Builder scopeCompany(\Illuminate\Database\Eloquent\Builder $builder)
  * @method static \Illuminate\Database\Eloquent\Builder<static> company()
  * @method static \Illuminate\Database\Eloquent\Builder|BaseModel|\Illuminate\Database\Query\Builder withTrashed(bool $withTrashed = true)
  * @method static \Illuminate\Database\Eloquent\Builder|BaseModel|\Illuminate\Database\Query\Builder onlyTrashed()
@@ -77,6 +81,9 @@ class BaseModel extends Model
     use UserSessionAttributes;
     use HasFactory;
     use Excludable;
+    use MakesDates;
+
+    public int $max_attachment_size = 3000000;
 
     protected $appends = [
         'hashed_id',
@@ -100,23 +107,6 @@ class BaseModel extends Model
         return (new Carbon($value))->format('Y-m-d');
     }
 
-    // public function __call($method, $params)
-    // {
-    //     $entity = strtolower(class_basename($this));
-
-    //     if ($entity) {
-    //         $configPath = "modules.relations.$entity.$method";
-
-    //         if (config()->has($configPath)) {
-    //             $function = config()->get($configPath);
-
-    //             return call_user_func_array([$this, $function[0]], $function[1]);
-    //         }
-    //     }
-
-    //     return parent::__call($method, $params);
-    // }
-
     /**
     * @param  \Illuminate\Database\Eloquent\Builder  $query
     * @return \Illuminate\Database\Eloquent\Builder
@@ -126,7 +116,7 @@ class BaseModel extends Model
         /** @var \App\Models\User $user */
         $user = auth()->user();
 
-        $query->where('company_id', $user->companyId());
+        $query->where("{$query->getQuery()->from}.company_id", $user->companyId());
 
         return $query;
     }
@@ -139,71 +129,10 @@ class BaseModel extends Model
         /** @var \App\Models\User $user */
         $user = auth()->user();
 
-        $query->where($this->getTable().'.company_id', '=', $user->company()->id);
+        $query->where($this->getTable() . '.company_id', '=', $user->company()->id);
 
         return $query;
     }
-
-    /**
-     * Gets the settings by key.
-     *
-     * When we need to update a setting value, we need to harvest
-     * the object of the setting. This is not possible when using the merged settings
-     * as we do not know which object the setting has come from.
-     *
-     * The following method will return the entire object of the property searched for
-     * where a value exists for $key.
-     *
-     * This object can then be mutated by the handling class,
-     * to persist the new settings we will also need to pass back a
-     * reference to the parent class.
-     *
-     * @param $key The key of property
-     * @deprecated
-     */
-    // public function getSettingsByKey($key)
-    // {
-    //     /* Does Setting Exist @ client level */
-    //     if (isset($this->getSettings()->{$key})) {
-    //         return $this->getSettings()->{$key};
-    //     } else {
-    //         return (new CompanySettings($this->company->settings))->{$key};
-    //     }
-    // }
-
-    // public function setSettingsByEntity($entity, $settings)
-    // {
-    //     switch ($entity) {
-    //         case Client::class:
-
-    //             $this->settings = $settings;
-    //             $this->save();
-    //             $this->fresh();
-    //             break;
-    //         case Company::class:
-
-    //             $this->company->settings = $settings;
-    //             $this->company->save();
-    //             break;
-    //             //todo check that saving any other entity (Invoice:: RecurringInvoice::) settings is valid using the default:
-    //         default:
-    //             $this->client->settings = $settings;
-    //             $this->client->save();
-    //             break;
-    //     }
-    // }
-
-    /**
-     * Gets the settings.
-     *
-     * Generic getter for client settings
-     *
-     * @return ClientSettings.
-     */
-    // public function getSettings()
-    // {
-    //     return new ClientSettings($this->settings);
-    // }
 
     /**
      * Retrieve the model for a bound value.
@@ -229,13 +158,13 @@ class BaseModel extends Model
      */
     public function getFileName($extension = 'pdf')
     {
-        return $this->numberFormatter().'.'.$extension;
+        return $this->numberFormatter() . '.' . $extension;
     }
 
     public function getDeliveryNoteName($extension = 'pdf')
     {
 
-        $number =  ctrans("texts.delivery_note"). "_" . $this->numberFormatter().'.'.$extension;
+        $number =  ctrans("texts.delivery_note") . "_" . $this->numberFormatter() . '.' . $extension;
 
         $formatted_number =  mb_ereg_replace("([^\w\s\d\-_~,;\[\]\(\).])", '', $number);
 
@@ -253,12 +182,42 @@ class BaseModel extends Model
     */
     public function getEFileName($extension = 'pdf')
     {
-        return ctrans("texts.e_invoice"). "_" . $this->numberFormatter().'.'.$extension;
+        return ctrans("texts.e_invoice") . "_" . $this->numberFormatter() . '.' . $extension;
     }
+
+    // public function numberFormatter()
+    // {
+    //     $number = strlen($this->number) >= 1 ? $this->translate_entity() . "_" . $this->number : class_basename($this) . "_" . Str::random(5);
+
+    //     // Remove control characters
+    //     $formatted_number = preg_replace('/[\x00-\x1F\x7F]/u', '', $number);
+
+    //     // Replace slash, backslash, and null byte with underscore
+    //     $formatted_number = str_replace(['/', '\\', "\0"], '_', $formatted_number);
+
+    //     // Remove any other characters that are invalid in most filesystems
+    //     $formatted_number = str_replace(['<', '>', ':', '"', '|', '?', '*'], '', $formatted_number);
+
+    //     // Replace multiple spaces or underscores with a single underscore
+    //     $formatted_number = preg_replace('/[\s_]+/', '_', $formatted_number);
+
+    //     // Trim underscores from start and end
+    //     $formatted_number = trim($formatted_number, '_');
+
+    //     // Ensure the filename is not empty
+    //     if (empty($formatted_number)) {
+    //         $formatted_number = 'file_' . Str::random(5);
+    //     }
+
+    //     // Limit the length of the filename (adjust as needed)
+    //     $formatted_number = mb_substr($formatted_number, 0, 255);
+
+    //     return $formatted_number;
+    // }
 
     public function numberFormatter()
     {
-        $number = strlen($this->number) >= 1 ? $this->translate_entity() . "_" . $this->number : class_basename($this) . "_" . Str::random(5);
+        $number = strlen($this->number ?? '') >= 1 ? $this->translate_entity() . "_" . $this->number : class_basename($this) . "_" . Str::random(5);
 
         $formatted_number =  mb_ereg_replace("([^\w\s\d\-_~,;\[\]\(\).])", '', $number);
 
@@ -286,11 +245,50 @@ class BaseModel extends Model
     {
         $subscriptions = Webhook::where('company_id', $this->company_id)
                                  ->where('event_id', $event_id)
+                                 ->where('is_deleted', false)
+                                 ->whereNull('deleted_at')
                                  ->exists();
 
         if ($subscriptions) {
             WebhookHandler::dispatch($event_id, $this->withoutRelations(), $this->company, $additional_data);
         }
+
+        // Special catch here for einvoicing eventing
+        if (in_array($event_id, [Webhook::EVENT_SENT_INVOICE, Webhook::EVENT_SENT_CREDIT]) && ($this instanceof Invoice || $this instanceof Credit) && $this->backup->guid == "") {
+            if ($this->client->peppolSendingEnabled()) {
+                \App\Services\EDocument\Jobs\SendEDocument::dispatch(get_class($this), $this->id, $this->company->db);
+            }
+
+        } //Special Catch Here For Verifactu.
+        elseif (in_array($event_id, [Webhook::EVENT_SENT_INVOICE]) && $this->company->verifactuEnabled() && ($this instanceof Invoice) && $this->backup->guid == "") {
+            $this->service()->sendVerifactu();
+        }
+
+    }
+
+
+    /**
+     * arrayFilterRecursive nee filterNullsRecursive
+     *
+     * Removes null properties from an array
+     *
+     * @param  array $array
+     * @return array
+     */
+    public function filterNullsRecursive(array $array): array
+    {
+        foreach ($array as $key => $value) {
+            if (is_array($value)) {
+                // Recursively filter the nested array
+                $array[$key] = $this->filterNullsRecursive($value);
+            }
+            // Remove null values
+            if (is_null($array[$key])) {
+                unset($array[$key]);
+            }
+        }
+
+        return $array;
     }
 
     /**
@@ -313,7 +311,7 @@ class BaseModel extends Model
             throw new \Exception('Hard fail, could not create an invitation.');
         }
 
-        return "data:application/pdf;base64,".base64_encode((new CreateRawPdf($invitation))->handle());
+        return "data:application/pdf;base64," . base64_encode((new CreateRawPdf($invitation))->handle());
 
     }
 
@@ -328,13 +326,79 @@ class BaseModel extends Model
      */
     public function parseHtmlVariables(string $field, array $variables): string
     {
-        if(!$this->{$field}) {
+        if (!$this->{$field}) {
             return '';
         }
 
         $section = strtr($this->{$field}, $variables['labels']);
 
-        return strtr($section, $variables['values']);
+        $parsed = strtr($section, $variables['values']);
 
+        return \App\Services\Pdf\Purify::clean(html_entity_decode($parsed));
+    }
+
+    /**
+     * Retrieve the DocuNinja signed PDF document for this entity.
+     *
+     * Uses the dn_document_hashed_id stored on the entity's sync object
+     * to look up the Document record.
+     *
+     * @return \App\Models\Document|null
+     */
+    public function getSignedPdfDocument(): ?\App\Models\Document
+    {
+        /** @var \App\Models\Invoice | \App\Models\Credit | \App\Models\Quote | \App\Models\PurchaseOrder $this */
+        if (!$this->sync?->dn_document_hashed_id) {
+            return null;
+        }
+
+        return $this->documents()
+            ->where('id', $this->decodePrimaryKey($this->sync->dn_document_hashed_id))
+            ->first();
+    }
+
+    /**
+     * Merged PDFs associated with the entity / company
+     * into a single document
+     *
+     * @param  string $pdf
+     * @todo need to provide a fallback here in case the headers of the PDF do not allow merging
+     * @return mixed
+     */
+    public function documentMerge(string $pdf): mixed
+    {
+        $files = collect([$pdf]);
+
+        $entity_docs = $this->documents()
+        ->where('is_public', true)
+        ->get()
+        ->filter(function ($document) {
+            return $document->size < $this->max_attachment_size && stripos($document->name, ".pdf") !== false;
+        })->map(function ($d) {
+            return $d->getFile();
+        });
+
+        $files->push($entity_docs);
+
+        $company_docs = $this->company->documents()
+        ->where('is_public', true)
+        ->get()
+        ->filter(function ($document) {
+            return $document->size < $this->max_attachment_size && stripos($document->name, ".pdf") !== false;
+        })->map(function ($d) {
+            return $d->getFile();
+        });
+
+        $files->push($company_docs);
+
+        try {
+            $pdf = (new PdfMerge($files->flatten()->toArray()))->run();
+            return $pdf;
+
+        } catch (\Exception $e) {
+            nlog("Exception:: BaseModel:: PdfMerge::" . $e->getMessage());
+        }
+
+        return $pdf;
     }
 }

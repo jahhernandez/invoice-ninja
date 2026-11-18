@@ -1,4 +1,5 @@
 <?php
+
 /**
  * Invoice Ninja (https://invoiceninja.com).
  *
@@ -16,14 +17,14 @@ use Tests\MockAccountData;
 use Tests\TestCase;
 
 /**
- * @test
+ *
  */
 class SystemHealthTest extends TestCase
 {
     use DatabaseTransactions;
     use MockAccountData;
 
-    protected function setUp() :void
+    protected function setUp(): void
     {
         parent::setUp();
 

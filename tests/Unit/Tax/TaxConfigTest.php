@@ -1,4 +1,5 @@
 <?php
+
 /**
  * Invoice Ninja (https://invoiceninja.com).
  *
@@ -20,14 +21,13 @@ use Tests\MockAccountData;
 use Tests\TestCase;
 
 /**
- * @test App\Services\Tax\Providers\EuTax
+ *  App\Services\Tax\Providers\EuTax
  */
 class TaxConfigTest extends TestCase
 {
     use MockAccountData;
     use DatabaseTransactions;
-    
-    protected function setUp() :void
+    protected function setUp(): void
     {
         parent::setUp();
 
@@ -39,7 +39,7 @@ class TaxConfigTest extends TestCase
 
         $this->makeTestData();
 
-        if(!config('services.tax.zip_tax.key')) {
+        if (!config('services.tax.zip_tax.key')) {
             $this->markTestSkipped('No API keys to test with.');
         }
     }
@@ -68,9 +68,9 @@ class TaxConfigTest extends TestCase
         // $this->assertEquals('CA', USStates::getState('90210'));
 
         $this->bootApi($client);
-
         $this->tp->updateClientTaxData();
-        
+
+        $this->assertNotNull($client);
     }
 
 }

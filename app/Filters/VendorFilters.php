@@ -1,10 +1,11 @@
 <?php
+
 /**
  * Invoice Ninja (https://invoiceninja.com).
  *
  * @link https://github.com/invoiceninja/invoiceninja source repository
  *
- * @copyright Copyright (c) 2024. Invoice Ninja LLC (https://invoiceninja.com)
+ * @copyright Copyright (c) 2026. Invoice Ninja LLC (https://invoiceninja.com)
  *
  * @license https://www.elastic.co/licensing/elastic-license
  */
@@ -32,17 +33,17 @@ class VendorFilters extends QueryFilters
         }
 
         return  $this->builder->where(function ($query) use ($filter) {
-            $query->where('name', 'like', '%'.$filter.'%')
-                          ->orWhere('id_number', 'like', '%'.$filter.'%')
+            $query->where('name', 'like', '%' . $filter . '%')
+                          ->orWhere('id_number', 'like', '%' . $filter . '%')
                           ->orWhereHas('contacts', function ($query) use ($filter) {
-                              $query->where('first_name', 'like', '%'.$filter.'%');
-                              $query->orWhere('last_name', 'like', '%'.$filter.'%');
-                              $query->orWhere('email', 'like', '%'.$filter.'%');
+                              $query->where('first_name', 'like', '%' . $filter . '%');
+                              $query->orWhere('last_name', 'like', '%' . $filter . '%');
+                              $query->orWhere('email', 'like', '%' . $filter . '%');
                           })
-                          ->orWhere('custom_value1', 'like', '%'.$filter.'%')
-                          ->orWhere('custom_value2', 'like', '%'.$filter.'%')
-                          ->orWhere('custom_value3', 'like', '%'.$filter.'%')
-                          ->orWhere('custom_value4', 'like', '%'.$filter.'%');
+                          ->orWhere('custom_value1', 'like', '%' . $filter . '%')
+                          ->orWhere('custom_value2', 'like', '%' . $filter . '%')
+                          ->orWhere('custom_value3', 'like', '%' . $filter . '%')
+                          ->orWhere('custom_value4', 'like', '%' . $filter . '%');
         });
     }
 
@@ -65,13 +66,14 @@ class VendorFilters extends QueryFilters
     {
         $sort_col = explode('|', $sort);
 
-        if (!is_array($sort_col) || count($sort_col) != 2) {
+
+        if (!is_array($sort_col) || count($sort_col) != 2 || !in_array($sort_col[0], \Illuminate\Support\Facades\Schema::getColumnListing($this->builder->getModel()->getTable()))) {
             return $this->builder;
         }
 
         $dir = ($sort_col[1] == 'asc') ? 'asc' : 'desc';
 
-        if($sort_col[0] == 'number') {
+        if ($sort_col[0] == 'number') {
             return $this->builder->orderByRaw("REGEXP_REPLACE(number,'[^0-9]+','')+0 " . $dir);
         }
 

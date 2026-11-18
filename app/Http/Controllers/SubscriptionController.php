@@ -5,7 +5,7 @@
  *
  * @link https://github.com/invoiceninja/invoiceninja source repository
  *
- * @copyright Copyright (c) 2024. Invoice Ninja LLC (https://invoiceninja.com)
+ * @copyright Copyright (c) 2026. Invoice Ninja LLC (https://invoiceninja.com)
  *
  * @license https://www.elastic.co/licensing/elastic-license
  */
@@ -345,7 +345,7 @@ class SubscriptionController extends BaseController
      *       ),
      *     )
      */
-    public function update(UpdateSubscriptionRequest $request, Subscription $subscription): \Illuminate\Http\Response
+    public function update(UpdateSubscriptionRequest $request, Subscription $subscription)
     {
         if ($request->entityIsDeleted($subscription)) {
             return $request->disallowUpdate();
@@ -420,7 +420,7 @@ class SubscriptionController extends BaseController
     /**
      * Perform bulk actions on the list view.
      *
-     * @return \Illuminate\Support\Collection
+     * @return \Illuminate\Http\Response|\Illuminate\Http\JsonResponse
      *
      *
      * @OA\Post(
@@ -472,9 +472,9 @@ class SubscriptionController extends BaseController
         /** @var \App\Models\User $user */
         $user = auth()->user();
 
-        $subscriptions = Subscription::withTrashed()->find($request->ids);
+        $subscriptions = Subscription::withTrashed()->company()->find($request->ids);
 
-        if(in_array($request->action, ['assign_invoice'])) {
+        if (in_array($request->action, ['assign_invoice'])) {
 
             $subscriptions->each(function ($subscription, $key) use ($request, $user) {
                 if ($user->can('edit', $subscription)) {
@@ -482,7 +482,7 @@ class SubscriptionController extends BaseController
                 }
             });
 
-            return $this->listResponse(Subscription::withTrashed()->whereIn('id', $request->ids));
+            return $this->listResponse(Subscription::withTrashed()->company()->whereIn('id', $request->ids));
 
         }
 
@@ -492,6 +492,6 @@ class SubscriptionController extends BaseController
             }
         });
 
-        return $this->listResponse(Subscription::withTrashed()->whereIn('id', $request->ids));
+        return $this->listResponse(Subscription::withTrashed()->company()->whereIn('id', $request->ids));
     }
 }

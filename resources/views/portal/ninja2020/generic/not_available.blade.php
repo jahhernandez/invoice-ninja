@@ -7,9 +7,9 @@
         <div class="m-auto md:w-1/2 lg:w-1/2">
             <div class="flex flex-col items-center">
                 
-                @if($passed_account && !$passed_account->isPaid())
+                @if(false)
                     <div>
-                        <img src="{{ asset('images/invoiceninja-black-logo-2.png') }}"
+                        <img src="{{ asset('images/blank.png') }}"
                              class="border-b border-gray-100 h-18 pb-4" alt="Invoice Ninja logo">
                     </div>
                 @elseif(isset($passed_company) && !is_null($passed_company))

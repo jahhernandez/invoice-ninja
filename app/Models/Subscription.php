@@ -1,10 +1,11 @@
 <?php
+
 /**
  * Invoice Ninja (https://invoiceninja.com).
  *
  * @link https://github.com/invoiceninja/invoiceninja source repository
  *
- * @copyright Copyright (c) 2024. Invoice Ninja LLC (https://invoiceninja.com)
+ * @copyright Copyright (c) 2026. Invoice Ninja LLC (https://invoiceninja.com)
  *
  * @license https://www.elastic.co/licensing/elastic-license
  */
@@ -25,20 +26,21 @@ use Illuminate\Database\Eloquent\SoftDeletes;
  * @property int $user_id
  * @property int|null $assigned_user_id
  * @property int $company_id
+ * @property int $remaining_cycles
  * @property string|null $product_ids
  * @property int|null $frequency_id
  * @property string|null $auto_bill
  * @property string|null $promo_code
  * @property float $promo_discount
- * @property int $is_amount_discount
- * @property int $allow_cancellation
- * @property int $per_seat_enabled
+ * @property bool $is_amount_discount
+ * @property bool $allow_cancellation
+ * @property bool $per_seat_enabled
  * @property int $min_seats_limit
  * @property int $max_seats_limit
- * @property int $trial_enabled
+ * @property bool $trial_enabled
  * @property int $trial_duration
- * @property int $allow_query_overrides
- * @property int $allow_plan_changes
+ * @property bool $allow_query_overrides
+ * @property bool $allow_plan_changes
  * @property string|null $plan_map
  * @property int|null $refund_period
  * @property array $webhook_configuration
@@ -52,10 +54,12 @@ use Illuminate\Database\Eloquent\SoftDeletes;
  * @property int|null $group_id
  * @property float $price
  * @property float $promo_price
- * @property int $registration_required
- * @property int $use_inventory_management
+ * @property bool $registration_required
+ * @property bool $use_inventory_management
+ * @property string|null $steps
  * @property string|null $optional_product_ids
  * @property string|null $optional_recurring_product_ids
+ * @property string|null $steps
  * @property-read \App\Models\Company $company
  * @property-read mixed $hashed_id
  * @property-read \App\Models\GroupSetting|null $group_settings
@@ -117,6 +121,7 @@ class Subscription extends BaseModel
         'optional_recurring_product_ids',
         'use_inventory_management',
         'steps',
+        'remaining_cycles',
     ];
 
     protected $casts = [
@@ -198,5 +203,28 @@ class Subscription extends BaseModel
             default:
                 return null;
         }
+    }
+
+    /**
+     * Calculates the maximum product quantity available
+     *
+     * @param  mixed $product
+     * @return int
+     */
+    public function maxQuantity(mixed $product): int
+    {
+        $max_quantity = data_get($product, 'max_quantity', 0);
+        $in_stock_quantity = data_get($product, 'in_stock_quantity', 0);
+        $max_limit = 100;
+
+        if (!$this->use_inventory_management) {
+            return min($max_limit, $max_quantity > 0 ? $max_quantity : $max_limit);
+        }
+
+        if ($max_quantity > 0) {
+            return min($max_limit, $max_quantity);
+        }
+
+        return min($max_limit, $in_stock_quantity);
     }
 }

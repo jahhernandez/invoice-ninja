@@ -14,7 +14,12 @@
     
 @endphp
 @section('gateway_head')
-
+    <meta http-equiv="Content-Security-Policy" content="
+        frame-src 'self' https://c.paypal.com https://www.sandbox.paypal.com https://www.paypal.com https://www.paypalobjects.com; 
+        script-src 'self' 'unsafe-inline' 'unsafe-eval' https://c.paypal.com https://www.paypalobjects.com https://www.paypal.com https://www.sandbox.paypal.com https://www.google-analytics.com;
+        img-src * data: 'self'; 
+        style-src 'self' 'unsafe-inline';"
+        >
 @endsection
 
 @section('gateway_content')
@@ -36,21 +41,27 @@
    <div id="paypal-button-container" class="paypal-button-container"></div>
 
     @component('portal.ninja2020.components.general.card-element', ['title' => ctrans('texts.pay_with')])
+    <ul class="payment-method-list">
         @if (count($tokens) > 0)
             @foreach ($tokens as $token)
-                <label class="mr-4">
-                    <input type="radio" data-token="{{ $token->token }}" name="payment-type"
-                        class="form-radio cursor-pointer toggle-payment-with-token" />
-                    <span class="ml-1 cursor-pointer">**** {{ $token->meta?->last4 }}</span>
-                </label>
+                <li class="payment-method-item">
+                <label class="payment-method-label">
+                <input type="radio" data-token="{{ $token->token }}" name="payment-type"
+                            class="form-radio cursor-pointer toggle-payment-with-token" />
+                        <span class="ml-1">**** {{ $token->meta?->last4 }}</span>
+                    </label>
+                </li>
             @endforeach
         @endisset
 
-        <label>
-            <input type="radio" id="toggle-payment-with-credit-card" class="form-radio cursor-pointer" name="payment-type"
-                checked />
-            <span class="ml-1 cursor-pointer">{{ __('texts.new_card') }}</span>
-        </label>
+        <li class="payment-method-item">
+            <label class="payment-method-label">
+                <input type="radio" id="toggle-payment-with-credit-card" class="form-radio cursor-pointer" name="payment-type"
+                    checked />
+                <span class="ml-1">{{ __('texts.new_card') }}</span>
+            </label>
+        </li>
+    </ul>
 
     @endcomponent
       
@@ -67,44 +78,37 @@
       @include('portal.ninja2020.gateways.includes.pay_now', ['id' => 'pay-now'])
     </div>
 
-    @include('portal.ninja2020.gateways.includes.pay_now', ['id' => 'pay-now-token'])
-    
+    <div id="pay-now-token--container" class="hidden">
+        @include('portal.ninja2020.gateways.includes.pay_now', ['id' => 'pay-now-token'])
+    </div>
+
 @endsection
 
 @section('gateway_footer')
 @endsection
 
+
 @push('footer')
-<link  rel="stylesheet" type="text/css" href=https://www.paypalobjects.com/webstatic/en_US/developer/docs/css/cardfields.css />
+<script type="application/json" fncls="fnparams-dede7cc5-15fd-4c75-a9f4-36c430ee3a99">
+    {
+        "f":"{{ $guid }}",
+        "s":"{{ $identifier }}"        
+    }
+</script>
+
+<script type="text/javascript" src="https://c.paypal.com/da/r/fb.js"></script>
 
 @if(isset($merchantId))
-<script src="https://www.paypal.com/sdk/js?client-id={!! $client_id !!}&merchantId={!! $merchantId !!}&components=card-fields"  data-partner-attribution-id="invoiceninja_SP_PPCP"></script>
+<script src="https://www.paypal.com/sdk/js?client-id={!! $client_id !!}&merchant-id={!! $merchantId !!}&components=card-fields" data-partner-attribution-id="invoiceninja_SP_PPCP"></script>
 @else
-<script src="https://www.paypal.com/sdk/js?client-id={!! $client_id !!}&components=card-fields"  data-partner-attribution-id="invoiceninja_SP_PPCP"></script>
+<script src="https://www.paypal.com/sdk/js?client-id={!! $client_id !!}&components=card-fields" data-partner-attribution-id="invoiceninja_SP_PPCP"></script>
 @endif
 <script>
 
     const clientId = "{{ $client_id }}";
     const orderId = "{!! $order_id !!}";
 
-    const cardStyle = {
-        'input': {
-            'font-size': '16px',
-            'font-family': 'courier, monospace',
-            'font-weight': 'lighter',
-            'color': '#ccc',
-        },
-        '.invalid': {
-            'color': 'purple',
-        },
-        '.expcvv': {
-          'display': 'grid',
-          'grid-template-columns': 'auto'
-        }
-    };
-
     const cardField = paypal.CardFields({
-        // style: cardStyle,
         client: clientId,
         createOrder: function(data, actions) {
             return orderId;  
@@ -119,12 +123,10 @@
 
                 document.getElementById('errors').textContent = `Sorry, your transaction could not be processed, Please try a different payment method.`;
                 document.getElementById('errors').hidden = false;
-
                 return;
               }
 
             }
-
 
             let storeCard = document.querySelector('input[name=token-billing-checkbox]:checked');
 
@@ -146,10 +148,15 @@
                 body: formData,
             })
             .then(response => {
+           
                 if (!response.ok) {
-                    throw new Error('Network response was not ok ' + response.statusText);
+                    return response.json().then(errorData => {
+                        throw new Error(errorData.message);
+                    });
                 }
+                
                 return response.json();
+            
             })
             .then(data => {
 
@@ -169,18 +176,26 @@
             })
             .catch(error => {
                 console.error('Error:', error);
+                
+                document.getElementById('errors').textContent = `Sorry, your transaction could not be processed...\n\n${error.message}`;
+                document.getElementById('errors').hidden = false;
+
+                document.getElementById('pay-now').disabled = false;
+                document.querySelector('#pay-now > svg').classList.add('hidden');
+                document.querySelector('#pay-now > span').classList.remove('hidden');
+                
             });
 
         },
-        onCancel: function() {
-
-            window.location.href = "/client/invoices/";
-        },
         onError: function(error) {
+            if (error && typeof error === 'object' && error.details) {
+                throw error;
+            }
 
-            document.getElementById('errors').textContent = `Sorry, your transaction could not be processed...\n\n${error.message}`;
-            document.getElementById('errors').hidden = false;
-
+            throw new Error(typeof error === 'string' ? error : JSON.stringify(error));
+        },
+        onCancel: function() {
+            window.location.href = "/client/invoices/{{ $invoice_hash }}";
         },
         onClick: function (){
            
@@ -188,16 +203,11 @@
     
     });
 
-  // Render each field after checking for eligibility
   if (cardField.isEligible()) {
       
-    //   const nameField = cardField.NameField();
-    //   nameField.render("#card-name-field-container");
-
       const numberField = cardField.NumberField({
         inputEvents: {
             onChange: (event)=> {
-                // console.log("returns a stateObject", event);
             }
         },
       });
@@ -207,7 +217,6 @@
       const cvvField = cardField.CVVField({
         inputEvents: {
             onChange: (event)=> {
-                // console.log("returns a stateObject", event);
             }
         },
       });
@@ -216,7 +225,6 @@
       const expiryField = cardField.ExpiryField({
         inputEvents: {
             onChange: (event)=> {
-                // console.log("returns a stateObject", event);
             }
         },
       });
@@ -235,24 +243,14 @@
 
         document.querySelector('#pay-now > span').classList.add('hidden');
 
-        cardField.submit().then((response) => {
+        cardField.submit().then(() => {
 
         }).catch((error) => {
-
             document.getElementById('pay-now').disabled = false;
             document.querySelector('#pay-now > svg').classList.add('hidden');
             document.querySelector('#pay-now > span').classList.remove('hidden');
-            
-            if(error.message == 'INVALID_NUMBER'){
-              document.getElementById('errors').textContent = "{{ ctrans('texts.invalid_card_number') }}";
-            }
-            else if(error.message == 'INVALID_CVV') {
-              document.getElementById('errors').textContent = "{{ ctrans('texts.invalid_cvv') }}";
-            }
-            else if(error.message == 'INVALID_EXPIRY') {
-              document.getElementById('errors').textContent = "{{ ctrans('texts.invalid_cvv') }}";
-            }
 
+            document.getElementById('errors').textContent = resolveCardFieldErrorMessage(error);
             document.getElementById('errors').hidden = false;
 
         });
@@ -263,6 +261,102 @@
   else {
 
   }
+
+    function handle422Error(errorData) {
+        const errorDetails = errorData?.details || [];
+        return errorDetails[0] ?? null;
+    }
+
+    function parseError(error)
+    {
+        if (error && typeof error === 'object' && error.details) {
+            return error;
+        }
+
+        const errorMessage = typeof error === 'string'
+            ? error
+            : (typeof error?.message === 'string' ? error.message : String(error ?? ''));
+
+        try {
+            const parsed = JSON.parse(errorMessage);
+            if (parsed && typeof parsed === 'object') {
+                return parsed;
+            }
+        } catch (e) {
+        }
+
+        const startIndex = errorMessage.indexOf('{');
+        const endIndex = errorMessage.lastIndexOf('}');
+
+        if (startIndex !== -1 && endIndex !== -1 && endIndex > startIndex) {
+            try {
+                return JSON.parse(errorMessage.substring(startIndex, endIndex + 1));
+            } catch (e) {
+            }
+        }
+
+        return null;
+    }
+
+    function isPayPalTechnicalErrorLabel(value)
+    {
+        return typeof value === 'string'
+            && ['UNPROCESSABLE_ENTITY', 'INTERNAL_SERVER_ERROR', 'INVALID_REQUEST'].includes(value.trim());
+    }
+
+    function isCardNumberPayPalError(detail)
+    {
+        if (!detail) {
+            return false;
+        }
+
+        const field = detail.field ?? '';
+        const issue = detail.issue ?? '';
+        const description = detail.description ?? '';
+
+        return field.includes('/payment_source/card/number')
+            || /invalid card number|card number/i.test(description)
+            || /CARD.*NUMBER|INVALID.*NUMBER|VALIDATION_ERROR/i.test(issue);
+    }
+
+    function resolveCardFieldErrorMessage(error)
+    {
+        if (error?.message === 'INVALID_NUMBER') {
+            return "{{ ctrans('texts.invalid_card_number') }}";
+        }
+
+        if (error?.message === 'INVALID_CVV' || error?.message === 'INVALID_EXPIRY') {
+            return "{{ ctrans('texts.invalid_cvv') }}";
+        }
+
+        const parsed = parseError(error);
+        const detail = handle422Error(parsed);
+
+        if (isCardNumberPayPalError(detail)) {
+            return "{{ ctrans('texts.invalid_card_number') }}";
+        }
+
+        if (detail?.description && !isPayPalTechnicalErrorLabel(detail.description)) {
+            return detail.description;
+        }
+
+        if (
+            isPayPalTechnicalErrorLabel(parsed?.name)
+            || isPayPalTechnicalErrorLabel(error?.message)
+        ) {
+            return "{{ ctrans('texts.invalid_card_number') }}";
+        }
+
+        if (typeof error?.message === 'string' && error.message.length > 0) {
+            const firstLine = error.message.split('\n')[0];
+
+            if (!isPayPalTechnicalErrorLabel(firstLine)) {
+                return firstLine;
+            }
+        }
+
+        return "{{ ctrans('texts.payment_failed') }}";
+    }
 
 </script>
 
@@ -277,7 +371,7 @@
           document
               .getElementById('checkout-form').classList.add('hidden');
         document
-              .getElementById('pay-now-token').classList.remove('hidden');
+              .getElementById('pay-now-token--container').classList.remove('hidden');
 
           document
               .getElementById('token').value = e.target.dataset.token;
@@ -288,14 +382,13 @@
   if (payWithCreditCardToggle) {
       payWithCreditCardToggle
           .addEventListener('click', () => {
-            console.log("Cc");
               document
                   .getElementById('save-card--container').style.display = 'grid';
              document
               .getElementById('checkout-form').classList.remove('hidden');
 
             document
-              .getElementById('pay-now-token').classList.add('hidden');
+              .getElementById('pay-now-token--container').classList.add('hidden');
 
               document
                   .getElementById('token').value = null;
@@ -311,6 +404,18 @@
             if (token) {
                 document.getElementById("token").value = token.value;
             }
+
+                document.getElementById('errors').textContent = '';
+                document.getElementById('errors').hidden = true;
+                
+                document.getElementById('pay-now-token').disabled = true;
+                document.querySelector('#pay-now-token > svg').classList.remove('hidden');
+                document.querySelector('#pay-now-token > svg').classList.add('justify-center');
+
+                document.querySelector('#pay-now-token > svg').classList.add('mx-auto');
+                document.querySelector('#pay-now-token > svg').classList.add('item-center');
+
+                document.querySelector('#pay-now-token > span').classList.add('hidden');
 
             document.getElementById("gateway_response").value = JSON.stringify( {token: token.value, orderID: "{!! $order_id !!}"} );
             document.getElementById("server_response").submit();

@@ -1,10 +1,11 @@
 <?php
+
 /**
  * Invoice Ninja (https://invoiceninja.com).
  *
  * @link https://github.com/invoiceninja/invoiceninja source repository
  *
- * @copyright Copyright (c) 2024. Invoice Ninja LLC (https://invoiceninja.com)
+ * @copyright Copyright (c) 2026. Invoice Ninja LLC (https://invoiceninja.com)
  *
  * @license https://www.elastic.co/licensing/elastic-license
  */
@@ -98,14 +99,17 @@ class Response
     public float $district5UseTax = 0;
     /* US SPECIFIC TAX CODES */
 
+    public string $nexus = "";
+    public string $country_nexus = "";
+
     public string $originDestination = "D"; // defines if the client origin is the locale where the tax is remitted to
 
     public function __construct($data = null)
     {
 
-        if($data) {
+        if ($data) {
 
-            foreach($data as $key => $value) {
+            foreach ($data as $key => $value) {
                 $this->{$key} = $value;
             }
 

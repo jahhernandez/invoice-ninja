@@ -1,31 +1,90 @@
 <!DOCTYPE html>
-<html data-report-errors="{{ $report_errors }}" data-rc="{{ $rc }}" data-user-agent="{{ $user_agent }}" data-login="{{ $login }}">
-<head>
-    <!-- Source: https://github.com/invoiceninja/invoiceninja -->
-    <!-- Version: {{ config('ninja.app_version') }} -->
-  <meta charset="UTF-8">
-  <title>{{ config('ninja.app_name') }}</title>
-  <meta name="google-signin-client_id" content="{{ config('services.google.client_id') }}">
+<html lang="en" class="h-full">
+  <head>
+    <title>Invoice Ninja</title>
 
-  @include('react.head')
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#000000" />
+    <meta
+      name="description"
+      content="Leading free invoice generator for freelancers and small businesses. Invoice clients, accept payments, track expenses &amp; time billable-tasks online."
+    />
 
-</head>
+    <script>
+      if (
+        window.matchMedia &&
+        window.matchMedia('(prefers-color-scheme: dark)').matches
+      ) {
+        document.documentElement.style.backgroundColor = '#18181b';
+      }
+    </script>
 
-<body class="h-full">
-  <noscript>You need to enable JavaScript to run this app.</noscript>
-  <div id="root"></div>
-  
-</body>
+    <link rel="stylesheet" href="/rsms/inter.css" />
 
-<!--
+    <link rel="icon" href="/favicon.ico" />
+    <link rel="apple-touch-icon" href="/logo180.png" />
+    <link rel="manifest" href="/manifest.json" />
+    <script type="module" crossorigin src="/bundle.BnwqPERu.js"></script>
+    <link rel="modulepreload" crossorigin href="/rolldown-runtime-CNC7AqOf.js">
+    <link rel="modulepreload" crossorigin href="/react-Augu_vA3.js">
+    <link rel="modulepreload" crossorigin href="/jsx-runtime-CTknu7_t.js">
+    <link rel="modulepreload" crossorigin href="/dayjs.min-wxmwWtJd.js">
+    <link rel="modulepreload" crossorigin href="/route-U8GxvC4E.js">
+    <link rel="modulepreload" crossorigin href="/colors-0MwZ3ngc.js">
+    <link rel="modulepreload" crossorigin href="/mutation-CCZBHw3v.js">
+    <link rel="modulepreload" crossorigin href="/dist-B0uS0W1R.js">
+    <link rel="modulepreload" crossorigin href="/forms-2V6SBcK1.js">
+    <link rel="modulepreload" crossorigin href="/LanguageSelector-BkO6JhQt.js">
+    <link rel="modulepreload" crossorigin href="/active-element-history-D9ZUk-AC.js">
+    <link rel="modulepreload" crossorigin href="/Modal-kdS0-VDK.js">
+    <link rel="modulepreload" crossorigin href="/PasswordConfirmation-dSyc7wge.js">
+    <link rel="modulepreload" crossorigin href="/useHasPermission-C9YN0wT_.js">
+    <link rel="modulepreload" crossorigin href="/useCurrentSettingsLevel-kHwQpgYJ.js">
+    <link rel="modulepreload" crossorigin href="/useInvoiceEditor-4B8_z773.js">
+    <link rel="modulepreload" crossorigin href="/company-users-BPqwfjhX.js">
+    <link rel="modulepreload" crossorigin href="/user-B3U1sH80.js">
+    <link rel="modulepreload" crossorigin href="/store-CPBYgOhs.js">
+    <link rel="modulepreload" crossorigin href="/useLogo-HUDf9t-D.js">
+    <link rel="modulepreload" crossorigin href="/preload-helper-Czpn1I53.js">
+    <link rel="modulepreload" crossorigin href="/useClickAway-CjSTRsLQ.js">
+    <link rel="modulepreload" crossorigin href="/cards-gMOGRPdv.js">
+    <link rel="modulepreload" crossorigin href="/lock-DJaNEJao.js">
+    <link rel="modulepreload" crossorigin href="/useDebounce-n27W-x2R.js">
+    <link rel="modulepreload" crossorigin href="/Check-BohSRkVM.js">
+    <link rel="modulepreload" crossorigin href="/Plus-DnBF1UIP.js">
+    <link rel="modulepreload" crossorigin href="/Combobox-C8Y_r_5P.js">
+    <link rel="modulepreload" crossorigin href="/usePreferences-Cx6MdfYQ.js">
+    <link rel="modulepreload" crossorigin href="/useCurrencies-DA5HE0YT.js">
+    <link rel="modulepreload" crossorigin href="/CurrencySelector-Dcfzlkak.js">
+    <link rel="modulepreload" crossorigin href="/payment-terms-CDFAE__5.js">
+    <link rel="modulepreload" crossorigin href="/data-table-D7hxDj6N.js">
+    <link rel="modulepreload" crossorigin href="/clients-C0y7uUNf.js">
+    <link rel="modulepreload" crossorigin href="/useCountries-Dixm1ZI2.js">
+    <link rel="modulepreload" crossorigin href="/CountrySelector-7oLL3Lou.js">
+    <link rel="modulepreload" crossorigin href="/NumberInputField-HpeZwv0f.js">
+    <link rel="modulepreload" crossorigin href="/group-settings-Bqq2GoxZ.js">
+    <link rel="modulepreload" crossorigin href="/TabGroup-C0-OEr24.js">
+    <link rel="modulepreload" crossorigin href="/ClientCreate-hDFuXsup.js">
+    <link rel="modulepreload" crossorigin href="/useTitle-BUs7Fu5O.js">
+    <link rel="modulepreload" crossorigin href="/index.esm-D0e26ydA.js">
+    <link rel="modulepreload" crossorigin href="/formik.esm-7_ZHVK4W.js">
+    <link rel="modulepreload" crossorigin href="/docuninja-BYwgHK_1.js">
+    <link rel="modulepreload" crossorigin href="/dist-Dg3gyr1N.js">
+    <link rel="modulepreload" crossorigin href="/useRefreshCompanyUsers-BJOAqNOj.js">
+    <link rel="modulepreload" crossorigin href="/dateRange-DQIlr_0r.js">
+    <link rel="modulepreload" crossorigin href="/useInjectCompanyChanges-D8AppfG6.js">
+    <link rel="modulepreload" crossorigin href="/useHandleCurrentCompanyChange-CUIizKLC.js">
+    <link rel="modulepreload" crossorigin href="/CloudUpload-tlacFUNd.js">
+    <link rel="modulepreload" crossorigin href="/settings-BYwgHK_1.js">
+    <link rel="modulepreload" crossorigin href="/logo-image-OsA5DZps.js">
+    <link rel="modulepreload" crossorigin href="/Trash-B6digZTq.js">
+    <link rel="modulepreload" crossorigin href="/src-CsTuOu82.js">
+    <link rel="stylesheet" crossorigin href="/src-DfBWtZJX.css">
+  </head>
 
-If you are reading this, there is a fair change that the react application has not loaded for you. There are a couple of solutions:
-
-1. Download the release file from https://github.com/invoiceninja/invoiceninja and overwrite your current installation.
-2. Switch back to the Flutter application by editing the database, you can do this with the following SQL
-
-UPDATE accounts SET
-set_react_as_default_ap = 0;
-
--->
+  <body class="h-full">
+    <noscript>You need to enable JavaScript to run this app.</noscript>
+    <div id="root"></div>
+  </body>
 </html>

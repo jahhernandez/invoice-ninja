@@ -1,10 +1,11 @@
 <?php
+
 /**
  * Invoice Ninja (https://invoiceninja.com).
  *
  * @link https://github.com/invoiceninja/invoiceninja source repository
  *
- * @copyright Copyright (c) 2024. Invoice Ninja LLC (https://invoiceninja.com)
+ * @copyright Copyright (c) 2026. Invoice Ninja LLC (https://invoiceninja.com)
  *
  * @license https://www.elastic.co/licensing/elastic-license
  */
@@ -47,7 +48,7 @@ class DownloadCredits extends Mailable
             ->view('email.admin.download_credits', [
                 'url' => $this->file_path,
                 'logo' => $this->company->present()->logo,
-                'whitelabel' => $this->company->account->isPaid() ? true : false,
+                'whitelabel' => true,
                 'settings' => $this->company->settings,
                 'greeting' => $this->company->present()->name(),
             ]);

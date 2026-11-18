@@ -1,4 +1,5 @@
 <?php
+
 /**
  * Invoice Ninja (https://invoiceninja.com).
  *
@@ -21,33 +22,27 @@ use Illuminate\Support\Facades\Session;
 use Illuminate\Foundation\Testing\DatabaseTransactions;
 
 /**
- * @test
- * @covers App\Http\Controllers\DocumentController
+ *
+ *  App\Http\Controllers\DocumentController
  */
 class DocumentsApiTest extends TestCase
 {
     use MakesHash;
     use DatabaseTransactions;
     use MockAccountData;
-
-    protected $faker;
-
-    protected function setUp() :void
+    protected function setUp(): void
     {
         parent::setUp();
 
         $this->makeTestData();
 
         Session::start();
-
-        $this->faker = \Faker\Factory::create();
-
         Model::reguard();
     }
 
     public function testDocumentFilters()
     {
-        Document::query()->withTrashed()->cursor()->each(function ($d){
+        Document::query()->withTrashed()->cursor()->each(function ($d) {
             $d->forceDelete();
         });
 
@@ -71,9 +66,42 @@ class DocumentsApiTest extends TestCase
     }
 
 
+    public function testDocumentNamesItsParentRecord()
+    {
+        $parents = [
+            'invoice' => $this->invoice,
+            'recurring_invoice' => $this->recurring_invoice,
+            'client' => $this->client,
+        ];
+
+        $documents = [];
+
+        foreach ($parents as $type => $parent) {
+            $document = Document::factory()->create([
+                'company_id' => $this->company->id,
+                'user_id' => $this->user->id,
+            ]);
+
+            $parent->documents()->save($document);
+            $documents[$type] = $document;
+
+            $response = $this->withHeaders([
+                'X-API-SECRET' => config('ninja.api_secret'),
+                'X-API-TOKEN' => $this->token,
+            ])->get("/api/v1/documents/{$document->hashed_id}");
+
+            $response->assertStatus(200);
+            $response->assertJsonPath('data.documentable_type', $type);
+            $response->assertJsonPath('data.documentable_id', $parent->hashed_id);
+        }
+
+        // Invoices are stored under their morph alias, so the alias path above really ran.
+        $this->assertSame('invoices', $documents['invoice']->fresh()->documentable_type);
+    }
+
     public function testDocumentFilters2()
     {
-        Document::query()->withTrashed()->cursor()->each(function ($d){
+        Document::query()->withTrashed()->cursor()->each(function ($d) {
             $d->forceDelete();
         });
 
@@ -98,7 +126,7 @@ class DocumentsApiTest extends TestCase
 
     public function testDocumentFilters3()
     {
-        Document::query()->withTrashed()->cursor()->each(function ($d){
+        Document::query()->withTrashed()->cursor()->each(function ($d) {
             $d->forceDelete();
         });
 
@@ -114,9 +142,9 @@ class DocumentsApiTest extends TestCase
             'user_id' => $this->user->id,
             'client_id' => $this->client->id,
         ]);
-        
+
         $t->documents()->save($d);
-        
+
         $dd = Document::factory()->create([
             'company_id' => $this->company->id,
             'user_id' => $this->user->id,
@@ -141,7 +169,7 @@ class DocumentsApiTest extends TestCase
         ])->get("/api/v1/documents?client_id={$this->client->hashed_id}&filter=craycray");
 
         $response->assertStatus(200);
-        
+
         $this->assertCount(0, $response->json()['data']);
 
         $response = $this->withHeaders([
@@ -180,6 +208,8 @@ class DocumentsApiTest extends TestCase
             'company_id' => $this->company->id,
             'user_id' => $this->user->id,
         ]);
+
+        $this->invoice->documents()->save($d);
 
         $response = $this->withHeaders([
             'X-API-SECRET' => config('ninja.api_secret'),
@@ -376,5 +406,40 @@ class DocumentsApiTest extends TestCase
         $response->assertStatus(200);
         $arr = $response->json();
         $this->assertArrayHasKey('documents', $arr['data'][0]);
+    }
+
+    public function testCompanyDocumentsFilter()
+    {
+        Document::query()->withTrashed()->cursor()->each(fn($d) => $d->forceDelete());
+
+        $companyDoc = Document::factory()->create([
+            'company_id' => $this->company->id,
+            'user_id' => $this->user->id,
+            'name' => 'company_only.pdf',
+            'type' => 'pdf',
+        ]);
+        $this->company->documents()->save($companyDoc);
+
+        $clientDoc = Document::factory()->create([
+            'company_id' => $this->company->id,
+            'user_id' => $this->user->id,
+            'name' => 'client_only.pdf',
+            'type' => 'pdf',
+        ]);
+        $this->client->documents()->save($clientDoc);
+
+        $response = $this->withHeaders(['X-API-TOKEN' => $this->token])
+            ->getJson('/api/v1/documents?company_documents=true&per_page=200')
+            ->assertStatus(200);
+        $ids = array_column($response->json('data'), 'id');
+        $this->assertContains($companyDoc->hashed_id, $ids);
+        $this->assertNotContains($clientDoc->hashed_id, $ids);
+
+        $response = $this->withHeaders(['X-API-TOKEN' => $this->token])
+            ->getJson('/api/v1/documents?company_documents=false&per_page=200')
+            ->assertStatus(200);
+        $ids = array_column($response->json('data'), 'id');
+        $this->assertContains($companyDoc->hashed_id, $ids);
+        $this->assertContains($clientDoc->hashed_id, $ids);
     }
 }

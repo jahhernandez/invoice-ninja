@@ -1,10 +1,11 @@
 <?php
+
 /**
  * Invoice Ninja (https://invoiceninja.com).
  *
  * @link https://github.com/invoiceninja/invoiceninja source repository
  *
- * @copyright Copyright (c) 2024. Invoice Ninja LLC (https://invoiceninja.com)
+ * @copyright Copyright (c) 2026. Invoice Ninja LLC (https://invoiceninja.com)
  *
  * @license https://www.elastic.co/licensing/elastic-license
  */
@@ -81,12 +82,10 @@ class CreateTestData extends Command
 
         $this->invoice_repo = new InvoiceRepository();
 
-        $this->info(date('r').' Running CreateTestData...');
+        $this->info(date('r') . ' Running CreateTestData...');
         $this->count = $this->argument('count');
 
         $this->info('Warming up cache');
-
-        $this->warmCache();
 
         $this->createSmallAccount();
         $this->createMediumAccount();
@@ -141,11 +140,11 @@ class CreateTestData extends Command
             'company_id' => $company->id,
         ]);
 
-        $this->info('Creating '.$this->count.' clients');
+        $this->info('Creating ' . $this->count . ' clients');
 
         for ($x = 0; $x < $this->count; $x++) {
             $z = $x + 1;
-            $this->info('Creating client # '.$z);
+            $this->info('Creating client # ' . $z);
 
             $this->createClient($company, $user);
         }
@@ -153,37 +152,37 @@ class CreateTestData extends Command
         for ($x = 0; $x < $this->count; $x++) {
             $client = $company->clients->random();
 
-            $this->info('creating invoice for client #'.$client->id);
+            $this->info('creating invoice for client #' . $client->id);
             $this->createInvoice($client);
 
             $client = $company->clients->random();
 
-            $this->info('creating credit for client #'.$client->id);
+            $this->info('creating credit for client #' . $client->id);
             $this->createCredit($client);
 
             $client = $company->clients->random();
 
-            $this->info('creating quote for client #'.$client->id);
+            $this->info('creating quote for client #' . $client->id);
             $this->createQuote($client);
 
             $client = $company->clients->random();
 
-            $this->info('creating expense for client #'.$client->id);
+            $this->info('creating expense for client #' . $client->id);
             $this->createExpense($client);
 
             $client = $company->clients->random();
 
-            $this->info('creating vendor for client #'.$client->id);
+            $this->info('creating vendor for client #' . $client->id);
             $this->createVendor($client);
 
             $client = $company->clients->random();
 
-            $this->info('creating task for client #'.$client->id);
+            $this->info('creating task for client #' . $client->id);
             $this->createTask($client);
 
             $client = $company->clients->random();
 
-            $this->info('creating project for client #'.$client->id);
+            $this->info('creating project for client #' . $client->id);
             $this->createProject($client);
         }
     }
@@ -237,11 +236,11 @@ class CreateTestData extends Command
 
         $this->count = $this->count * 10;
 
-        $this->info('Creating '.$this->count.' clients');
+        $this->info('Creating ' . $this->count . ' clients');
 
         for ($x = 0; $x < $this->count; $x++) {
             $z = $x + 1;
-            $this->info('Creating client # '.$z);
+            $this->info('Creating client # ' . $z);
 
             $this->createClient($company, $user);
         }
@@ -249,37 +248,37 @@ class CreateTestData extends Command
         for ($x = 0; $x < $this->count * 100; $x++) {
             $client = $company->clients->random();
 
-            $this->info('creating invoice for client #'.$client->id);
+            $this->info('creating invoice for client #' . $client->id);
             $this->createInvoice($client);
 
             $client = $company->clients->random();
 
-            $this->info('creating credit for client #'.$client->id);
+            $this->info('creating credit for client #' . $client->id);
             $this->createCredit($client);
 
             $client = $company->clients->random();
 
-            $this->info('creating quote for client #'.$client->id);
+            $this->info('creating quote for client #' . $client->id);
             $this->createQuote($client);
 
             $client = $company->clients->random();
 
-            $this->info('creating expense for client #'.$client->id);
+            $this->info('creating expense for client #' . $client->id);
             $this->createExpense($client);
 
             $client = $company->clients->random();
 
-            $this->info('creating vendor for client #'.$client->id);
+            $this->info('creating vendor for client #' . $client->id);
             $this->createVendor($client);
 
             $client = $company->clients->random();
 
-            $this->info('creating task for client #'.$client->id);
+            $this->info('creating task for client #' . $client->id);
             $this->createTask($client);
 
             $client = $company->clients->random();
 
-            $this->info('creating project for client #'.$client->id);
+            $this->info('creating project for client #' . $client->id);
             $this->createProject($client);
         }
     }
@@ -334,11 +333,11 @@ class CreateTestData extends Command
 
         $this->count = $this->count * 10;
 
-        $this->info('Creating '.$this->count.' clients');
+        $this->info('Creating ' . $this->count . ' clients');
 
         for ($x = 0; $x < $this->count * 100; $x++) {
             $z = $x + 1;
-            $this->info('Creating client # '.$z);
+            $this->info('Creating client # ' . $z);
 
             $this->createClient($company, $user);
         }
@@ -346,37 +345,37 @@ class CreateTestData extends Command
         for ($x = 0; $x < $this->count; $x++) {
             $client = $company->clients->random();
 
-            $this->info('creating invoice for client #'.$client->id);
+            $this->info('creating invoice for client #' . $client->id);
             $this->createInvoice($client);
 
             $client = $company->clients->random();
 
-            $this->info('creating credit for client #'.$client->id);
+            $this->info('creating credit for client #' . $client->id);
             $this->createCredit($client);
 
             $client = $company->clients->random();
 
-            $this->info('creating quote for client #'.$client->id);
+            $this->info('creating quote for client #' . $client->id);
             $this->createQuote($client);
 
             $client = $company->clients->random();
 
-            $this->info('creating expense for client #'.$client->id);
+            $this->info('creating expense for client #' . $client->id);
             $this->createExpense($client);
 
             $client = $company->clients->random();
 
-            $this->info('creating vendor for client #'.$client->id);
+            $this->info('creating vendor for client #' . $client->id);
             $this->createVendor($client);
 
             $client = $company->clients->random();
 
-            $this->info('creating task for client #'.$client->id);
+            $this->info('creating task for client #' . $client->id);
             $this->createTask($client);
 
             $client = $company->clients->random();
 
-            $this->info('creating project for client #'.$client->id);
+            $this->info('creating project for client #' . $client->id);
             $this->createProject($client);
         }
     }
@@ -673,31 +672,4 @@ class CreateTestData extends Command
         return $line_items;
     }
 
-    private function warmCache()
-    {
-        /* Warm up the cache !*/
-        $cached_tables = config('ninja.cached_tables');
-
-        foreach ($cached_tables as $name => $class) {
-            if (! Cache::has($name)) {
-                // check that the table exists in case the migration is pending
-                if (! Schema::hasTable((new $class())->getTable())) {
-                    continue;
-                }
-                if ($name == 'payment_terms') {
-                    $orderBy = 'num_days';
-                } elseif ($name == 'fonts') {
-                    $orderBy = 'sort_order';
-                } elseif (in_array($name, ['currencies', 'industries', 'languages', 'countries', 'banks'])) {
-                    $orderBy = 'name';
-                } else {
-                    $orderBy = 'id';
-                }
-                $tableData = $class::orderBy($orderBy)->get();
-                if ($tableData->count()) {
-                    Cache::forever($name, $tableData);
-                }
-            }
-        }
-    }
 }

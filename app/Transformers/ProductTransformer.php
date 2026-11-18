@@ -1,10 +1,11 @@
 <?php
+
 /**
  * Invoice Ninja (https://invoiceninja.com).
  *
  * @link https://github.com/invoiceninja/invoiceninja source repository
  *
- * @copyright Copyright (c) 2024. Invoice Ninja LLC (https://invoiceninja.com)
+ * @copyright Copyright (c) 2026. Invoice Ninja LLC (https://invoiceninja.com)
  *
  * @license https://www.elastic.co/licensing/elastic-license
  */
@@ -36,7 +37,7 @@ class ProductTransformer extends EntityTransformer
     /**
      * @param Product $product
      *
-     * @return \Illuminate\Support\Collection
+     * @return \Illuminate\Http\Response|\Illuminate\Http\JsonResponse
      */
     public function includeUser(Product $product)
     {
@@ -48,7 +49,7 @@ class ProductTransformer extends EntityTransformer
     /**
      * @param Product $product
      *
-     * @return \Illuminate\Support\Collection
+     * @return \Illuminate\Http\Response|\Illuminate\Http\JsonResponse
      */
     public function includeCompany(Product $product)
     {
@@ -74,7 +75,7 @@ class ProductTransformer extends EntityTransformer
             'notes' => $product->notes ?: '',
             'cost' => (float) $product->cost ?: 0,
             'price' => (float) $product->price ?: 0,
-            'quantity' => is_numeric($product->quantity) ? (float) $product->quantity : (float) 1.0,
+            'quantity' => is_numeric($product->quantity) ? (float) $product->quantity : (float) 1.0, //@phpstan-ignore-line
             'tax_name1' => $product->tax_name1 ?: '',
             'tax_rate1' => (float) $product->tax_rate1 ?: 0,
             'tax_name2' => $product->tax_name2 ?: '',
@@ -95,6 +96,8 @@ class ProductTransformer extends EntityTransformer
             'max_quantity' => (int) $product->max_quantity,
             'product_image' => (string) $product->product_image ?: '',
             'tax_id' => (string) $product->tax_id ?: '1',
+            'income_account_id' => (string) $product->income_account_id ?: '',
+            'tags' => $this->transformTags($product),
         ];
     }
 }

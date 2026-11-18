@@ -5,7 +5,7 @@
  *
  * @link https://github.com/invoiceninja/invoiceninja source repository
  *
- * @copyright Copyright (c) 2024. Invoice Ninja LLC (https://invoiceninja.com)
+ * @copyright Copyright (c) 2026. Invoice Ninja LLC (https://invoiceninja.com)
  *
  * @license https://www.elastic.co/licensing/elastic-license
  */
@@ -50,7 +50,7 @@ class Charge
     {
         if ($cgt->gateway_type_id == GatewayType::BANK_TRANSFER) {
             return (new ACH($this->stripe))->tokenBilling($cgt, $payment_hash);
-        } elseif($cgt->gateway_type_id == GatewayType::ACSS) {
+        } elseif ($cgt->gateway_type_id == GatewayType::ACSS) {
             return (new ACSS($this->stripe))->tokenBilling($cgt, $payment_hash);
         }
 
@@ -81,6 +81,9 @@ class Charge
             }
             if ($cgt->gateway_type_id == GatewayType::BACS) {
                 $data['payment_method_types'] = ['bacs_debit'];
+            }
+            if ($cgt->gateway_type_id == GatewayType::CREDIT_CARD) {
+                $data['payment_method_types'] = ["card","link"];
             }
 
             /* Should improve token billing with client not present */
@@ -159,7 +162,7 @@ class Charge
         $data = [
             'gateway_type_id' => $cgt->gateway_type_id,
             'payment_type' => $this->transformPaymentTypeToConstant($payment_method_type),
-            'transaction_reference' => isset($response->latest_charge) ? $response->latest_charge : $response->charges->data[0]->id,
+            'transaction_reference' => $response->latest_charge ?? $response->charges->data[0]->id,
             'amount' => $amount,
         ];
 

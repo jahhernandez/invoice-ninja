@@ -1,10 +1,11 @@
 <?php
+
 /**
  * Invoice Ninja (https://invoiceninja.com).
  *
  * @link https://github.com/invoiceninja/invoiceninja source repository
  *
- * @copyright Copyright (c) 2024. Invoice Ninja LLC (https://invoiceninja.com)
+ * @copyright Copyright (c) 2026. Invoice Ninja LLC (https://invoiceninja.com)
  *
  * @license https://www.elastic.co/licensing/elastic-license
  */
@@ -32,9 +33,7 @@ class PaymentFailureObject
      * @param $company
      * @param $amount
      */
-    public function __construct(public Client $client, public string $error, public Company $company, public float $amount, public ?PaymentHash $payment_hash, protected bool $use_react_url)
-    {
-    }
+    public function __construct(public Client $client, public string $error, public Company $company, public float $amount, public ?PaymentHash $payment_hash) {}
 
     public function build()
     {
@@ -53,6 +52,20 @@ class PaymentFailureObject
         $mail_obj->markdown = 'email.admin.generic';
         $mail_obj->tag = $this->company->company_key;
         $mail_obj->text_view = 'email.template.text';
+
+
+        $bccs = $this->client->getSetting('bcc_email');
+
+        if (strlen($bccs) > 1) {
+            if (\App\Utils\Ninja::isHosted() && $this->company->account->isPaid()) {
+                $mail_obj->bcc = explode(',', str_replace(' ', '', $bccs));
+            }
+
+            if (Ninja::isSelfHost()) {
+                $mail_obj->bcc = explode(',', str_replace(' ', '', $bccs));
+            }
+        }
+
 
         return $mail_obj;
     }
@@ -77,10 +90,10 @@ class PaymentFailureObject
         $content = ctrans(
             'texts.notification_invoice_payment_failed',
             [
-                    'client' => $this->client->present()->name(),
-                    'invoice' => $this->getDescription(),
-                    'amount' => Number::formatMoney($this->amount, $this->client),
-                ]
+                'client' => $this->client->present()->name(),
+                'invoice' => $this->getDescription(),
+                'amount' => Number::formatMoney($this->amount, $this->client),
+            ]
         );
 
         $data = [
@@ -94,9 +107,9 @@ class PaymentFailureObject
             'signature' => $signature,
             'logo' => $this->company->present()->logo(),
             'settings' => $this->client->getMergedSettings(),
-            'whitelabel' => $this->company->account->isPaid() ? true : false,
-            'url' => $this->client->portalUrl($this->use_react_url),
-            'button' => $this->use_react_url ? ctrans('texts.view_client') : ctrans('texts.login'),
+            'whitelabel' => true,
+            'url' => $this->client->portalUrl(),
+            'button' => ctrans('texts.view_client'),
             'additional_info' => $this->error,
             'text_body' => $content,
             'template' => $this->company->account->isPremium() ? 'email.template.admin_premium' : 'email.template.admin',

@@ -1,10 +1,11 @@
 <?php
+
 /**
  * Invoice Ninja (https://invoiceninja.com).
  *
  * @link https://github.com/invoiceninja/invoiceninja source repository
  *
- * @copyright Copyright (c) 2024. Invoice Ninja LLC (https://invoiceninja.com)
+ * @copyright Copyright (c) 2026. Invoice Ninja LLC (https://invoiceninja.com)
  *
  * @license https://www.elastic.co/licensing/elastic-license
  */
@@ -23,9 +24,7 @@ class InvoiceFailedEmailNotification
 {
     use UserNotifies;
 
-    public function __construct()
-    {
-    }
+    public function __construct() {}
 
     /**
      * Handle the event.
@@ -37,7 +36,7 @@ class InvoiceFailedEmailNotification
     {
         MultiDB::setDb($event->company->db);
 
-        if(Cache::has("invoice_failed_email_notification_{$event->invitation->key}")) {
+        if (Cache::has("invoice_failed_email_notification_{$event->invitation->key}")) {
             return;
         }
 
@@ -52,7 +51,7 @@ class InvoiceFailedEmailNotification
                 unset($methods[$key]);
 
                 $nmo = new NinjaMailerObject();
-                $nmo->mailable = new NinjaMailer((new EntityFailedSendObject($event->invitation->withoutRelations(), 'invoice', $event->template, $event->message, $company_user->portalType()))->build());
+                $nmo->mailable = new NinjaMailer((new EntityFailedSendObject($event->invitation->withoutRelations(), 'invoice', $event->template, $event->message))->build());
                 $nmo->company = $invoice->company->withoutRelations();
                 $nmo->settings = $invoice->company->settings;
                 $nmo->to_user = $user;

@@ -1,10 +1,11 @@
 <?php
+
 /**
  * Invoice Ninja (https://invoiceninja.com).
  *
  * @link https://github.com/invoiceninja/invoiceninja source repository
  *
- * @copyright Copyright (c) 2024. Invoice Ninja LLC (https://invoiceninja.com)
+ * @copyright Copyright (c) 2026. Invoice Ninja LLC (https://invoiceninja.com)
  *
  * @license https://www.elastic.co/licensing/elastic-license
  */
@@ -26,37 +27,43 @@ class TriggeredActions extends AbstractService
 
     private bool $updated = false;
 
-    public function __construct(private Invoice $invoice, private Request $request)
-    {
-    }
+    public function __construct(private Invoice $invoice, private Request $request) {}
 
     public function run()
     {
+        if ($this->invoice->status_id == Invoice::STATUS_DRAFT &&$this->request->has('mark_sent') && $this->request->input('mark_sent') == 'true') {
+            $this->invoice = $this->invoice->service()->markSent()->save(); //update notification NOT sent
+            $this->updated = true;
+        }
+
         if ($this->request->has('auto_bill') && $this->request->input('auto_bill') == 'true') {
             try {
                 $this->invoice->service()->autoBill();
-            } catch(\Exception $e) {
-
-            } //update notification sends automatically for this.
+            } catch (\Exception $e) {
+                nlog("Exception:: TriggeredActions::" . $e->getMessage());
+            }
         }
 
         if ($this->request->has('paid') && $this->request->input('paid') == 'true') {
             $this->invoice = $this->invoice->service()->markPaid($this->request->input('reference'))->save(); //update notification sends automatically for this.
         }
 
-        if ($this->request->has('mark_sent') && $this->request->input('mark_sent') == 'true' && $this->invoice->status_id == Invoice::STATUS_DRAFT) {
-            $this->invoice = $this->invoice->service()->markSent()->save(); //update notification NOT sent
-            $this->updated = true;
-        }
-
-        if ($this->request->has('amount_paid') && is_numeric($this->request->input('amount_paid'))) {
+        if ($this->invoice->isPayable() && $this->request->has('amount_paid') && is_numeric($this->request->input('amount_paid'))) {
             $this->invoice = $this->invoice->service()->applyPaymentAmount($this->request->input('amount_paid'), $this->request->input('reference'))->save();
             // $this->updated = false;
         }
 
         if ($this->request->has('send_email') && $this->request->input('send_email') == 'true') {
             $this->invoice->service()->markSent()->save();
-            $this->sendEmail();
+
+            /** Check for VERIFACTU Sent Status */
+            if ($this->invoice->company->verifactuEnabled() && !$this->invoice->hasSentAeat()) {
+                $this->invoice->invitations()->update(['email_error' => 'primed']); // Flag the invitations as primed for AEAT submission
+                $this->invoice->service()->sendVerifactu();
+            } else {
+                $this->sendEmail();
+            }
+
             $this->updated = false;
         }
 
@@ -81,8 +88,26 @@ class TriggeredActions extends AbstractService
             $company->save();
         }
 
+        if ($this->request->has('retry_e_send') && $this->request->input('retry_e_send') == 'true' && strlen($this->invoice->backup->guid ?? '') == 0) {
+            if ($this->invoice->client->peppolSendingEnabled()) {
+                \App\Services\EDocument\Jobs\SendEDocument::dispatch(get_class($this->invoice), $this->invoice->id, $this->invoice->company->db);
+            } elseif ($this->invoice->company->verifactuEnabled()) {
+                $this->invoice->service()->sendVerifactu();
+            }
+        }
+
+        if ($this->request->has('redirect')) {
+
+            $redirectUrl = urldecode($this->request->input('redirect'));
+
+            if (filter_var($redirectUrl, FILTER_VALIDATE_URL)) {
+                $this->invoice->backup->redirect = $redirectUrl;
+                $this->invoice->saveQuietly();
+            }
+
+        }
+
         if ($this->updated) {
-            // event('eloquent.updated: App\Models\Invoice', $this->invoice);
             $this->invoice->sendEvent(Webhook::EVENT_SENT_INVOICE, "client");
 
         }
@@ -96,11 +121,11 @@ class TriggeredActions extends AbstractService
         $reminder_template = $this->invoice->calculateTemplate('invoice');
 
         $this->invoice->invitations->load('contact.client.country', 'invoice.client.country', 'invoice.company')->each(function ($invitation) use ($reminder_template) {
-            EmailEntity::dispatch($invitation, $this->invoice->company, $reminder_template);
+            EmailEntity::dispatch($invitation->withoutRelations(), $this->invoice->company->db, $reminder_template);
         });
 
         if ($this->invoice->invitations->count() > 0) {
-            event(new InvoiceWasEmailed($this->invoice->invitations->first(), $this->invoice->company, Ninja::eventVars(), 'invoice'));
+            $this->invoice->entityEmailEvent($this->invoice->invitations->first(), $reminder_template);
             $this->invoice->sendEvent(Webhook::EVENT_SENT_INVOICE, "client");
         }
     }

@@ -5,7 +5,7 @@
  *
  * @link https://github.com/invoiceninja/invoiceninja source repository
  *
- * @copyright Copyright (c) 2024. Invoice Ninja LLC (https://invoiceninja.com)
+ * @copyright Copyright (c) 2026. Invoice Ninja LLC (https://invoiceninja.com)
  *
  * @license https://www.elastic.co/licensing/elastic-license
  */
@@ -21,11 +21,13 @@ class PayNowDropdown extends Component
 
     public $methods;
 
-    public $company;
+    public $db;
+
+    public $company_id;
 
     public function mount()
     {
-        MultiDB::setDb($this->company->db);
+        MultiDB::setDb($this->db);
 
         $this->methods = auth()->guard('contact')->user()->client->service()->getPaymentMethods($this->total);
     }

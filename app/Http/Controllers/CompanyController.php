@@ -1,48 +1,52 @@
 <?php
+
 /**
  * Invoice Ninja (https://invoiceninja.com).
  *
  * @link https://github.com/invoiceninja/invoiceninja source repository
  *
- * @copyright Copyright (c) 2024. Invoice Ninja LLC (https://invoiceninja.com)
+ * @copyright Copyright (c) 2026. Invoice Ninja LLC (https://invoiceninja.com)
  *
  * @license https://www.elastic.co/licensing/elastic-license
  */
 
 namespace App\Http\Controllers;
 
-use App\DataMapper\Analytics\AccountDeleted;
+use App\Utils\Ninja;
+use App\Models\Account;
+use App\Models\Company;
+use App\Models\Invoice;
+use App\Models\CompanyUser;
+use Illuminate\Http\Response;
+use App\Utils\Traits\MakesHash;
+use App\Models\RecurringInvoice;
+use App\Utils\Traits\Uploadable;
+use App\Jobs\Mail\NinjaMailerJob;
 use App\DataMapper\CompanySettings;
-use App\Http\Requests\Company\CreateCompanyRequest;
-use App\Http\Requests\Company\DefaultCompanyRequest;
-use App\Http\Requests\Company\DestroyCompanyRequest;
+use App\Jobs\Company\CreateCompany;
+use App\Jobs\Company\CompanyTaxRate;
+use App\Jobs\Mail\NinjaMailerObject;
+use App\Mail\Company\CompanyDeleted;
+use App\Utils\Traits\SavesDocuments;
+use Turbo124\Beacon\Facades\LightLogs;
+use App\Repositories\CompanyRepository;
+use Illuminate\Support\Facades\Storage;
+use App\Jobs\Company\CreateCompanyToken;
+use App\Transformers\CompanyTransformer;
+use App\DataMapper\Analytics\AccountDeleted;
+use App\Transformers\AuthenticatedCompanyUserTransformer;
+use Illuminate\Foundation\Bus\DispatchesJobs;
+use App\Jobs\Company\CreateCompanyPaymentTerms;
+use App\Jobs\Company\CreateCompanyTaskStatuses;
 use App\Http\Requests\Company\EditCompanyRequest;
 use App\Http\Requests\Company\ShowCompanyRequest;
 use App\Http\Requests\Company\StoreCompanyRequest;
+use App\Http\Requests\Company\CreateCompanyRequest;
 use App\Http\Requests\Company\UpdateCompanyRequest;
 use App\Http\Requests\Company\UploadCompanyRequest;
-use App\Jobs\Company\CompanyTaxRate;
-use App\Jobs\Company\CreateCompany;
-use App\Jobs\Company\CreateCompanyPaymentTerms;
-use App\Jobs\Company\CreateCompanyTaskStatuses;
-use App\Jobs\Company\CreateCompanyToken;
-use App\Jobs\Mail\NinjaMailerJob;
-use App\Jobs\Mail\NinjaMailerObject;
-use App\Mail\Company\CompanyDeleted;
-use App\Models\Account;
-use App\Models\Company;
-use App\Models\CompanyUser;
-use App\Repositories\CompanyRepository;
-use App\Transformers\CompanyTransformer;
-use App\Transformers\CompanyUserTransformer;
-use App\Utils\Ninja;
-use App\Utils\Traits\MakesHash;
-use App\Utils\Traits\SavesDocuments;
-use App\Utils\Traits\Uploadable;
-use Illuminate\Foundation\Bus\DispatchesJobs;
-use Illuminate\Http\Response;
-use Illuminate\Support\Facades\Storage;
-use Turbo124\Beacon\Facades\LightLogs;
+use App\Http\Requests\Company\DefaultCompanyRequest;
+use App\Http\Requests\Company\DestroyCompanyRequest;
+use App\Services\EDocument\Standards\France\FranceScopeInvalidationRecorder;
 
 /**
  * Class CompanyController.
@@ -78,7 +82,7 @@ class CompanyController extends BaseController
     /**
      * Display a listing of the resource.
      *
-     * @return Response
+     * @return Response| \Illuminate\Http\JsonResponse
      *
      * @OA\Get(
      *      path="/api/v1/companies",
@@ -117,16 +121,26 @@ class CompanyController extends BaseController
         /** @var \App\Models\User $user */
         $user = auth()->user();
 
-        $companies = Company::whereAccountId($user->company()->account->id);
+        $companies = Company::where('account_id', $user->company()->account->id);
 
         return $this->listResponse($companies);
+    }
+
+    public function current()
+    {
+        /** @var \App\Models\User $user */
+        $user = auth()->user();
+
+        $company = Company::find($user->company()->id);
+
+        return $this->itemResponse($company);
     }
 
     /**
      * Show the form for creating a new resource.
      *
      * @param CreateCompanyRequest $request
-     * @return Response
+     * @return Response| \Illuminate\Http\JsonResponse
      *
      *
      *
@@ -176,7 +190,7 @@ class CompanyController extends BaseController
      * Store a newly created resource in storage.
      *
      * @param StoreCompanyRequest $request
-     * @return Response
+     * @return Response| \Illuminate\Http\JsonResponse
      *
      *
      * @OA\Post(
@@ -249,7 +263,7 @@ class CompanyController extends BaseController
         $user_agent = request()->has('token_name') ? request()->input('token_name') : request()->server('HTTP_USER_AGENT');
 
         $company_token = (new CreateCompanyToken($company, auth()->user(), $user_agent))->handle();
-        $this->entity_transformer = CompanyUserTransformer::class;
+        $this->entity_transformer = AuthenticatedCompanyUserTransformer::class;
         $this->entity_type = CompanyUser::class;
 
         $ct = CompanyUser::whereUserId(auth()->user()->id)->whereCompanyId($company->id);
@@ -262,7 +276,7 @@ class CompanyController extends BaseController
      *
      * @param ShowCompanyRequest $request
      * @param Company $company
-     * @return Response
+     * @return Response| \Illuminate\Http\JsonResponse
      *
      *
      * @OA\Get(
@@ -316,7 +330,7 @@ class CompanyController extends BaseController
      *
      * @param EditCompanyRequest $request
      * @param Company $company
-     * @return Response
+     * @return Response| \Illuminate\Http\JsonResponse
      *
      *
      * @OA\Get(
@@ -370,7 +384,7 @@ class CompanyController extends BaseController
      *
      * @param UpdateCompanyRequest $request
      * @param Company $company
-     * @return Response
+     * @return Response| \Illuminate\Http\JsonResponse
      *
      *
      * @OA\Put(
@@ -418,26 +432,70 @@ class CompanyController extends BaseController
     {
         if ($request->hasFile('company_logo') || (is_array($request->input('settings')) && ! array_key_exists('company_logo', $request->input('settings')))) {
             $this->removeLogo($company);
+            $this->uploadLogo($request->file('company_logo'), $company, $company);
+            return $this->itemResponse($company->refresh());
         }
 
+        $originalSettings = clone $company->settings;
         $company = $this->company_repo->save($request->all(), $company);
 
+        // FRREPORTING::
+        // app(FranceScopeInvalidationRecorder::class)->recordCompanyConfigurationChange(
+        //     $company,
+        //     $originalSettings,
+        // );
+
         if ($request->has('documents')) {
-            $this->saveDocuments($request->input('documents'), $company, $request->input('is_public', true));
+            $this->saveDocuments($request->input('documents'), $company, $request->has('is_public') ? $request->boolean('is_public') : null);
         }
 
-        if($request->has('e_invoice_certificate') && !is_null($request->file("e_invoice_certificate"))) {
+        /** Explicitly handle the e-invoice certificate */
+        if ($request->has('e_invoice_certificate')) {
 
-            $company->e_invoice_certificate = base64_encode($request->file("e_invoice_certificate")->get());
+            if (!is_null($request->file("e_invoice_certificate"))) {
+                $company->e_invoice_certificate = base64_encode($request->file("e_invoice_certificate")->get());
+            } else {
+                $company->e_invoice_certificate = null;
+                $company->e_invoice_certificate_passphrase = null;
+            }
 
             $settings = $company->settings;
             $settings->enable_e_invoice = true;
+            $company->settings = $settings;
 
             $company->save();
 
         }
 
-        $this->uploadLogo($request->file('company_logo'), $company, $company);
+        if ($request->has('sync_send_time') && $request->input('sync_send_time') == 'true') {
+
+            //Update Reminders
+            Invoice::where('company_id', $company->id)
+                    ->whereIn('status_id', [Invoice::STATUS_SENT, Invoice::STATUS_PARTIAL])
+                    ->whereNotNull('next_send_date')
+                    ->where('next_send_date', '>', now())
+                    ->where('balance', '>', 0)
+                    ->cursor()
+                    ->each(function ($invoice) {
+                        nlog("updating {$invoice->number}");
+                        $invoice->service()->setReminder()->save();
+                    });
+
+
+            //Update Recurring Invoices
+            RecurringInvoice::where('company_id', $company->id)
+                            ->where('status_id', RecurringInvoice::STATUS_ACTIVE)
+                            ->where('next_send_date', '>', now())
+                            ->whereNotNull('next_send_date_client')
+                            ->cursor()
+                            ->each(function ($recurring_invoice) {
+
+                                $recurring_invoice->next_send_date = $recurring_invoice->client->scheduledDateTimeUtc($recurring_invoice->next_send_date_client);
+                                $recurring_invoice->save();
+
+                            });
+
+        }
 
         return $this->itemResponse($company);
     }
@@ -447,7 +505,7 @@ class CompanyController extends BaseController
      *
      * @param DestroyCompanyRequest $request
      * @param Company $company
-     * @return Response
+     * @return Response| \Illuminate\Http\JsonResponse
      *
      *
      * @throws \Exception
@@ -508,14 +566,33 @@ class CompanyController extends BaseController
             });
 
             try {
-                Storage::disk(config('filesystems.default'))->deleteDirectory($company->company_key);
-            } catch(\Exception $e) {
+
+                if (Ninja::isHosted()) {
+                    try {
+                        Storage::disk('s3')->deleteDirectory($company->company_key);
+                    } catch (\Throwable $th) {
+                    }
+
+                    try {
+                        Storage::disk('backup')->deleteDirectory($company->company_key);
+                    } catch (\Throwable $th) {
+                    }
+
+                } else {
+                    Storage::disk(config('filesystems.default'))->deleteDirectory($company->company_key);
+                }
+
+            } catch (\Exception $e) {
             }
 
             $account->delete();
 
             if (Ninja::isHosted()) {
                 \Modules\Admin\Jobs\Account\NinjaDeletedAccount::dispatch($account_key, $request->all(), auth()->user()->email);
+
+                $ip = $request->ip();
+                $email = auth()->user()->email;
+                nlog("AccountDeleted:: {$account_key} - {$email} - {$ip}");
             }
 
             LightLogs::create(new AccountDeleted())
@@ -539,7 +616,7 @@ class CompanyController extends BaseController
 
             try {
                 Storage::disk(config('filesystems.default'))->deleteDirectory($company->company_key);
-            } catch(\Exception $e) {
+            } catch (\Exception $e) {
             }
 
 
@@ -563,7 +640,7 @@ class CompanyController extends BaseController
      *
      * @param UploadCompanyRequest $request
      * @param Company $company
-     * @return Response
+     * @return Response| \Illuminate\Http\JsonResponse
      *
      *
      *
@@ -615,7 +692,7 @@ class CompanyController extends BaseController
         }
 
         if ($request->has('documents')) {
-            $this->saveDocuments($request->file('documents'), $company, $request->input('is_public', true));
+            $this->saveDocuments($request->file('documents'), $company, $request->has('is_public') ? $request->boolean('is_public') : null);
         }
 
         return $this->itemResponse($company->fresh());
@@ -626,7 +703,7 @@ class CompanyController extends BaseController
      *
      * @param DefaultCompanyRequest $request
      * @param Company $company
-     * @return Response
+     * @return Response| \Illuminate\Http\JsonResponse
      *
      *
      *
@@ -683,10 +760,10 @@ class CompanyController extends BaseController
     public function updateOriginTaxData(DefaultCompanyRequest $request, Company $company)
     {
 
-        if($company->settings->country_id == "840" && !$company?->account->isFreeHostedClient()) {
+        if ($company->settings->country_id == "840" && !$company->account->isFreeHostedClient()) {
             try {
                 (new CompanyTaxRate($company))->handle();
-            } catch(\Exception $e) {
+            } catch (\Exception $e) {
                 return response()->json(['message' => 'There was a problem updating the tax rates. Please try again.'], 400);
             }
         } else {
@@ -696,6 +773,11 @@ class CompanyController extends BaseController
         return $this->itemResponse($company->fresh());
     }
 
+    /**
+     *
+     *
+     * @return \Symfony\Component\HttpFoundation\StreamedResponse | \Illuminate\Http\JsonResponse
+     */
     public function logo()
     {
 
@@ -705,18 +787,31 @@ class CompanyController extends BaseController
         $logo = strlen($company->settings->company_logo) > 5 ? $company->settings->company_logo : 'https://pdf.invoicing.co/favicon-v2.png';
         $headers = ['Content-Disposition' => 'inline'];
 
-        try{
-            $response = \Illuminate\Support\Facades\Http::get($logo);
-
-            if ($response->successful()) {
-                $logo = $response->body();
-            }
-            else {
+        try {
+            // SafeExternalUrl short-circuits on self-hosted; on hosted it
+            // enforces https, no userinfo, and non-IP-literal host. Paired
+            // with allow_redirects=false below, this blocks the practical
+            // SSRF surface on hosted.
+            if (! \App\Rules\SafeExternalUrl::check($logo)['ok']) {
                 $logo = base64_decode('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=');
-            }
+            } else {
 
-        }
-        catch(\Exception $e){
+                $response = \Illuminate\Support\Facades\Http::connectTimeout(3)
+                    ->timeout(10)
+                    ->withOptions([
+                        'allow_redirects' => false,
+                        'curl' => [
+                            CURLOPT_MAXFILESIZE => 2 * 1024 * 1024,
+                        ],
+                    ])->get($logo);
+
+                if ($response->successful() && strlen($response->body()) <= 2 * 1024 * 1024) {
+                    $logo = $response->body();
+                } else {
+                    $logo = base64_decode('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=');
+                }
+            }
+        } catch (\Exception $e) {
 
             $logo = base64_decode('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=');
 
@@ -727,4 +822,5 @@ class CompanyController extends BaseController
         }, 'logo.png', $headers);
 
     }
+
 }

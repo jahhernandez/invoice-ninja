@@ -1,21 +1,28 @@
 <?php
 
+/**
+ * Invoice Ninja (https://invoiceninja.com).
+ *
+ * @link https://github.com/invoiceninja/invoiceninja source repository
+ *
+ * @copyright Copyright (c) 2026. Invoice Ninja LLC (https://invoiceninja.com)
+ *
+ * @license https://www.elastic.co/licensing/elastic-license
+ */
+
 namespace App\PaymentDrivers\GoCardless;
 
 use App\Exceptions\PaymentFailed;
-use App\Jobs\Mail\PaymentFailureMailer;
-use App\Jobs\Util\SystemLogger;
+use App\Http\Requests\ClientPortal\Payments\PaymentResponseRequest;
 use App\Models\GatewayType;
-use App\Models\Payment;
-use App\Models\PaymentType;
-use App\Models\SystemLog;
+use App\PaymentDrivers\Common\LivewireMethodInterface;
 use App\PaymentDrivers\Common\MethodInterface;
 use App\PaymentDrivers\GoCardlessPaymentDriver;
 use Illuminate\Contracts\Container\BindingResolutionException;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 
-class InstantBankPay implements MethodInterface
+class InstantBankPay implements MethodInterface, LivewireMethodInterface
 {
     protected GoCardlessPaymentDriver $go_cardless;
 
@@ -30,7 +37,7 @@ class InstantBankPay implements MethodInterface
      * Authorization page for Instant Bank Pay.
      *
      * @param array $data
-     * @return RedirectResponse
+     * @return \Illuminate\Http\RedirectResponse
      * @throws BindingResolutionException
      */
     public function authorizeView(array $data): RedirectResponse
@@ -41,8 +48,8 @@ class InstantBankPay implements MethodInterface
     /**
      * Handle authorization for Instant Bank Pay.
      *
-     * @param array $data
-     * @return RedirectResponse
+     * @param Request $request
+     * @return \Illuminate\Http\RedirectResponse
      * @throws BindingResolutionException
      */
     public function authorizeResponse(Request $request): RedirectResponse
@@ -52,173 +59,35 @@ class InstantBankPay implements MethodInterface
 
     public function paymentView(array $data)
     {
-        try {
-            $billing_request = $this->go_cardless->gateway->billingRequests()->create([
-                'params' => [
-                    'payment_request' => [
-                        'description' => ctrans('texts.invoices').': '.collect($data['invoices'])->pluck('invoice_number'),
-                        'amount' => (string) $data['amount_with_fee'] * 100,
-                        'currency' => $this->go_cardless->client->getCurrencyCode(),
-                    ],
-                    'metadata' => [
-                        'payment_hash' => $this->go_cardless->payment_hash->hash,
-                    ],
-                ],
-            ]);
+        $data = $this->paymentData($data);
 
-            $billing_request_flow = $this->go_cardless->gateway->billingRequestFlows()->create([
-                'params' => [
-                    'redirect_uri' => route('gocardless.ibp_redirect', [
-                        'company_key' => $this->go_cardless->company_gateway->company->company_key,
-                        'company_gateway_id' => $this->go_cardless->company_gateway->hashed_id,
-                        'hash' => $this->go_cardless->payment_hash->hash,
-                    ]),
-                    'links' => [
-                        'billing_request' => $billing_request->id,
-                    ],
-                ],
-            ]);
-
-            $this->go_cardless->payment_hash
-                ->withData('client_id', $this->go_cardless->client->id)
-                ->withData('billing_request', $billing_request->id)
-                ->withData('billing_request_flow', $billing_request_flow->id);
-
-            return redirect(
-                $billing_request_flow->authorisation_url
-            );
-        } catch (\Exception $exception) {
-            throw $exception;
-        }
+        return redirect()->away($data['authorisation_url']);
     }
 
-    public function paymentResponse($request)
+    public function paymentResponse(PaymentResponseRequest $request): never
     {
-        $this->go_cardless->setPaymentHash(
-            $request->getPaymentHash()
-        );
-
-        $this->go_cardless->init();
-
-        try {
-            $billing_request = $this->go_cardless->gateway->billingRequests()->get(
-                $this->go_cardless->payment_hash->data->billing_request
-            );
-
-            $payment = $this->go_cardless->gateway->payments()->get(
-                $billing_request->payment_request->links->payment
-            );
-
-            if ($billing_request->status === 'fulfilled') {
-                return $this->processSuccessfulPayment($payment);
-            }
-
-            if ($billing_request->status === 'submitted') {
-                return $this->processPendingPayment($payment);
-            }
-
-            return $this->processUnsuccessfulPayment($payment);
-        } catch (\Exception $exception) {
-            throw new PaymentFailed(
-                $exception->getMessage(),
-                $exception->getCode()
-            );
-        }
+        throw new PaymentFailed(ctrans('texts.gateway_temporarily_unavailable'), 403);
     }
 
     /**
-     * Handle pending payments for Instant Bank Transfer.
-     *
-     * @param \GoCardlessPro\Resources\Payment $payment
-     * @param array $data
-     * @return RedirectResponse
+     * @inheritDoc
      */
-    public function processPendingPayment(\GoCardlessPro\Resources\Payment $payment, array $data = [])
+    public function livewirePaymentView(array $data): string
     {
-        $data = [
-            'payment_method' => $payment->links->mandate, //@phpstan-ignore tag
-            'payment_type' => PaymentType::INSTANT_BANK_PAY,
-            'amount' => $this->go_cardless->payment_hash->data->amount_with_fee,
-            'transaction_reference' => $payment->id, //@phpstan-ignore tag
-            'gateway_type_id' => GatewayType::INSTANT_BANK_PAY,
-        ];
-
-        $payment = $this->go_cardless->createPayment($data, Payment::STATUS_PENDING);
-
-        SystemLogger::dispatch(
-            ['response' => $payment, 'data' => $data],
-            SystemLog::CATEGORY_GATEWAY_RESPONSE,
-            SystemLog::EVENT_GATEWAY_SUCCESS,
-            SystemLog::TYPE_GOCARDLESS,
-            $this->go_cardless->client,
-            $this->go_cardless->client->company,
-        );
-
-        return redirect()->route('client.payments.show', ['payment' => $this->go_cardless->encodePrimaryKey($payment->id)]);
-    }
-
-
-
-    /**
-     * Handle pending payments for Instant Bank Transfer.
-     *
-     * @param \GoCardlessPro\Resources\Payment $payment
-     * @param array $data
-     * @return RedirectResponse
-     */
-    public function processSuccessfulPayment(\GoCardlessPro\Resources\Payment $payment, array $data = [])
-    {
-        $data = [
-            'payment_method' => $payment->links->mandate,
-            'payment_type' => PaymentType::INSTANT_BANK_PAY,
-            'amount' => $this->go_cardless->payment_hash->data->amount_with_fee,
-            'transaction_reference' => $payment->id,
-            'gateway_type_id' => GatewayType::INSTANT_BANK_PAY,
-        ];
-
-        $payment = $this->go_cardless->createPayment($data, Payment::STATUS_COMPLETED);
-
-        SystemLogger::dispatch(
-            ['response' => $payment, 'data' => $data],
-            SystemLog::CATEGORY_GATEWAY_RESPONSE,
-            SystemLog::EVENT_GATEWAY_SUCCESS,
-            SystemLog::TYPE_GOCARDLESS,
-            $this->go_cardless->client,
-            $this->go_cardless->client->company,
-        );
-
-        return redirect()->route('client.payments.show', ['payment' => $this->go_cardless->encodePrimaryKey($payment->id)]);
+        return 'gateways.gocardless.instant_bank_pay.pay_livewire';
     }
 
     /**
-     * Process unsuccessful payments for Direct Debit.
-     *
-     * @param ResourcesPayment $payment
-     * @return never
+     * @inheritDoc
      */
-    public function processUnsuccessfulPayment(\GoCardlessPro\Resources\Payment $payment)
+    public function paymentData(array $data): array
     {
-        PaymentFailureMailer::dispatch($this->go_cardless->client, $payment->status, $this->go_cardless->client->company, $this->go_cardless->payment_hash->data->amount_with_fee);
+        $data['gateway'] = $this->go_cardless;
+        $data['amount'] = $this->go_cardless->convertToGoCardlessAmount($data['total']['amount_with_fee'], $this->go_cardless->client->currency()->precision);
+        $data['currency'] = $this->go_cardless->client->getCurrencyCode();
+        $data['authorisation_url'] = (new HostedPaymentPage($this->go_cardless))
+            ->start(GatewayType::INSTANT_BANK_PAY);
 
-        // PaymentFailureMailer::dispatch(
-        //     $this->go_cardless->client,
-        //     $payment,
-        //     $this->go_cardless->client->company,
-        //     $payment->amount
-        // );
-
-        $message = [
-            'server_response' => $payment,
-            'data' => $this->go_cardless->payment_hash->data,
-        ];
-
-        SystemLogger::dispatch(
-            $message,
-            SystemLog::CATEGORY_GATEWAY_RESPONSE,
-            SystemLog::EVENT_GATEWAY_FAILURE,
-            SystemLog::TYPE_GOCARDLESS,
-            $this->go_cardless->client,
-            $this->go_cardless->client->company,
-        );
+        return $data;
     }
 }

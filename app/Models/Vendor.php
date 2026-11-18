@@ -1,24 +1,29 @@
 <?php
+
 /**
  * Invoice Ninja (https://invoiceninja.com).
  *
  * @link https://github.com/invoiceninja/invoiceninja source repository
  *
- * @copyright Copyright (c) 2024. Invoice Ninja LLC (https://invoiceninja.com)
+ * @copyright Copyright (c) 2026. Invoice Ninja LLC (https://invoiceninja.com)
  *
  * @license https://www.elastic.co/licensing/elastic-license
  */
 
 namespace App\Models;
 
-use App\DataMapper\CompanySettings;
-use App\Models\Presenters\VendorPresenter;
-use App\Services\Vendor\VendorService;
+use Elastic\ScoutDriverPlus\Searchable;
 use App\Utils\Traits\AppSetup;
-use App\Utils\Traits\GeneratesCounter;
-use Illuminate\Database\Eloquent\SoftDeletes;
+use App\DataMapper\CompanySettings;
+use App\Models\Traits\HasTags;
+use Illuminate\Support\Facades\App;
+use Illuminate\Mail\Mailables\Address;
 use Illuminate\Support\Facades\Cache;
+use App\Services\Vendor\VendorService;
+use App\Utils\Traits\GeneratesCounter;
 use Laracasts\Presenter\PresentableTrait;
+use App\Models\Presenters\VendorPresenter;
+use Illuminate\Database\Eloquent\SoftDeletes;
 
 /**
  * App\Models\Vendor
@@ -30,14 +35,14 @@ use Laracasts\Presenter\PresentableTrait;
  * @property int $user_id
  * @property int|null $assigned_user_id
  * @property int $company_id
- * @property string|null $currency_id
+ * @property int|null $currency_id
  * @property string|null $name
  * @property string|null $address1
  * @property string|null $address2
  * @property string|null $city
  * @property string|null $state
  * @property string|null $postal_code
- * @property string|null $country_id
+ * @property int|null $country_id
  * @property string|null $phone
  * @property string|null $private_notes
  * @property string|null $website
@@ -52,11 +57,16 @@ use Laracasts\Presenter\PresentableTrait;
  * @property string|null $custom_value4
  * @property string|null $vendor_hash
  * @property string|null $public_notes
+ * @property string|null $classification
+ * @property \App\DataMapper\VendorSync|null $sync
  * @property string|null $id_number
- * @property string|null $language_id
+ * @property int|null $language_id
  * @property int|null $last_login
+ * @property bool $is_tax_exempt
+ * @property string|null $classification
  * @property-read \Illuminate\Database\Eloquent\Collection<int, \App\Models\Activity> $activities
  * @property-read int|null $activities_count
+ * @property-read \App\Models\Language|null $language
  * @property-read \App\Models\User|null $assigned_user
  * @property-read \App\Models\Company $company
  * @property-read \Illuminate\Database\Eloquent\Collection<int, \App\Models\VendorContact> $contacts
@@ -68,6 +78,9 @@ use Laracasts\Presenter\PresentableTrait;
  * @property-read \Illuminate\Database\Eloquent\Collection<int, \App\Models\VendorContact> $primary_contact
  * @property-read int|null $primary_contact_count
  * @property-read \App\Models\User $user
+ * @property-read \App\Models\Language|null $language
+ * @property-read \Illuminate\Database\Eloquent\Collection<int, \App\Models\Location> $locations
+ * @property-read int|null $locations_count
  * @method static \Illuminate\Database\Eloquent\Builder|BaseModel exclude($columns)
  * @method static \Database\Factories\VendorFactory factory($count = null, $state = [])
  * @method static \Illuminate\Database\Eloquent\Builder|Vendor filter(\App\Filters\QueryFilters $filters)
@@ -82,6 +95,8 @@ use Laracasts\Presenter\PresentableTrait;
  * @property-read \Illuminate\Database\Eloquent\Collection<int, \App\Models\VendorContact> $contacts
  * @property-read \Illuminate\Database\Eloquent\Collection<int, \App\Models\Document> $documents
  * @property-read \Illuminate\Database\Eloquent\Collection<int, \App\Models\VendorContact> $primary_contact
+ * @property-read \Illuminate\Database\Eloquent\Collection<int, \App\Models\Location> $locations
+ * @property-read \Illuminate\Database\Eloquent\Collection<int, \App\Models\Tag> $tags
  * @mixin \Eloquent
  */
 class Vendor extends BaseModel
@@ -91,6 +106,18 @@ class Vendor extends BaseModel
     use GeneratesCounter;
     use PresentableTrait;
     use AppSetup;
+    use Searchable;
+    use HasTags;
+
+    /**
+     * Get the index name for the model.
+     *
+     * @return string
+     */
+    public function searchableAs(): string
+    {
+        return 'vendors';
+    }
 
     protected $fillable = [
         'name',
@@ -116,6 +143,8 @@ class Vendor extends BaseModel
         'number',
         'language_id',
         'classification',
+        'is_tax_exempt',
+        'routing_id',
     ];
 
     protected $casts = [
@@ -126,6 +155,7 @@ class Vendor extends BaseModel
         'created_at' => 'timestamp',
         'deleted_at' => 'timestamp',
         'last_login' => 'timestamp',
+        'sync' => \App\DataMapper\VendorSync::class,
     ];
 
     protected $touches = [];
@@ -133,6 +163,52 @@ class Vendor extends BaseModel
     protected $with = [
         'contacts.company',
     ];
+
+
+    public function toSearchableArray(): array
+    {
+        
+        $locale = $this->locale();
+        App::setLocale($locale);
+
+        $name = ctrans('texts.vendor') . " | " . $this->present()->name();
+
+        if (strlen($this->vat_number ?? '') > 1) {
+            $name .= " | " . $this->vat_number;
+        }
+
+        return [
+            'id' => $this->company->db . ":" . $this->id,
+            'name' => $name,
+            'is_deleted' => (bool) $this->is_deleted,
+            'hashed_id' => $this->hashed_id,
+            'user_id' => (string) $this->user_id,
+            'assigned_user_id' => (string) $this->assigned_user_id,
+            'number' => (string) $this->number,
+            'id_number' => $this->id_number,
+            'vat_number' => $this->vat_number,
+            'phone' => $this->phone,
+            'address1' => $this->address1,
+            'address2' => $this->address2,
+            'city' => $this->city,
+            'state' => $this->state,
+            'postal_code' => $this->postal_code,
+            'website' => $this->website,
+            'private_notes' => $this->private_notes,
+            'public_notes' => $this->public_notes,
+            'custom_value1' => $this->custom_value1,
+            'custom_value2' => $this->custom_value2,
+            'custom_value3' => $this->custom_value3,
+            'custom_value4' => $this->custom_value4,
+            'company_key' => $this->company->company_key,
+            'tags' => $this->tags->pluck('name')->values()->all(),
+        ];
+    }
+
+    public function getScoutKey()
+    {
+        return $this->company->db . ":" . $this->id;
+    }
 
     protected $presenter = VendorPresenter::class;
 
@@ -161,9 +237,34 @@ class Vendor extends BaseModel
         return $this->hasMany(VendorContact::class)->orderBy('is_primary', 'desc');
     }
 
+    /**
+     * Returns CC-only contacts as an array of Address objects.
+     * Capped at 4 to stay within provider limits.
+     *
+     * @return array<int, Address>
+     */
+    public function cc_contacts(): array
+    {
+
+        return $this->contacts()
+            ->where('cc_only', true)
+            ->whereNotNull('email')
+            ->where('email', '!=', '')
+            ->where('is_locked', false)
+            ->limit(4)
+            ->get()
+            ->map(fn(\App\Models\VendorContact $c) => new Address($c->email, $c->present()->name()))
+            ->toArray();
+    }
+
     public function activities(): \Illuminate\Database\Eloquent\Relations\HasMany
     {
         return $this->hasMany(Activity::class);
+    }
+
+    public function locations(): \Illuminate\Database\Eloquent\Relations\HasMany
+    {
+        return $this->hasMany(Location::class)->withTrashed();
     }
 
     public function getCurrencyCode(): string
@@ -177,19 +278,18 @@ class Vendor extends BaseModel
 
     public function currency()
     {
-        $currencies = Cache::get('currencies');
+        return once(function () {
+            /** @var \Illuminate\Support\Collection<\App\Models\Currency> */
+            $currencies = app('currencies');
 
-        if (! $currencies) {
-            $this->buildCache(true);
-        }
+            if (!$this->currency_id) {
+                return $this->company->currency();
+            }
 
-        if (! $this->currency_id) {
-            return $this->company->currency();
-        }
-
-        return $currencies->filter(function ($item) {
-            return $item->id == $this->currency_id;
-        })->first();
+            return $currencies->first(function ($item) {
+                return $item->id == $this->currency_id;
+            });
+        });
     }
 
     public function timezone()
@@ -219,14 +319,14 @@ class Vendor extends BaseModel
     {
         $defaults = [];
 
-        if (! (array_key_exists('terms', $data) && strlen($data['terms']) > 1)) {
-            $defaults['terms'] = $this->getSetting($entity_name.'_terms');
+        if (!(array_key_exists('terms', $data) && strlen($data['terms']) > 1)) {
+            $defaults['terms'] = $this->getSetting($entity_name . '_terms');
         } elseif (array_key_exists('terms', $data)) {
             $defaults['terms'] = $data['terms'];
         }
 
-        if (! (array_key_exists('footer', $data) && strlen($data['footer']) > 1)) {
-            $defaults['footer'] = $this->getSetting($entity_name.'_footer');
+        if (!(array_key_exists('footer', $data) && strlen($data['footer']) > 1)) {
+            $defaults['footer'] = $this->getSetting($entity_name . '_footer');
         } elseif (array_key_exists('footer', $data)) {
             $defaults['footer'] = $data['footer'];
         }
@@ -264,12 +364,17 @@ class Vendor extends BaseModel
     {
         $contact_key = $invitation->contact->contact_key;
 
-        return $this->company->company_key.'/'.$this->vendor_hash.'/'.$contact_key.'/purchase_orders/';
+        return $this->company->company_key . '/' . $this->vendor_hash . '/' . $contact_key . '/purchase_orders/';
     }
 
     public function locale(): string
     {
         return $this->language ? $this->language->locale : $this->company->locale();
+    }
+
+    public function preferredLocale(): string
+    {
+        return $this->locale();
     }
 
     public function language(): \Illuminate\Database\Eloquent\Relations\BelongsTo
@@ -289,11 +394,46 @@ class Vendor extends BaseModel
 
     public function backup_path(): string
     {
-        return $this->company->company_key.'/'.$this->vendor_hash.'/backups';
+        return $this->company->company_key . '/' . $this->vendor_hash . '/backups';
     }
 
     public function service()
     {
         return new VendorService($this);
+    }
+
+    public function credits(): \Illuminate\Database\Eloquent\Relations\HasMany
+    {
+        return $this->hasMany(Credit::class)->withTrashed();
+    }
+
+    public function expenses(): \Illuminate\Database\Eloquent\Relations\HasMany
+    {
+        return $this->hasMany(Expense::class)->withTrashed();
+    }
+
+    public function recurring_expenses(): \Illuminate\Database\Eloquent\Relations\HasMany
+    {
+        return $this->hasMany(RecurringExpense::class)->withTrashed();
+    }
+
+    public function invoices(): \Illuminate\Database\Eloquent\Relations\HasMany
+    {
+        return $this->hasMany(Invoice::class)->withTrashed();
+    }
+
+    public function payments(): \Illuminate\Database\Eloquent\Relations\HasMany
+    {
+        return $this->hasMany(Payment::class)->withTrashed();
+    }
+
+    public function quotes(): \Illuminate\Database\Eloquent\Relations\HasMany
+    {
+        return $this->hasMany(Quote::class)->withTrashed();
+    }
+
+    public function purchase_orders(): \Illuminate\Database\Eloquent\Relations\HasMany
+    {
+        return $this->hasMany(PurchaseOrder::class)->withTrashed();
     }
 }

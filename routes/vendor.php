@@ -33,10 +33,10 @@ Route::group(['middleware' => ['auth:vendor', 'vendor_locale', 'domain_db'], 'pr
     Route::get('purchase_orders', [PurchaseOrderController::class, 'index'])->name('purchase_orders.index');
     Route::get('purchase_orders/{purchase_order}', [PurchaseOrderController::class, 'show'])->name('purchase_order.show');
 
-    Route::get('showBlob/{hash}', [PurchaseOrderController::class, 'showBlob'])->name('purchase_order.showBlob');
-
+    Route::get('showBlob/{entity_type}/{invitation_key}', [PurchaseOrderController::class, 'showBlob'])->where('entity_type', 'purchase_order')->name('purchase_order.showBlob');
     Route::get('profile/{vendor_contact}/edit', [VendorContactController::class, 'edit'])->name('profile.edit');
     Route::put('profile/{vendor_contact}/edit', [VendorContactController::class, 'update'])->name('profile.update');
+    Route::get('purchase_order/{invitation_key}/download_e_purchase_order', [App\Http\Controllers\PurchaseOrderController::class, 'downloadEPurchaseOrder'])->name('purchase_order.download_e_purchase_order')->middleware('token_auth');
 
     Route::post('purchase_orders/bulk', [PurchaseOrderController::class, 'bulk'])->name('purchase_orders.bulk');
     Route::get('logout', [VendorContactLoginController::class, 'logout'])->name('logout');
@@ -45,10 +45,9 @@ Route::group(['middleware' => ['auth:vendor', 'vendor_locale', 'domain_db'], 'pr
     Route::post('documents/download_multiple', [App\Http\Controllers\VendorPortal\DocumentController::class, 'downloadMultiple'])->name('documents.download_multiple');
     Route::get('documents/{document}/download', [App\Http\Controllers\VendorPortal\DocumentController::class, 'download'])->name('documents.download');
     Route::get('documents/{document}/download_pdf', [App\Http\Controllers\VendorPortal\DocumentController::class, 'download'])->name('documents.download_pdf');
-    Route::get('purchase_order/{invitation_key}/download_e_purchase_order', [App\Http\Controllers\PurchaseOrderController::class, 'downloadEPurchaseOrder'])->name('purchase_order.download_e_purchase_order')->middleware('token_auth');
-
+    
     Route::resource('documents', App\Http\Controllers\VendorPortal\DocumentController::class)->only(['index', 'show']);
-
+    
 });
 
 

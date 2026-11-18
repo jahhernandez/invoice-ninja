@@ -1,10 +1,11 @@
 <?php
+
 /**
  * Invoice Ninja (https://invoiceninja.com).
  *
  * @link https://github.com/invoiceninja/invoiceninja source repository
  *
- * @copyright Copyright (c) 2024. Invoice Ninja LLC (https://invoiceninja.com)
+ * @copyright Copyright (c) 2026. Invoice Ninja LLC (https://invoiceninja.com)
  *
  * @license https://www.elastic.co/licensing/elastic-license
  */
@@ -30,7 +31,6 @@ use App\Utils\Traits\MakesHash;
 use Illuminate\Contracts\View\Factory;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Cache;
 use Illuminate\View\View;
 
 class InvoiceController extends Controller
@@ -60,59 +60,93 @@ class InvoiceController extends Controller
     {
         set_time_limit(0);
 
+        /** @var \App\Models\InvoiceInvitation|null $invitation */
         $invitation = $invoice->invitations()->where('client_contact_id', auth()->guard('contact')->user()->id)->first();
 
-        if ($invitation && auth()->guard('contact') && ! session()->get('is_silent') && ! $invitation->viewed_date) {
+        if ($invitation && auth()->guard('contact')->check() && ! session()->get('is_silent') && ! $invitation->viewed_date) {
             $invitation->markViewed();
 
             event(new InvitationWasViewed($invoice, $invitation, $invoice->company, Ninja::eventVars()));
             event(new InvoiceWasViewed($invitation, $invoice->company, Ninja::eventVars()));
         }
 
+
         $variables = ($invitation && auth()->guard('contact')->user()->client->getSetting('show_accept_invoice_terms')) ? (new HtmlEngine($invitation))->generateLabelsAndValues() : false;
 
         $data = [
-            'invoice' => $invoice->service()->removeUnpaidGatewayFees()->save(),
+            'invoice' => $invoice,
             'invitation' => $invitation ?: $invoice->invitations->first(),
-            'key' => $invitation ? $invitation->key : false,
+            '_key' => $invitation ? $invitation->key : false,
             'hash' => $hash,
             'variables' => $variables,
+            'invoices' => [$invoice->hashed_id],
+            'db' => $invoice->company->db,
+            'docuninja_active' => false,
+            'requires_signature' => $invoice->client->getSetting('require_invoice_signature') && $invoice->company->account->hasFeature(\App\Models\Account::FEATURE_INVOICE_SETTINGS),
         ];
 
         if ($request->query('mode') === 'fullscreen') {
             return render('invoices.show-fullscreen', $data);
         }
 
-        return $this->render('invoices.show', $data);
-    }
+        $default_flow = auth()->guard('contact')->user()->client->getSetting('payment_flow') == 'default';
 
-    public function showBlob($hash)
-    {
-        $data = Cache::get($hash);
+        if ($default_flow) {
+            $docuninja_active = $invoice->company->docuninjaActive();
+            $signature_required = $invoice->client->getSetting('require_invoice_signature');
+            $signature_accepted = $invoice->sync?->dn_completed;
+            $set_docuninja = $docuninja_active && !$signature_accepted && $signature_required;
+            $data['docuninja_active'] = (bool) $set_docuninja;
 
-        if(!$data) {
-            usleep(200000);
-            $data = Cache::get($hash);
+            // If DocuNinja is active, we don't need to show the signature field.
+            if ($docuninja_active) {
+                $data['requires_signature'] = false;
+            }
         }
 
-        $invitation = false;
+        if (!$invoice->isPayable()) {
+            unset($data['invitation']);
+            return $this->render('invoices.show', $data);
+        }
 
-        match($data['entity_type'] ?? false) {
-            'invoice' => $invitation = InvoiceInvitation::withTrashed()->find($data['invitation_id']),
-            'quote' => $invitation = QuoteInvitation::withTrashed()->find($data['invitation_id']),
-            'credit' => $invitation = CreditInvitation::withTrashed()->find($data['invitation_id']),
-            'recurring_invoice' => $invitation = RecurringInvoiceInvitation::withTrashed()->find($data['invitation_id']),
-            false => $invitation = false,
+        return $default_flow ? $this->render('invoices.show', $data) : $this->render('invoices.show_smooth', $data);
+
+    }
+
+    public function showBlob(string $entity_type, string $invitation_key)
+    {
+        $contact = auth()->guard('contact')->user();
+
+        $query = match ($entity_type) {
+            'invoice' => InvoiceInvitation::withTrashed(),
+            'quote' => QuoteInvitation::withTrashed(),
+            'credit' => CreditInvitation::withTrashed(),
+            'recurring_invoice' => RecurringInvoiceInvitation::withTrashed(),
+            default => null,
         };
 
+        if (! $query) {
+            return response('', 404);
+        }
+
+        $invitation = $query
+            ->where('key', $invitation_key)
+            ->where('company_id', $contact->company_id)
+            ->whereHas('contact', function ($query) use ($contact) {
+                $query->where('client_id', $contact->client_id);
+            })
+            ->first();
+
         if (! $invitation) {
-            return redirect('/');
+            return response('', 404);
         }
 
         $file = (new \App\Jobs\Entity\CreateRawPdf($invitation))->handle();
 
-        $headers = ['Content-Type' => 'application/pdf'];
-        return response()->make($file, 200, $headers);
+        return response()->make($file, 200, [
+            'Content-Type' => 'application/pdf',
+            'Content-Disposition' => 'inline',
+        ]);
 
     }
 
@@ -144,7 +178,7 @@ class InvoiceController extends Controller
     {
         $data['invoices'] = Invoice::query()
                             ->whereIn('id', $ids)
-                            ->whereClientId(auth()->guard('contact')->user()->client->id)
+                            ->whereClientId(auth()->guard('contact')->user()->client_id)
                             ->withTrashed()
                             ->get();
 
@@ -170,7 +204,7 @@ class InvoiceController extends Controller
     {
         $invoices = Invoice::query()
                             ->whereIn('id', $ids)
-                            ->whereClientId(auth()->guard('contact')->user()->client->id)
+                            ->whereClientId(auth()->guard('contact')->user()->client_id)
                             ->withTrashed()
                             ->get();
 
@@ -189,7 +223,6 @@ class InvoiceController extends Controller
         $invoices->each(function ($invoice) {
             $invoice->service()
                     ->markSent()
-                    ->removeUnpaidGatewayFees()
                     ->save();
         });
 
@@ -223,7 +256,10 @@ class InvoiceController extends Controller
         $settings = auth()->guard('contact')->user()->client->getMergedSettings();
         $variables = false;
 
-        if(($invitation = $invoices->first()->invitations()->first() ?? false) && $settings->show_accept_invoice_terms) {
+        /** @var \Illuminate\Support\Collection<\App\Models\Invoice> $invoices */
+        $invitation = $invoices->first()->invitations()->first();
+
+        if ($invitation && $settings->show_accept_invoice_terms) {
             $variables = (new HtmlEngine($invitation))->generateLabelsAndValues();
         }
 
@@ -235,9 +271,34 @@ class InvoiceController extends Controller
             'hashed_ids' => $invoices->pluck('hashed_id'),
             'total' =>  $total,
             'variables' => $variables,
+            'invitation' => $invitation,
+            '_key' => $invitation ? $invitation->key : false,
+            'db' => $invitation->company->db,
+            'docuninja_active' => false,
+            'requires_signature' => $invoices->first()->client->getSetting('require_invoice_signature') && $invoices->first()->company->account->hasFeature(\App\Models\Account::FEATURE_INVOICE_SETTINGS),
+
         ];
 
-        return $this->render('invoices.payment', $data);
+        $default_flow = auth()->guard('contact')->user()->client->getSetting('payment_flow') == 'default';
+
+        if ($default_flow) {
+            $docuninja_active = $invoices->first()->company->docuninjaActive();
+            $signature_required = $invoices->first()->client->getSetting('require_invoice_signature');
+            
+            $signature_accepted = $invoices->every(fn($i) => $i->sync?->dn_completed === true);
+
+            $set_docuninja = $docuninja_active && !$signature_accepted && $signature_required;
+
+            $data['docuninja_active'] = (bool) $set_docuninja;
+
+            // If DocuNinja is active, we don't need to show the signature field.
+            if ($docuninja_active) {
+                $data['requires_signature'] = false;
+            }
+        }
+
+        return $default_flow ? $this->render('invoices.payment', $data) : $this->render('invoices.show_smooth_multi', $data);
+
     }
 
     /**
@@ -251,11 +312,11 @@ class InvoiceController extends Controller
         $invoices = Invoice::query()
                             ->whereIn('id', $ids)
                             ->withTrashed()
-                            ->whereClientId(auth()->guard('contact')->user()->client->id)
+                            ->whereClientId(auth()->guard('contact')->user()->client_id)
                             ->get();
 
         //generate pdf's of invoices locally
-        if (! $invoices || $invoices->count() == 0) {
+        if ($invoices->isEmpty()) {
             return back()->with(['message' => ctrans('texts.no_items_selected')]);
         }
 
@@ -290,8 +351,8 @@ class InvoiceController extends Controller
             }
 
 
-            $filename = date('Y-m-d').'_'.str_replace(' ', '_', trans('texts.invoices')).'.zip';
-            $filepath = sys_get_temp_dir().'/'.$filename;
+            $filename = date('Y-m-d-h-i-s') . '_' . str_replace(' ', '_', trans('texts.invoices')) . '.zip';
+            $filepath = sys_get_temp_dir() . '/' . $filename;
 
             $zipFile->saveAsFile($filepath) // save the archive to a file
                    ->close(); // close archive

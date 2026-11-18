@@ -1,4 +1,5 @@
 <?php
+
 /**
  * Invoice Ninja (https://invoiceninja.com).
  *
@@ -15,21 +16,25 @@ use App\DataMapper\ClientSettings;
 use Tests\TestCase;
 
 /**
- * @test
- * @covers  App\DataMapper\BaseSettings
+ *
+ *   App\DataMapper\BaseSettings
  */
 class BaseSettingsTest extends TestCase
 {
-    protected function setUp() :void
+
+    public $settings;
+
+    protected function setUp(): void
     {
         parent::setUp();
 
+        $this->settings = new \stdClass();
         $this->settings = ClientSettings::defaults();
     }
 
     public function testPropertyNamesExist()
     {
-        $blank_object = new \stdClass;
+        $blank_object = new \stdClass();
 
         $updated_object = $this->migrate($blank_object);
 
@@ -38,14 +43,14 @@ class BaseSettingsTest extends TestCase
 
     public function testPropertyNamesNotExist()
     {
-        $blank_object = new \stdClass;
+        $blank_object = new \stdClass();
 
         $updated_object = $this->migrate($blank_object);
 
         $this->assertFalse(property_exists($updated_object, 'non_existent_prop'));
     }
 
-    public function migrate(\stdClass $object) : \stdClass
+    public function migrate(\stdClass $object): \stdClass
     {
         foreach ($this->settings as $property => $value) {
             if (! property_exists($object, $property)) {

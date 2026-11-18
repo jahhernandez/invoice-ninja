@@ -1,10 +1,11 @@
 <?php
+
 /**
  * Invoice Ninja (https://invoiceninja.com).
  *
  * @link https://github.com/invoiceninja/invoiceninja source repository
  *
- * @copyright Copyright (c) 2024. Invoice Ninja LLC (https://invoiceninja.com)
+ * @copyright Copyright (c) 2026. Invoice Ninja LLC (https://invoiceninja.com)
  *
  * @license https://www.elastic.co/licensing/elastic-license
  */
@@ -67,7 +68,7 @@ class OAuth
     {
         $name = trim($name);
         $last_name = (strpos($name, ' ') === false) ? '' : preg_replace('#.*\s([\w-]*)$#', '$1', $name);
-        $first_name = trim(preg_replace('#'.preg_quote($last_name, '/').'#', '', $name));
+        $first_name = trim(preg_replace('#' . preg_quote($last_name, '/') . '#', '', $name));
 
         return [$first_name, $last_name];
     }
@@ -120,6 +121,21 @@ class OAuth
         }
     }
 
+    /* iOS/macOS tokens are issued for the bundle ID, web/Android tokens for the service ID */
+    public static function appleUserFromToken(string $token)
+    {
+        $payload = json_decode(base64_decode(strtr(explode('.', $token)[1] ?? '', '-_', '+/')), true);
+        $client_id = in_array($payload['aud'] ?? null, config('services.apple.client_ids'), true)
+            ? $payload['aud']
+            : config('services.apple.client_id');
+
+        /** @var \SocialiteProviders\Apple\Provider $driver */
+        $driver = Socialite::driver('apple');
+        $driver->setConfig(new \SocialiteProviders\Manager\Config($client_id, config('services.apple.client_secret'), config('services.apple.redirect')));
+
+        return $driver->userFromToken($token);
+    }
+
     public function getProvider($provider)
     {
         switch ($provider) {
@@ -130,7 +146,6 @@ class OAuth
                 return $this;
             default:
                 return null;
-                break;
         }
     }
 

@@ -1,17 +1,17 @@
 <?php
+
 /**
  * Invoice Ninja (https://invoiceninja.com).
  *
  * @link https://github.com/invoiceninja/invoiceninja source repository
  *
- * @copyright Copyright (c) 2024. Invoice Ninja LLC (https://invoiceninja.com)
+ * @copyright Copyright (c) 2026. Invoice Ninja LLC (https://invoiceninja.com)
  *
  * @license https://www.elastic.co/licensing/elastic-license
  */
 
 namespace App\Jobs\EDocument;
 
-use App\Services\EDocument\Standards\RoEInvoice;
 use App\Utils\Ninja;
 use App\Models\Quote;
 use App\Models\Credit;
@@ -23,11 +23,13 @@ use Illuminate\Queue\SerializesModels;
 use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
+use App\Services\EDocument\Standards\Peppol;
 use horstoeko\zugferd\ZugferdDocumentBuilder;
+use App\Services\EDocument\Standards\FatturaPA;
+use App\Services\EDocument\Standards\RoEInvoice;
 use App\Services\EDocument\Standards\OrderXDocument;
 use App\Services\EDocument\Standards\FacturaEInvoice;
-use App\Services\EDocument\Standards\FatturaPA;
-use App\Services\EDocument\Standards\ZugferdEDokument;
+use App\Services\EDocument\Standards\ZugferdEDocument;
 
 class CreateEDocument implements ShouldQueue
 {
@@ -38,9 +40,7 @@ class CreateEDocument implements ShouldQueue
 
     public $deleteWhenMissingModels = true;
 
-    public function __construct(private object $document, private bool $returnObject = false)
-    {
-    }
+    public function __construct(private object $document, private bool $returnObject = false) {}
 
     /**
      * Execute the job.
@@ -59,14 +59,17 @@ class CreateEDocument implements ShouldQueue
         App::setLocale($settings_entity->locale());
 
         /* Set customized translations _NOW_ */
-        if($this->document->client ?? false)
+        if ($this->document->client ?? false) {
             $t->replace(Ninja::transformTranslations($this->document->client->getMergedSettings()));
+        }
 
         $e_document_type = strlen($settings_entity->getSetting('e_invoice_type')) > 2 ? $settings_entity->getSetting('e_invoice_type') : "XInvoice_3_0";
         $e_quote_type = strlen($settings_entity->getSetting('e_quote_type')) > 2 ? $settings_entity->getSetting('e_quote_type') : "OrderX_Extended";
 
-        if ($this->document instanceof Invoice){
+        if ($this->document instanceof Invoice) {
             switch ($e_document_type) {
+                case "PEPPOL":
+                    return (new Peppol($this->document))->run()->toXml();
                 case "FACT1":
                     return (new RoEInvoice($this->document))->generateXml();
                 case "FatturaPA":
@@ -81,7 +84,8 @@ class CreateEDocument implements ShouldQueue
                 case "XInvoice-Extended":
                 case "XInvoice-BasicWL":
                 case "XInvoice-Basic":
-                    $zugferd = (new ZugferdEDokument($this->document))->run();
+
+                    $zugferd = (new ZugferdEDocument($this->document))->run();
 
                     return $this->returnObject ? $zugferd->xdocument : $zugferd->getXml();
                 case "Facturae_3.2":
@@ -89,15 +93,12 @@ class CreateEDocument implements ShouldQueue
                 case "Facturae_3.2.2":
                     return (new FacturaEInvoice($this->document, str_replace("Facturae_", "", $e_document_type)))->run();
                 default:
-
-                    $zugferd = (new ZugferdEDokument($this->document))->run();
-
-                    return $this->returnObject ? $zugferd : $zugferd->getXml();
+                    $zugferd = (new ZugferdEDocument($this->document))->run();
+                    return $this->returnObject ? $zugferd->xdocument : $zugferd->getXml();
 
             }
-        }
-        elseif ($this->document instanceof Quote){
-            switch ($e_quote_type){
+        } elseif ($this->document instanceof Quote) {
+            switch ($e_quote_type) {
                 case "OrderX_Basic":
                 case "OrderX_Comfort":
                 case "OrderX_Extended":
@@ -107,9 +108,8 @@ class CreateEDocument implements ShouldQueue
                     $orderx = (new OrderXDocument($this->document))->run();
                     return $this->returnObject ? $orderx->orderxdocument : $orderx->getXml();
             }
-        }
-        elseif ($this->document instanceof PurchaseOrder){
-            switch ($e_quote_type){
+        } elseif ($this->document instanceof PurchaseOrder) {
+            switch ($e_quote_type) {
                 case "OrderX_Basic":
                 case "OrderX_Comfort":
                 case "OrderX_Extended":
@@ -119,8 +119,7 @@ class CreateEDocument implements ShouldQueue
                     $orderx = (new OrderXDocument($this->document))->run();
                     return $this->returnObject ? $orderx->orderxdocument : $orderx->getXml();
             }
-        }
-        elseif ($this->document instanceof Credit) {
+        } elseif ($this->document instanceof Credit) {
             switch ($e_document_type) {
                 case "EN16931":
                 case "XInvoice_3_0":
@@ -132,14 +131,13 @@ class CreateEDocument implements ShouldQueue
                 case "XInvoice-Extended":
                 case "XInvoice-BasicWL":
                 case "XInvoice-Basic":
-                    $zugferd = (new ZugferdEDokument($this->document))->run();
+                    $zugferd = (new ZugferdEDocument($this->document))->run();
                     return $this->returnObject ? $zugferd->xdocument : $zugferd->getXml();
                 default:
-                    $zugferd = (new ZugferdEDokument($this->document))->run();
-                    return $this->returnObject ? $zugferd : $zugferd->getXml();
+                    $zugferd = (new ZugferdEDocument($this->document))->run();
+                    return $this->returnObject ? $zugferd->xdocument : $zugferd->getXml();
             }
-        }
-        else{
+        } else {
             return "";
         }
     }

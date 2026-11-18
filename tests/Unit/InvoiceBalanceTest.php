@@ -1,4 +1,5 @@
 <?php
+
 /**
  * Invoice Ninja (https://invoiceninja.com).
  *
@@ -19,13 +20,12 @@ use Tests\MockAccountData;
 use Tests\TestCase;
 
 /**
- * @test
- * @covers  App\Helpers\Invoice\InvoiceSum
+ *
+ *   App\Helpers\Invoice\InvoiceSum
  */
 class InvoiceBalanceTest extends TestCase
 {
     use MockAccountData;
-
     protected function setUp(): void
     {
         parent::setUp();
@@ -35,12 +35,12 @@ class InvoiceBalanceTest extends TestCase
 
     public function testInvoiceBalances()
     {
-        
+
         $item = new InvoiceItem();
         $item->quantity = 1;
         $item->cost = 100;
         $item->type_id = '1';
-        
+
         $i = Invoice::factory()->create([
             'company_id' => $this->company->id,
             'user_id' => $this->user->id,
@@ -67,7 +67,7 @@ class InvoiceBalanceTest extends TestCase
         $this->assertEquals(2, $i->status_id);
         $this->assertEquals(0, $i->paid_to_date);
 
-        
+
         $item = new InvoiceItem();
         $item->quantity = 1;
         $item->cost = 30.37;
@@ -85,7 +85,7 @@ class InvoiceBalanceTest extends TestCase
         $this->assertEquals(0, $i->paid_to_date);
 
         $i = $i->service()->applyPaymentAmount(10.37, 'paid')->save();
-        
+
         // nlog($i->withoutRelations()->toArray());
 
         $this->assertEquals(30.37, $i->amount);
@@ -103,7 +103,9 @@ class InvoiceBalanceTest extends TestCase
         $i = $i->calc()->getInvoice();
 
         $this->assertEquals(15, $i->amount);
-        $this->assertEquals(15-10.37, $i->balance);
+        // 15 - 10.37 = 4.63; balance is now rounded to currency precision rather
+        // than carrying the 4.630000000000001 float artifact into storage.
+        $this->assertEqualsWithDelta(4.63, $i->balance, 0.0001);
         $this->assertEquals(3, $i->status_id);
         $this->assertEquals(10.37, $i->paid_to_date);
 
@@ -113,12 +115,12 @@ class InvoiceBalanceTest extends TestCase
 
     public function testInvoiceBalancesWithNegatives()
     {
-        
+
         $item = new InvoiceItem();
         $item->quantity = 1;
         $item->cost = -100;
         $item->type_id = '1';
-        
+
         $i = Invoice::factory()->create([
             'company_id' => $this->company->id,
             'user_id' => $this->user->id,
@@ -145,7 +147,7 @@ class InvoiceBalanceTest extends TestCase
         $this->assertEquals(2, $i->status_id);
         $this->assertEquals(0, $i->paid_to_date);
 
-        
+
         $item = new InvoiceItem();
         $item->quantity = 1;
         $item->cost = -30.37;
@@ -171,12 +173,12 @@ class InvoiceBalanceTest extends TestCase
 
     public function testPurchaseOrderBalances()
     {
-        
+
         $item = new InvoiceItem();
         $item->quantity = 1;
         $item->cost = 100;
         $item->type_id = '1';
-        
+
         $i = PurchaseOrder::factory()->create([
             'company_id' => $this->company->id,
             'user_id' => $this->user->id,
@@ -203,7 +205,7 @@ class InvoiceBalanceTest extends TestCase
         $this->assertEquals(2, $i->status_id);
         $this->assertEquals(0, $i->paid_to_date);
 
-        
+
         $item = new InvoiceItem();
         $item->quantity = 1;
         $item->cost = 30.37;
@@ -221,7 +223,7 @@ class InvoiceBalanceTest extends TestCase
 
         $item = new InvoiceItem();
         $item->quantity = 1;
-        $item->cost =10.37;
+        $item->cost = 10.37;
         $item->type_id = '1';
 
         $i->line_items = [$item];

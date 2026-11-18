@@ -1,10 +1,11 @@
 <?php
+
 /**
  * Invoice Ninja (https://invoiceninja.com).
  *
  * @link https://github.com/invoiceninja/invoiceninja source repository
  *
- * @copyright Copyright (c) 2024. Invoice Ninja LLC (https://invoiceninja.com)
+ * @copyright Copyright (c) 2026. Invoice Ninja LLC (https://invoiceninja.com)
  *
  * @license https://www.elastic.co/licensing/elastic-license
  */
@@ -12,6 +13,7 @@
 namespace App\Models;
 
 use App\Services\Bank\BankService;
+use App\Models\Traits\HasTags;
 use App\Utils\Traits\MakesHash;
 use Illuminate\Database\Eloquent\SoftDeletes;
 
@@ -24,7 +26,7 @@ use Illuminate\Database\Eloquent\SoftDeletes;
  * @property int $bank_integration_id
  * @property int $transaction_id
  * @property string $nordigen_transaction_id
- * @property string $amount
+ * @property float $amount
  * @property string|null $currency_code
  * @property int|null $currency_id
  * @property string|null $account_type
@@ -37,11 +39,11 @@ use Illuminate\Database\Eloquent\SoftDeletes;
  * @property string|null $description
  * @property string|null $participant
  * @property string|null $participant_name
- * @property string $invoice_ids
- * @property int|null $expense_id
+ * @property string|null $invoice_ids
+ * @property string|null $expense_id
  * @property int|null $vendor_id
  * @property int $status_id
- * @property int $is_deleted
+ * @property bool $is_deleted
  * @property int|null $created_at
  * @property int|null $updated_at
  * @property int|null $deleted_at
@@ -53,7 +55,7 @@ use Illuminate\Database\Eloquent\SoftDeletes;
  * @property-read mixed $hashed_id
  * @property-read \App\Models\User $user
  * @property-read \App\Models\Vendor|null $vendor
- * @method static \Illuminate\Database\Eloquent\Builder|BaseModel company()
+ * 
  * @method static \Illuminate\Database\Eloquent\Builder|BaseModel exclude($columns)
  * @method static \Database\Factories\BankTransactionFactory factory($count = null, $state = [])
  * @method static \Illuminate\Database\Eloquent\Builder|BankTransaction filter(\App\Filters\QueryFilters $filters)
@@ -64,6 +66,7 @@ use Illuminate\Database\Eloquent\SoftDeletes;
  * @method static \Illuminate\Database\Eloquent\Builder|BaseModel scope()
  * @method static \Illuminate\Database\Eloquent\Builder|BankTransaction withoutTrashed()
  * @property-read \App\Models\Payment|null $payment
+ * @property-read \Illuminate\Database\Eloquent\Collection<int, \App\Models\Tag> $tags
  * @mixin \Eloquent
  */
 class BankTransaction extends BaseModel
@@ -71,6 +74,7 @@ class BankTransaction extends BaseModel
     use SoftDeletes;
     use MakesHash;
     use Filterable;
+    use HasTags;
 
     public const STATUS_UNMATCHED = 1;
 
@@ -89,7 +93,8 @@ class BankTransaction extends BaseModel
         'vendor_id',
         'amount',
         'participant',
-        'participant_name'
+        'participant_name',
+        'currency_code',
     ];
 
 
@@ -97,7 +102,7 @@ class BankTransaction extends BaseModel
     {
         $collection = collect();
 
-        $invoices = explode(",", $this->invoice_ids);
+        $invoices = explode(",", $this->invoice_ids ?? '');
 
         if (count($invoices) >= 1) {
             foreach ($invoices as $invoice) {
@@ -114,7 +119,7 @@ class BankTransaction extends BaseModel
     {
         $collection = collect();
 
-        $expenses = explode(",", $this->expense_id);
+        $expenses = explode(",", $this->expense_id ?? '');
 
         if (count($expenses) >= 1) {
             foreach ($expenses as $expense) {

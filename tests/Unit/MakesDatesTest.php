@@ -1,4 +1,5 @@
 <?php
+
 /**
  * Invoice Ninja (https://invoiceninja.com).
  *
@@ -15,8 +16,8 @@ use App\Utils\Traits\MakesDates;
 use Tests\TestCase;
 
 /**
- * @test
- * @covers  App\Utils\Traits\MakesDates
+ *
+ *   App\Utils\Traits\MakesDates
  */
 class MakesDatesTest extends TestCase
 {

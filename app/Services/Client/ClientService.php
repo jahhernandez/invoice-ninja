@@ -1,10 +1,11 @@
 <?php
+
 /**
  * Invoice Ninja (https://invoiceninja.com).
  *
  * @link https://github.com/invoiceninja/invoiceninja source repository
  *
- * @copyright Copyright (c) 2024. Invoice Ninja LLC (https://invoiceninja.com)
+ * @copyright Copyright (c) 2026. Invoice Ninja LLC (https://invoiceninja.com)
  *
  * @license https://www.elastic.co/licensing/elastic-license
  */
@@ -21,10 +22,13 @@ use App\Services\Email\Email;
 use App\Utils\Traits\MakesDates;
 use Illuminate\Support\Facades\DB;
 use App\Services\Email\EmailObject;
+use App\Services\Client\MapSettings;
 use App\Utils\Traits\GeneratesCounter;
 use Illuminate\Mail\Mailables\Address;
 use Illuminate\Database\QueryException;
 use App\Events\Statement\StatementWasEmailed;
+use App\Services\EDocument\Gateway\Storecove\RoutingResolver;
+use App\Services\EDocument\Gateway\Storecove\Storecove;
 
 class ClientService
 {
@@ -37,38 +41,58 @@ class ClientService
 
     private bool $completed = true;
 
-    public function __construct(private Client $client)
-    {
-    }
+    public function __construct(private Client $client) {}
 
     public function calculateBalance(?Invoice $invoice = null)
     {
-        $balance = Invoice::withTrashed()
-                          ->where('client_id', $this->client->id)
-                          ->whereIn('status_id', [Invoice::STATUS_SENT, Invoice::STATUS_PARTIAL])
-                          ->where('is_deleted', false)
-                          ->sum('balance');
-
-        $pre_client_balance = $this->client->balance;
+        // $pre_client_balance = $this->client->balance;
 
         try {
+
+            $balance = Invoice::withTrashed()
+                        ->where('client_id', $this->client->id)
+                        ->whereIn('status_id', [Invoice::STATUS_SENT, Invoice::STATUS_PARTIAL])
+                        ->where('is_deleted', false)
+                        ->sum('balance');
+
             DB::connection(config('database.default'))->transaction(function () use ($balance) {
                 $this->client = Client::withTrashed()->where('id', $this->client->id)->lockForUpdate()->first();
                 $this->client->balance = $balance;
                 $this->client->saveQuietly();
             }, 2);
+
+
         } catch (\Throwable $throwable) {
             nlog("DB ERROR " . $throwable->getMessage());
-        }
-
-        if($invoice && floatval($this->client->balance)  != floatval($pre_client_balance)) {
-            $diff = $this->client->balance - $pre_client_balance;
-            $invoice->ledger()->insertInvoiceBalance($diff, $this->client->balance, "Update Adjustment Invoice # {$invoice->number} => {$diff}");
         }
 
         return $this;
     }
 
+    public function calculatePaidToDate()
+    {
+        try {
+
+            $paid_to_date = Invoice::withTrashed()
+                        ->where('client_id', $this->client->id)
+                        ->whereIn('status_id', [Invoice::STATUS_PARTIAL, Invoice::STATUS_PAID])
+                        ->where('is_proforma', false)
+                        ->where('is_deleted', false)
+                        ->sum('paid_to_date');
+
+            DB::connection(config('database.default'))->transaction(function () use ($paid_to_date) {
+                $this->client = Client::withTrashed()->where('id', $this->client->id)->lockForUpdate()->first();
+                $this->client->paid_to_date = $paid_to_date;
+                $this->client->saveQuietly();
+            }, 2);
+
+
+        } catch (\Throwable $throwable) {
+            nlog("DB ERROR " . $throwable->getMessage());
+        }
+
+        return $this;
+    }
     /**
      * Seeing too many race conditions under heavy load here.
      *
@@ -77,86 +101,76 @@ class ClientService
      */
     public function updateBalance(float $amount)
     {
-        try {
-            DB::connection(config('database.default'))->transaction(function () use ($amount) {
-                $this->client = Client::withTrashed()->where('id', $this->client->id)->lockForUpdate()->first();
-                $this->client->balance += $amount;
-                $this->client->saveQuietly();
-            }, 2);
-        } catch (\Throwable $throwable) {
 
-            if (DB::connection(config('database.default'))->transactionLevel() > 0) {
-                DB::connection(config('database.default'))->rollBack();
-            }
-
-        } catch(\Exception $exception) {
-
-            if (DB::connection(config('database.default'))->transactionLevel() > 0) {
-                DB::connection(config('database.default'))->rollBack();
-            }
-        }
+        DB::connection(config('database.default'))->transaction(function () use ($amount) {
+            $this->client = Client::withTrashed()->where('id', $this->client->id)->lockForUpdate()->first();
+            $this->client->balance += $amount;
+            $this->client->saveQuietly();
+        }, 2);
 
         return $this;
     }
 
-    public function updateBalanceAndPaidToDate(float $balance, float $paid_to_date)
+    public function updateBalanceAndPaidToDate($balance, $paid_to_date)
     {
-        try {
-            DB::connection(config('database.default'))->transaction(function () use ($balance, $paid_to_date) {
-                $this->client = Client::withTrashed()->where('id', $this->client->id)->lockForUpdate()->first();
-                $this->client->balance += $balance;
-                $this->client->paid_to_date += $paid_to_date;
-                $this->client->saveQuietly();
-            }, 2);
-        } catch (\Throwable $throwable) {
-            nlog("DB ERROR " . $throwable->getMessage());
 
-            if (DB::connection(config('database.default'))->transactionLevel() > 0) {
-                DB::connection(config('database.default'))->rollBack();
-            }
-
-        } catch(\Exception $exception) {
-            nlog("DB ERROR " . $exception->getMessage());
-
-            if (DB::connection(config('database.default'))->transactionLevel() > 0) {
-                DB::connection(config('database.default'))->rollBack();
-            }
-        }
+        DB::connection(config('database.default'))->transaction(function () use ($balance, $paid_to_date) {
+            $this->client = Client::withTrashed()->where('id', $this->client->id)->lockForUpdate()->first();
+            $this->client->balance += $balance;
+            $this->client->paid_to_date += $paid_to_date;
+            $this->client->saveQuietly();
+        }, 2);
 
         return $this;
     }
 
-    public function updatePaidToDate(float $amount)
+    public function updatePaidToDate($amount)
     {
-        try {
-            DB::connection(config('database.default'))->transaction(function () use ($amount) {
-                $this->client = Client::withTrashed()->where('id', $this->client->id)->lockForUpdate()->first();
-                $this->client->paid_to_date += $amount;
-                $this->client->saveQuietly();
-            }, 2);
-        } catch (\Throwable $throwable) {
-            nlog("DB ERROR " . $throwable->getMessage());
 
-            if (DB::connection(config('database.default'))->transactionLevel() > 0) {
-                DB::connection(config('database.default'))->rollBack();
-            }
-
-        } catch(\Exception $exception) {
-            nlog("DB ERROR " . $exception->getMessage());
-
-            if (DB::connection(config('database.default'))->transactionLevel() > 0) {
-                DB::connection(config('database.default'))->rollBack();
-            }
-        }
+        DB::connection(config('database.default'))->transaction(function () use ($amount) {
+            $this->client = Client::withTrashed()->where('id', $this->client->id)->lockForUpdate()->first();
+            $this->client->paid_to_date += $amount;
+            $this->client->saveQuietly();
+        }, 2);
 
         return $this;
     }
+
+    public function updatePaymentBalance()
+    {
+
+        DB::connection(config('database.default'))->transaction(function () {
+
+            $amount = Payment::query()
+                    ->withTrashed()
+                    ->where('client_id', $this->client->id)
+                    ->where('is_deleted', 0)
+                    ->whereIn('status_id', [Payment::STATUS_COMPLETED, Payment::STATUS_PENDING, Payment::STATUS_PARTIALLY_REFUNDED, Payment::STATUS_REFUNDED])
+                    ->selectRaw('SUM(payments.amount - payments.applied) as amount')->first()->amount ?? 0;
+
+            $this->client = Client::withTrashed()->where('id', $this->client->id)->lockForUpdate()->first();
+            $this->client->payment_balance = $amount;
+            $this->client->saveQuietly();
+        }, 2);
+
+        return $this;
+    }
+
+
+    public function adjustCreditBalance(mixed $amount)
+    {
+
+        $this->client->credit_balance += $amount;
+
+        return $this;
+    }
+
 
     public function applyNumber(): self
     {
         $x = 1;
 
-        if(isset($this->client->number)) {
+        if (isset($this->client->number)) {
             return $this;
         }
 
@@ -169,35 +183,11 @@ class ClientService
             } catch (QueryException $e) {
                 $x++;
 
-                if ($x > 10) {
+                if ($x > 50) {
                     $this->completed = false;
                 }
             }
         } while ($this->completed);
-
-        return $this;
-    }
-
-    public function updatePaymentBalance()
-    {
-        $amount = Payment::query()->where('client_id', $this->client->id)
-                        ->where('is_deleted', 0)
-                        ->whereIn('status_id', [Payment::STATUS_COMPLETED, Payment::STATUS_PENDING, Payment::STATUS_PARTIALLY_REFUNDED, Payment::STATUS_REFUNDED])
-                        ->selectRaw('SUM(payments.amount - payments.applied) as amount')->first()->amount ?? 0;
-
-        DB::connection(config('database.default'))->transaction(function () use ($amount) {
-            $this->client = Client::withTrashed()->where('id', $this->client->id)->lockForUpdate()->first();
-            $this->client->payment_balance = $amount;
-            $this->client->saveQuietly();
-        }, 2);
-
-        return $this;
-    }
-
-
-    public function adjustCreditBalance(float $amount)
-    {
-        $this->client->credit_balance += $amount;
 
         return $this;
     }
@@ -207,7 +197,7 @@ class ClientService
         $credits = Credit::withTrashed()->where('client_id', $this->client->id)
                       ->where('is_deleted', false)
                       ->where(function ($query) {
-                          $query->whereDate('due_date', '<=', now()->format('Y-m-d'))
+                          $query->where('due_date', '>=', now()->format('Y-m-d'))
                                   ->orWhereNull('due_date');
                       })
                       ->orderBy('created_at', 'ASC');
@@ -221,7 +211,7 @@ class ClientService
                   ->where('is_deleted', false)
                   ->where('balance', '>', 0)
                   ->where(function ($query) {
-                      $query->whereDate('due_date', '<=', now()->format('Y-m-d'))
+                      $query->where('due_date', '>=', now()->format('Y-m-d'))
                               ->orWhereNull('due_date');
                   })
                   ->orderBy('created_at', 'ASC')->get();
@@ -251,7 +241,7 @@ class ClientService
 
         $pdf = $statement->run();
 
-        if ($send_email) {
+        if ($send_email && $pdf) {
             // If selected, ignore clients that don't have any invoices to put on the statement.
             if (!empty($options['only_clients_with_invoices']) && $statement->getInvoices()->count() == 0) {
                 return false;
@@ -309,6 +299,8 @@ class ClientService
 
         $invoice = $this->client->invoices()->whereHas('invitations')->first();
 
+        $invoice = \App\Models\Invoice::where('client_id', $this->client->id)->whereHas('invitations')->first();
+
         $email_object->attachments = [['file' => base64_encode($pdf), 'name' => ctrans('texts.statement') . ".pdf"]];
         $email_object->client_id = $this->client->id;
         $email_object->entity_class = Invoice::class;
@@ -323,6 +315,38 @@ class ClientService
         ];
 
         return $email_object;
+    }
+
+
+    public function showSettingsMap(): array
+    {
+        return (new MapSettings($this->client))->run();
+    }
+
+    /**
+     * @return array{message: bool}
+     */
+    public function peppolDiscovery(): array
+    {
+        if ($this->client->checkDeliveryNetwork()) {
+            return ['message' => false];
+        }
+
+        $this->client->loadMissing('country', 'company');
+
+        $invoice = Invoice::make([ // @phpstan-ignore-line
+            'client_id' => $this->client->id,
+            'company_id' => $this->client->company_id,
+        ]);
+        $invoice->setRelation('client', $this->client);
+        $invoice->setRelation('company', $this->client->company);
+
+        $storecove = app(Storecove::class);
+
+        return [
+            'message' => (new RoutingResolver($invoice, $storecove->proxy, $storecove->router))
+                ->discoverOnPeppol(),
+        ];
     }
 
     /**

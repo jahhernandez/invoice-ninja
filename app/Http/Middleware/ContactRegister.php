@@ -1,5 +1,13 @@
 <?php
-
+/**
+ * Invoice Ninja (https://invoiceninja.com).
+ *
+ * @link https://github.com/invoiceninja/invoiceninja source repository
+ *
+ * @copyright Copyright (c) 2026. Invoice Ninja LLC (https://invoiceninja.com)
+ *
+ * @license https://www.elastic.co/licensing/elastic-license
+ */
 namespace App\Http\Middleware;
 
 use App\Models\Account;
@@ -79,7 +87,7 @@ class ContactRegister
         // As a fallback for self-hosted, it will use default company in the system
         // if key isn't provided in the url.
         if (! $request->route()->parameter('company_key') && Ninja::isSelfHost()) {
-            $company = Account::query()->first()->default_company;
+            $company = Account::query()->first()->default_company ?? Account::query()->first()->companies->first();
 
             if (! $company->client_can_register) {
                 abort(400, 'Registration disabled');

@@ -1,4 +1,5 @@
 <?php
+
 /**
  * Invoice Ninja (https://invoiceninja.com).
  *
@@ -17,15 +18,14 @@ use Tests\MockAccountData;
 use Tests\TestCase;
 
 /**
- * @test
- * @covers App\Http\Controllers\Auth\PasswordTimeoutController
+ *
+ *  App\Http\Controllers\Auth\PasswordTimeoutController
  */
 class PasswordTimeoutTest extends TestCase
 {
     use DatabaseTransactions;
     use MockAccountData;
-
-    protected function setUp() :void
+    protected function setUp(): void
     {
         parent::setUp();
 

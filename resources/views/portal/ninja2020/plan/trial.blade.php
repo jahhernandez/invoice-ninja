@@ -1449,18 +1449,33 @@ Ensure the default browser behavior of the `hidden` attribute.
                         method="post"
                 >
                 @csrf
-                    <input type="hidden" name="gateway_response"/>
+                    <input type="hidden" name="payment_intent_id"/>
                     <div class="alert alert-failure mb-4" hidden="" id="errors"></div>
-                    <div class="form-group mb-[10px]">
+                    <div class="form-group mb-[10px] flex">
+
+                      <div class="w-1/2">
                         <input
                                 type="text"
                                 class="form-control block w-full px-3 py-2 text-base font-normal text-gray-700 bg-white bg-clip-padding border border-light-grey rounded transition ease-in-out m-0 focus:primary-blue focus:outline-none"
-                                id="name"
-                                placeholder="{{ ctrans('texts.name') }}"
-                                name="name"
-                                value="{{$client->name}}"
+                                id="first_name"
+                                placeholder="{{ ctrans('texts.first_name') }}"
+                                name="first_name"
+                                value="{{ auth()->guard('contact')->user()->first_name}}"
                                 required
                         />
+                      </div>
+                      <div class="w-1/2">
+                        <input
+                                type="text"
+                                class="form-control block w-full px-3 py-2 text-base font-normal text-gray-700 bg-white bg-clip-padding border border-light-grey rounded transition ease-in-out m-0 focus:primary-blue focus:outline-none"
+                                id="lastt_name"
+                                placeholder="{{ ctrans('texts.last_name') }}"
+                                name="last_name" 
+                                value="{{ auth()->guard('contact')->user()->last_name}}"
+                                required
+                        />
+                      </div>
+                      
                     </div>
                     <div class="form-group mb-[10px]">
                         <input
@@ -1526,7 +1541,7 @@ Ensure the default browser behavior of the `hidden` attribute.
                 <select name="country" id="country" class="form-select w-full py-[9.5px] px-[12px] border border-light-grey rounded transition ease-in-out m-0 focus:border-primary-blue focus:outline-none bg-white">
                     <option value="{{ $client->country->id}}" selected>{{ $client->country->iso_3166_2 }} ({{ $client->country->name }})</option>
                     @foreach($countries as $country)
-                        <option value="{{ $country->id }}">{{ $country->iso_3166_2 }} ({{ $country->name }})></option>
+                        <option value="{{ $country->id }}">{{ $country->iso_3166_2 }} ({{ $country->getName() }})</option>
                     @endforeach
                 </select>
               </div>
@@ -1539,7 +1554,7 @@ Ensure the default browser behavior of the `hidden` attribute.
                         </div>
                     </div>
                     <div class="flex justify-start mb-[25px]">
-                        <span class="text-[12px]">* At the end of your 14 day trial your card will be charged $12/month. Cancel anytime.</span>
+                        <span class="text-[12px]">{{ ctrans('texts.trial_card_authorization_notice') }}</span>
                     </div>
                     <div class="flex justify-end">
                         <button
@@ -1568,13 +1583,13 @@ Ensure the default browser behavior of the `hidden` attribute.
                     <li class="mb-[5px]">Unlimited Clients & Invoices & Quotes</li>
                     <li class="mb-[5px]">Remove "Created by Invoice Ninja"</li>
                     <li class="mb-[5px]">Send Invoice Emails via Gmail or MSN Accounts</li>
-                    <li class="mb-[5px]">10 Professional Invoice & Quote Template Designs</li>
+                    <li class="mb-[5px]">11 Professional Invoice & Quote Template Designs</li>
                     <li class="mb-[5px]">Branded URL Option: "YourBrand".Invoicing.co"</li>
                     <li class="mb-[5px]">Customize Invoice Designs & Email Templates</li>
                     <li class="mb-[5px]">Create Client Subscriptions: Recurring & Auto-billing</li>
                     <li class="mb-[5px]">API Integration with 3rd Party Apps & Platforms</li>
                     <li class="mb-[5px]">Display Clients E-Signature on Invoices & Quotes</li>
-                    <li>Setup Custom Payment Auto-Reminder Emails</li>
+                    <li class="mb-[5px]">Setup Custom Payment Auto-Reminder Emails</li>
                 </ul>
                 <p class="text-primary-blue mt-[30px] font-bold text-[16px] italic relative z-10">
                     &amp; Much More!
@@ -1612,7 +1627,7 @@ Ensure the default browser behavior of the `hidden` attribute.
                               30 day money back guarantee!
                             </p>
                             <h3 class="text-[35px] font-bold leading-[1.35em] mb-[36px] text-black">
-                                $12<span class="font-normal text-base ml-[10px] text-gray">Per month</span>
+                                $14<span class="font-normal text-base ml-[10px] text-gray">Per month</span>
                             </h3>
                             <button
                                     type="button"
@@ -1628,7 +1643,7 @@ Ensure the default browser behavior of the `hidden` attribute.
                               <li class="mb-[5px]">Remove "Created by Invoice Ninja"</li>
                               <li class="mb-[5px]">Email Invoices via Gmail & MSN</li>
                               <li class="mb-[5px]">Branded URL: 'YourSite".Invoicing.co'</li>
-                              <li class="mb-[5px]">10 Professional Invoice Templates</li>
+                              <li class="mb-[5px]">11 Professional Invoice Templates</li>
                               <li class="mb-[5px]">Customize Invoice Designs</li>
                               <li class="mb-[5px]">Recurring & Auto-Billing Invoices</li>
                               <li class="mb-[5px]">API Integration with 3rd Party Apps</li>
@@ -1640,7 +1655,8 @@ Ensure the default browser behavior of the `hidden` attribute.
                               <li class="mb-[5px]">Reports: Invoices, Expenses, P&L, more</li>
                               <li class="mb-[5px]">Bulk Email Invoices, Quotes, Credits</li>
                               <li class="mb-[5px]">Interlink 10 Companies with 1 Login</li>
-                              <li>Create Unique "Client Group" Settings</li>
+                              <li class="mb-[5px]">Setup Custom Payment Auto-Reminder Emails</li>
+                    
                           </ul>
                         </div>
                     </div>
@@ -1653,7 +1669,7 @@ Ensure the default browser behavior of the `hidden` attribute.
                               30 day money back guarantee!
                             </p>
                             <h3 class="text-[35px] font-bold leading-[1.35em] mb-[36px] text-black" id="m_plan_price">
-                                $16<span class="font-normal text-base ml-[10px] text-gray">Per month</span>
+                                $18<span class="font-normal text-base ml-[10px] text-gray">Per month</span>
                             </h3>
                             <form
                                     id="plan-form"
@@ -1689,7 +1705,8 @@ Ensure the default browser behavior of the `hidden` attribute.
                             <ul class="list-checkmark relative z-10">
                               <li class="mb-[20px]">Create Additional Account Users (up to 30!) & Set Access Permissions per User</li>
                               <li class="mb-[20px]">Attach Files to Emails & Client-Portal (pdf, jpg, ppt, xls, doc & more)</li>
-                              <li>Fully Branded Client Portal: "Billing.YourCompany.com"</li>
+                              <li class="mb-[20px]">Fully Branded Client Portal: "Billing.YourCompany.com"</li>
+                              <li class="mb-[20px]">Integrate Your Frinancial Accounts and Sync Banking Transactions via Yodlee or Nodigen Banking Platforms</li>
                           </ul>
                         </div>
                     </div>
@@ -1706,7 +1723,7 @@ Ensure the default browser behavior of the `hidden` attribute.
                               Pay annually for 10 months + 2 free!
                             </p>
                             <h3 class="text-[35px] font-bold leading-[1.35em] mb-[36px] text-black">
-                                $120<span class="font-normal text-base ml-[10px] text-gray">Per year</span>
+                                $140<span class="font-normal text-base ml-[10px] text-gray">Per year</span>
                             </h3>
                             <button
                                     type="button"
@@ -1722,7 +1739,7 @@ Ensure the default browser behavior of the `hidden` attribute.
                               <li class="mb-[5px]">Remove "Created by Invoice Ninja"</li>
                               <li class="mb-[5px]">Email Invoices via Gmail & MSN</li>
                               <li class="mb-[5px]">Branded URL: 'YourSite".Invoicing.co'</li>
-                              <li class="mb-[5px]">10 Professional Invoice Templates</li>
+                              <li class="mb-[5px]">11 Professional Invoice Templates</li>
                               <li class="mb-[5px]">Customize Invoice Designs</li>
                               <li class="mb-[5px]">Recurring & Auto-Billing Invoices</li>
                               <li class="mb-[5px]">API Integration with 3rd Party Apps</li>
@@ -1747,7 +1764,7 @@ Ensure the default browser behavior of the `hidden` attribute.
                               Pay annually for 10 months + 2 free!
                             </p>
                             <h3 class="text-[35px] font-bold leading-[1.35em] mb-[36px] text-black" id="y_plan_price">
-                                $160<span class="font-normal text-base ml-[10px] text-gray">Per Year</span>
+                                $180<span class="font-normal text-base ml-[10px] text-gray">Per Year</span>
                             </h3>
                             <form
                                     id="plan-form"
@@ -1781,7 +1798,8 @@ Ensure the default browser behavior of the `hidden` attribute.
                             <ul class="list-checkmark relative z-10">
                               <li class="mb-[20px]">Create Additional Account Users (up to 20!) & Set Access Permissions per User</li>
                               <li class="mb-[20px]">Attach Files to Emails & Client-Portal (pdf, jpg, ppt, xls, doc & more)</li>
-                              <li>Fully Branded Client Portal: "Billing.YourCompany.com"</li>
+                              <li class="mb-[20px]">Fully Branded Client Portal: "Billing.YourCompany.com"</li>
+                              <li class="mb-[20px]">Integrate Your Frinancial Accounts and Sync Banking Transactions via Yodlee or Nodigen Banking Platforms</li>
                           </ul>
                         </div>
                     </div>
@@ -1800,95 +1818,112 @@ Ensure the default browser behavior of the `hidden` attribute.
 
 <script type="text/javascript">
 
-var stripe = Stripe('{{ $gateway->getPublishableKey()}}');
-var client_secret = '{{ $intent->client_secret }}';
-
-var elements = stripe.elements({
-  clientSecret: client_secret,
-});
+const stripe = Stripe('{{ $gateway->getPublishableKey() }}');
+const clientSecret = '{{ $intent->client_secret }}';
+const elements = stripe.elements();
+let requestInFlight = false;
 
 var cardElement = elements.create('card', {
     value: {
-        postalCode: document.querySelector('input[name=postal_code]').content,
-        name: document.querySelector('input[name=name]').content,
+        postalCode: document.querySelector('input[name=postal_code]').value,
+        name: document.querySelector('input[name=first_name]').value + ' ' + document.querySelector('input[name=last_name]').value,
     }
 });
 
 cardElement.mount('#card-element');
 
 const form = document.getElementById('card-form');
+const errors = document.getElementById('errors');
+const payNowButton = document.getElementById('pay-now');
 
-var e = document.getElementById("country");
-var country_value = e.options[e.selectedIndex].value;
+form.addEventListener('submit', (event) => {
+    event.preventDefault();
+});
 
-  document
-      .getElementById('pay-now')
-      .addEventListener('click', () => {
+function setLoading(loading) {
+    payNowButton.disabled = loading;
+    payNowButton.querySelector('svg').classList.toggle('hidden', !loading);
+    payNowButton.querySelector('span').classList.toggle('hidden', loading);
+}
 
-        //make sure the user has entered their name
+function showError(message) {
+    errors.textContent = message;
+    errors.hidden = false;
+}
 
-        if (document.querySelector('input[name=name]').value == '') {
-          let errors = document.getElementById('errors');
-          let payNowButton = document.getElementById('pay-now');
+payNowButton.addEventListener('click', async () => {
+    if (requestInFlight) {
+        return;
+    }
 
-          errors.textContent = '';
-          errors.textContent = "{{ ctrans('texts.please_enter_a_name') }}";
-          errors.hidden = false;
+    if (!form.reportValidity()) {
+        return;
+    }
 
-          payNowButton.disabled = false;
-          payNowButton.querySelector('svg').classList.add('hidden');
-          payNowButton.querySelector('span').classList.remove('hidden');
-          return;
+    requestInFlight = true;
+    errors.hidden = true;
+    setLoading(true);
+
+    try {
+        const result = await stripe.confirmCardPayment(clientSecret, {
+            payment_method: {
+                card: cardElement,
+                billing_details: {
+                    name: `${document.querySelector('input[name=first_name]').value} ${document.querySelector('input[name=last_name]').value}`,
+                    email: '{{ $client->present()->email() }}',
+                    address: {
+                        line1: document.querySelector('input[name=address1]').value,
+                        line2: document.querySelector('input[name=address2]').value,
+                        city: document.querySelector('input[name=city]').value,
+                        postal_code: document.querySelector('input[name=postal_code]').value,
+                        state: document.querySelector('input[name=state]').value,
+                    },
+                },
+            },
+        });
+
+        if (result.error || result.paymentIntent.status !== 'requires_capture') {
+            const detail = result.error?.message ? ` ${result.error.message}` : '';
+
+            throw new Error("{{ ctrans('texts.trial_card_verification_failed') }}" + detail);
         }
 
+        document.querySelector('input[name=payment_intent_id]').value = result.paymentIntent.id;
 
-        let payNowButton = document.getElementById('pay-now');
-        payNowButton = payNowButton;
-        payNowButton.disabled = true;
-        payNowButton.querySelector('svg').classList.remove('hidden');
-        payNowButton.querySelector('span').classList.add('hidden');
+        const response = await fetch(form.action, {
+            method: 'POST',
+            body: new FormData(form),
+            credentials: 'same-origin',
+            headers: {
+                Accept: 'application/json',
+                'X-Requested-With': 'XMLHttpRequest',
+            },
+        });
+        const contentType = response.headers.get('content-type') ?? '';
 
-        stripe.handleCardSetup(this.client_secret, cardElement, {
-                payment_method_data: {
-                      billing_details: {
-                        name: document.querySelector('input[name=name]').content,
-                        email: '{{ $client->present()->email() }}',
-                        address: {
-                          line1: document.querySelector('input[name=address1]').content,
-                          line2: document.querySelector('input[name=address2]').content,
-                          city: document.querySelector('input[name=city]').content,
-                          postal_code: document.querySelector('input[name=postal_code]').content,
-                          state: document.querySelector('input[name=state]').content,
-                        }        
-                },
-              }
-            })
-            .then((result) => {
-                if (result.error) {
+        if (!contentType.includes('application/json')) {
+            throw new Error(response.status === 419
+                ? "{{ ctrans('texts.token_expired') }}"
+                : "{{ ctrans('texts.trial_card_gateway_error') }}");
+        }
 
-                  let errors = document.getElementById('errors');
-                  let payNowButton = document.getElementById('pay-now');
+        const payload = await response.json();
 
-                  errors.textContent = '';
-                  errors.textContent = result.error.message;
-                  errors.hidden = false;
+        if (!response.ok) {
+            throw new Error(payload.message ?? "{{ ctrans('texts.trial_card_gateway_error') }}");
+        }
 
-                  payNowButton.disabled = false;
-                  payNowButton.querySelector('svg').classList.add('hidden');
-                  payNowButton.querySelector('span').classList.remove('hidden');
-                  return;
+        if (typeof payload.redirect_url !== 'string' || !payload.redirect_url.startsWith(window.location.origin)) {
+            throw new Error("{{ ctrans('texts.trial_card_gateway_error') }}");
+        }
 
-                }
-
-              document.querySelector(
-                  'input[name="gateway_response"]'
-              ).value = JSON.stringify(result.setupIntent);
-
-                form.submit();
-                
-              });
-
-      });
+        window.location.assign(payload.redirect_url);
+    } catch (error) {
+        showError(error.message ?? "{{ ctrans('texts.trial_card_gateway_error') }}");
+        requestInFlight = false;
+        setLoading(false);
+    }
+});
 
 </script>
 
@@ -1946,17 +1981,17 @@ document.getElementById('handleProYearlyClick').addEventListener('click', functi
 });
 const price_map = new Map();
 //monthly
-price_map.set('7LDdwRb1YK', '$16 <span class="font-normal text-base ml-[10px] text-gray">Per month</span>');
-price_map.set('MVyb8mdvAZ', '$28 <span class="font-normal text-base ml-[10px] text-gray">Per month</span>');
-price_map.set('WpmbkR5azJ', '$36 <span class="font-normal text-base ml-[10px] text-gray">Per month</span>');
-price_map.set('k8mepY2aMy', '$48 <span class="font-normal text-base ml-[10px] text-gray">Per month</span>');
-price_map.set('MVyb8VlevA', '$64 <span class="font-normal text-base ml-[10px] text-gray">Per month</span>');
+price_map.set('7LDdwRb1YK', '$18 <span class="font-normal text-base ml-[10px] text-gray">Per month</span>');
+price_map.set('MVyb8mdvAZ', '$32 <span class="font-normal text-base ml-[10px] text-gray">Per month</span>');
+price_map.set('WpmbkR5azJ', '$54 <span class="font-normal text-base ml-[10px] text-gray">Per month</span>');
+price_map.set('k8mepY2aMy', '$84 <span class="font-normal text-base ml-[10px] text-gray">Per month</span>');
+price_map.set('MVyb8VlevA', '$96 <span class="font-normal text-base ml-[10px] text-gray">Per month</span>');
 //yearly
-price_map.set('LYqaQWldnj', '$160 <span class="font-normal text-base ml-[10px] text-gray">Per year</span>');
-price_map.set('kQBeX6mbyK', '$280 <span class="font-normal text-base ml-[10px] text-gray">Per year</span>');
-price_map.set('GELe32Qd69', '$360 <span class="font-normal text-base ml-[10px] text-gray">Per year</span>');
-price_map.set('MVyb86oevA', '$480 <span class="font-normal text-base ml-[10px] text-gray">Per year</span>');
-price_map.set('VWPe9WPbLy', '$640 <span class="font-normal text-base ml-[10px] text-gray">Per year</span>');
+price_map.set('LYqaQWldnj', '$180 <span class="font-normal text-base ml-[10px] text-gray">Per year</span>');
+price_map.set('kQBeX6mbyK', '$320 <span class="font-normal text-base ml-[10px] text-gray">Per year</span>');
+price_map.set('GELe32Qd69', '$540 <span class="font-normal text-base ml-[10px] text-gray">Per year</span>');
+price_map.set('MVyb86oevA', '$840 <span class="font-normal text-base ml-[10px] text-gray">Per year</span>');
+price_map.set('VWPe9WPbLy', '$960 <span class="font-normal text-base ml-[10px] text-gray">Per year</span>');
 
 </script>
 

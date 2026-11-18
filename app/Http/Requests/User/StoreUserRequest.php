@@ -1,10 +1,11 @@
 <?php
+
 /**
  * Invoice Ninja (https://invoiceninja.com).
  *
  * @link https://github.com/invoiceninja/invoiceninja source repository
  *
- * @copyright Copyright (c) 2024. Invoice Ninja LLC (https://invoiceninja.com)
+ * @copyright Copyright (c) 2026. Invoice Ninja LLC (https://invoiceninja.com)
  *
  * @license https://www.elastic.co/licensing/elastic-license
  */
@@ -40,13 +41,13 @@ class StoreUserRequest extends Request
     {
         $rules = [];
 
-        $rules['first_name'] = 'required|string|max:100';
-        $rules['last_name'] = 'required|string|max:100';
+        $rules['first_name'] = 'required|bail|string|max:100';
+        $rules['last_name'] = 'required|bail|string|max:100';
 
         if (config('ninja.db.multi_db_enabled')) {
-            $rules['email'] = ['email', new ValidUserForCompany(), new AttachableUser()];
+            $rules['email'] = ['required', 'bail', 'email', new ValidUserForCompany(), new AttachableUser()];
         } else {
-            $rules['email'] = ['email', new AttachableUser()];
+            $rules['email'] = ['required', 'bail', 'email', new AttachableUser()];
         }
 
         if (Ninja::isHosted()) {
@@ -56,6 +57,8 @@ class StoreUserRequest extends Request
                 $rules['phone'] = ['bail', 'string', 'sometimes', new HasValidPhoneNumber()];
             }
         }
+
+        $rules['language_id'] = 'bail|nullable|sometimes|exists:languages,id';
 
         return $rules;
     }
@@ -96,11 +99,10 @@ class StoreUserRequest extends Request
         }
 
         $input['id'] = null;
-        
+
         $this->replace($input);
     }
 
-    //@todo make sure the user links back to the account ID for this company!!!!!!
     public function fetchUser(): User
     {
         $user = MultiDB::hasUser(['email' => $this->input('email')]);

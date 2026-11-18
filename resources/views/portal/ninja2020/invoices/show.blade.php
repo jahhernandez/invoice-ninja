@@ -3,10 +3,8 @@
 
 @push('head')
     <meta name="show-invoice-terms" content="{{ $settings->show_accept_invoice_terms ? true : false }}">
-    <meta name="require-invoice-signature" content="{{ $client->user->account->hasFeature(\App\Models\Account::FEATURE_INVOICE_SETTINGS) && $settings->require_invoice_signature }}">
-    <meta name="show-required-fields-form" content="{{ auth()->guard('contact')->user()->showRff() }}" />
+    <meta name="require-invoice-signature" content="{{ $requires_signature }}">
     @include('portal.ninja2020.components.no-cache')
-    <script src="{{ asset('vendor/signature_pad@2.3.2/signature_pad.min.js') }}"></script>
 
 @endpush
 
@@ -47,7 +45,9 @@
             <input type="hidden" name="contact_first_name" value="{{ auth()->guard('contact')->user()->first_name }}">
             <input type="hidden" name="contact_last_name" value="{{ auth()->guard('contact')->user()->last_name }}">
             <input type="hidden" name="contact_email" value="{{ auth()->guard('contact')->user()->email }}">
-
+            <input type="hidden" name="client_city" value="{{ auth()->guard('contact')->user()->client->city }}">
+            <input type="hidden" name="client_postal_code" value="{{ auth()->guard('contact')->user()->client->postal_code }}">
+            <input type="hidden" name="docuninja_active" value="{{ $docuninja_active ? 'true' : 'false' }}">
             <div class="bg-white shadow sm:rounded-lg mb-4" translate>
                 <div class="px-4 py-5 sm:p-6">
                     <div class="sm:flex sm:items-start sm:justify-between">
@@ -56,17 +56,6 @@
                                 {{ ctrans('texts.invoice_number_placeholder', ['invoice' => $invoice->number])}}
                                 - {{ ctrans('texts.unpaid') }}
                             </h3>
-
-                            @if($key)
-                            <div class="btn hidden md:block" data-clipboard-text="{{url("client/invoice/{$key}")}}" aria-label="Copied!">
-                                <div class="flex text-sm leading-6 font-medium text-gray-500">
-                                    <p class="mr-2">{{url("client/invoice/{$key}")}}</p>
-                                    <p><img class="h-5 w-5" src="{{ asset('assets/clippy.svg') }}" alt="Copy to clipboard"></p>
-                                </div>
-                            </div>
-                            @endif
-
-
                         </div>
                         <div class="mt-5 sm:mt-0 sm:ml-6 flex justify-end">
                             <div class="inline-flex rounded-md shadow-sm">
@@ -76,7 +65,7 @@
                                 @if($settings->client_portal_allow_under_payment || $settings->client_portal_allow_over_payment)
                                     <button class="button button-primary bg-primary">{{ ctrans('texts.pay_now') }}</button>
                                 @else
-                                    @livewire('pay-now-dropdown', ['total' => $invoice->getPayableAmount(), 'company' => $company])
+                                    @livewire('pay-now-dropdown', ['total' => $invoice->getPayableAmount(), 'company_id' => $company->id, 'db' => $company->db])
                                 @endif
                             </div>
                         </div>
@@ -88,20 +77,14 @@
         <div class="bg-white shadow sm:rounded-lg mb-4">
             <div class="px-4 py-5 sm:p-6">
                 <div class="sm:flex sm:items-start sm:justify-between">
-                    <div>
+                    <div class="flex justify-between items-center w-full">
                         <h3 class="text-lg leading-6 font-medium text-gray-900">
                             {{ ctrans('texts.invoice_number_placeholder', ['invoice' => $invoice->number])}}
                             - {{ \App\Models\Invoice::stringStatus($invoice->status_id) }}
                         </h3>
-
-                            @if($key)
-                            <div class="btn hidden md:block" data-clipboard-text="{{url("client/invoice/{$key}")}}" aria-label="Copied!">
-                                <div class="flex text-sm leading-6 font-medium text-gray-500">
-                                    <p class="pr-10">{{url("client/invoice/{$key}")}}</p>
-                                    <p><img class="h-5 w-5" src="{{ asset('assets/clippy.svg') }}" alt="Copy to clipboard"></p>
-                                </div>
-                            </div>
-                            @endif
+                        @if($invoice->status_id == \App\Models\Invoice::STATUS_PAID && $invoice->payments()->exists())
+                        <span class="ml-4"><a class="button-link text-primary" href="{{ route('client.payments.show', $invoice->payments->first()->hashed_id) }}">{{ ctrans('texts.view_payment') }}</a></span>
+                        @endif
                     </div>
                 </div>
             </div>
@@ -109,7 +92,7 @@
     @endif
 
     @include('portal.ninja2020.components.entity-documents', ['entity' => $invoice])
-    @livewire('pdf-slot', ['entity' => $invoice, 'invitation' => $invitation, 'db' => $invoice->company->db])
+    @livewire('pdf-slot', ['entity_type' => 'invoice', 'entity_key' => $invoice->hashed_id, 'invitation_key' => $invitation->key ?? null, 'db' => $invoice->company->db])
 
 @endsection
 
@@ -121,15 +104,16 @@
 
 @push('head')
     @vite('resources/js/clients/invoices/payment.js')
-    <script src="{{ asset('vendor/clipboard.min.js') }}" defer></script>
 
     <script type="text/javascript">
 
-    document.addEventListener('DOMContentLoaded', () => {
+        document.addEventListener('DOMContentLoaded', () => {
 
-        var clipboard = new ClipboardJS('.btn');
+            @if($_key)
+                window.history.pushState({}, "", "{{ url("client/invoice/{$_key}") }}");
+            @endif
 
-    });
+        });
 
     </script>
 @endpush

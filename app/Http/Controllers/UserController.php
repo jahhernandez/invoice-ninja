@@ -1,41 +1,43 @@
 <?php
+
 /**
  * Invoice Ninja (https://invoiceninja.com).
  *
  * @link https://github.com/invoiceninja/invoiceninja source repository
  *
- * @copyright Copyright (c) 2024. Invoice Ninja LLC (https://invoiceninja.com)
+ * @copyright Copyright (c) 2026. Invoice Ninja LLC (https://invoiceninja.com)
  *
  * @license https://www.elastic.co/licensing/elastic-license
  */
 
 namespace App\Http\Controllers;
 
+use App\Models\User;
+use App\Utils\Ninja;
+use App\Models\CompanyUser;
+use App\Factory\UserFactory;
+use App\Filters\UserFilters;
+use Illuminate\Http\Response;
+use App\Utils\Traits\MakesHash;
 use App\Events\User\UserWasCreated;
 use App\Events\User\UserWasDeleted;
 use App\Events\User\UserWasUpdated;
-use App\Factory\UserFactory;
-use App\Filters\UserFilters;
-use App\Http\Controllers\Traits\VerifiesUserEmail;
-use App\Http\Requests\User\BulkUserRequest;
-use App\Http\Requests\User\CreateUserRequest;
-use App\Http\Requests\User\DestroyUserRequest;
-use App\Http\Requests\User\DetachCompanyUserRequest;
-use App\Http\Requests\User\DisconnectUserMailerRequest;
-use App\Http\Requests\User\EditUserRequest;
-use App\Http\Requests\User\ReconfirmUserRequest;
-use App\Http\Requests\User\ShowUserRequest;
-use App\Http\Requests\User\StoreUserRequest;
-use App\Http\Requests\User\UpdateUserRequest;
-use App\Jobs\Company\CreateCompanyToken;
 use App\Jobs\User\UserEmailChanged;
-use App\Models\CompanyUser;
-use App\Models\User;
 use App\Repositories\UserRepository;
 use App\Transformers\UserTransformer;
-use App\Utils\Ninja;
-use App\Utils\Traits\MakesHash;
-use Illuminate\Http\Response;
+use App\Jobs\Company\CreateCompanyToken;
+use App\Http\Requests\User\BulkUserRequest;
+use App\Http\Requests\User\EditUserRequest;
+use App\Http\Requests\User\ShowUserRequest;
+use App\Http\Requests\User\PurgeUserRequest;
+use App\Http\Requests\User\StoreUserRequest;
+use App\Http\Requests\User\CreateUserRequest;
+use App\Http\Requests\User\UpdateUserRequest;
+use App\Http\Requests\User\DestroyUserRequest;
+use App\Http\Requests\User\ReconfirmUserRequest;
+use App\Http\Controllers\Traits\VerifiesUserEmail;
+use App\Http\Requests\User\DetachCompanyUserRequest;
+use App\Http\Requests\User\DisconnectUserMailerRequest;
 
 /**
  * Class UserController.
@@ -67,7 +69,7 @@ class UserController extends BaseController
      * Display a listing of the resource.
      *
      * @param UserFilters $filters
-     * @return Response
+     * @return Response| \Illuminate\Http\JsonResponse
      *
      */
     public function index(UserFilters $filters)
@@ -81,7 +83,7 @@ class UserController extends BaseController
      * Show the form for creating a new resource.
      *
      * @param CreateUserRequest $request
-     * @return Response
+     * @return Response| \Illuminate\Http\JsonResponse
      *
      */
     public function create(CreateUserRequest $request)
@@ -95,7 +97,7 @@ class UserController extends BaseController
      * Store a newly created resource in storage.
      *
      * @param StoreUserRequest $request
-     * @return Response
+     * @return Response| \Illuminate\Http\JsonResponse
      *
      */
     public function store(StoreUserRequest $request)
@@ -109,9 +111,9 @@ class UserController extends BaseController
 
         $user_agent = request()->input('token_name') ?: request()->server('HTTP_USER_AGENT');
 
-        $is_react = $request->hasHeader('X-React') ?? false;
+        $is_react = $request->hasHeader('X-React') ? true : false;
 
-        $ct = (new CreateCompanyToken($company, $user, $user_agent))->handle();
+        (new CreateCompanyToken($company, $user, $user_agent))->handle();
 
         event(new UserWasCreated($user, auth()->user(), $company, Ninja::eventVars(auth()->user() ? auth()->user()->id : null), $is_react));
 
@@ -126,7 +128,7 @@ class UserController extends BaseController
      *
      * @param ShowUserRequest $request
      * @param User $user
-     * @return Response
+     * @return Response| \Illuminate\Http\JsonResponse
      *
      */
     public function show(ShowUserRequest $request, User $user)
@@ -139,7 +141,7 @@ class UserController extends BaseController
      *
      * @param EditUserRequest $request
      * @param User $user
-     * @return Response
+     * @return Response| \Illuminate\Http\JsonResponse
      *
      */
     public function edit(EditUserRequest $request, User $user)
@@ -152,7 +154,7 @@ class UserController extends BaseController
      *
      * @param UpdateUserRequest $request
      * @param User $user
-     * @return Response|mixed
+     * @return Response| \Illuminate\Http\JsonResponse|mixed
      */
     public function update(UpdateUserRequest $request, User $user)
     {
@@ -191,7 +193,7 @@ class UserController extends BaseController
      *
      * @param DestroyUserRequest $request
      * @param User $user
-     * @return \Illuminate\Http\JsonResponse
+     * @return \Illuminate\Http\JsonResponse|\Illuminate\Http\Response
      *
      */
     public function destroy(DestroyUserRequest $request, User $user)
@@ -214,7 +216,7 @@ class UserController extends BaseController
     /**
      * Perform bulk actions on the list view.
      *
-     * @return Response
+     * @return Response| \Illuminate\Http\JsonResponse
      *
      */
     public function bulk(BulkUserRequest $request)
@@ -224,7 +226,11 @@ class UserController extends BaseController
 
         $ids = request()->input('ids');
 
-        $users = User::withTrashed()->find($this->transformKeys($ids));
+        $users = User::withTrashed()
+                    ->whereIn('id', $ids)
+                    ->where('account_id', auth()->user()
+                    ->company()->account_id)
+                    ->get();
 
         /*
          * In case a user maliciously sends keys which do not belong to them, we push
@@ -253,14 +259,14 @@ class UserController extends BaseController
      *
      * @param DetachCompanyUserRequest $request
      * @param User $user
-     * @return \Illuminate\Http\JsonResponse
+     * @return \Illuminate\Http\JsonResponse|\Illuminate\Http\Response
      */
     public function detach(DetachCompanyUserRequest $request, User $user)
     {
         /** @var \App\Models\User $logged_in_user */
         $logged_in_user = auth()->user();
 
-        $company_user = CompanyUser::where('user_id',$user->id)
+        $company_user = CompanyUser::where('user_id', $user->id)
                                     ->where('company_id', $logged_in_user->companyId())
                                     ->withTrashed()
                                     ->first();
@@ -283,7 +289,7 @@ class UserController extends BaseController
      *
      * @param ReconfirmUserRequest $request
      * @param User $user
-     * @return \Illuminate\Http\JsonResponse
+     * @return \Illuminate\Http\JsonResponse|\Illuminate\Http\Response
      */
     public function invite(ReconfirmUserRequest $request, User $user)
     {
@@ -301,7 +307,7 @@ class UserController extends BaseController
      *
      * @param ReconfirmUserRequest $request
      * @param User $user
-     * @return \Illuminate\Http\JsonResponse
+     * @return \Illuminate\Http\JsonResponse|\Illuminate\Http\Response
      */
     public function reconfirm(ReconfirmUserRequest $request, User $user)
     {
@@ -346,6 +352,14 @@ class UserController extends BaseController
         $user->save();
 
         return $this->itemResponse($user->fresh());
+
+    }
+
+    public function purge(PurgeUserRequest $request, User $user)
+    {
+        $this->user_repo->purge($user, auth()->user());
+
+        return response()->noContent();
 
     }
 

@@ -1,10 +1,11 @@
 <?php
+
 /**
  * Invoice Ninja (https://invoiceninja.com).
  *
  * @link https://github.com/invoiceninja/invoiceninja source repository
  *
- * @copyright Copyright (c) 2024. Invoice Ninja LLC (https://invoiceninja.com)
+ * @copyright Copyright (c) 2026. Invoice Ninja LLC (https://invoiceninja.com)
  *
  * @license https://www.elastic.co/licensing/elastic-license
  */
@@ -83,11 +84,11 @@ class ProductController extends BaseController
      *       ),
      *     )
      * @param ProductFilters $filters
-     * @return Response|mixed
+     * @return Response| \Illuminate\Http\JsonResponse|mixed
      */
     public function index(ProductFilters $filters)
     {
-        $products = Product::filter($filters);
+        $products = Product::filter($filters)->with('tags');
 
         return $this->listResponse($products);
     }
@@ -96,7 +97,7 @@ class ProductController extends BaseController
      * Show the form for creating a new resource.
      *
      * @param CreateProductRequest $request
-     * @return Response
+     * @return Response| \Illuminate\Http\JsonResponse
      *
      *
      *
@@ -145,7 +146,7 @@ class ProductController extends BaseController
      * Store a newly created resource in storage.
      *
      * @param StoreProductRequest $request
-     * @return Response
+     * @return Response| \Illuminate\Http\JsonResponse
      *
      *
      *
@@ -195,7 +196,7 @@ class ProductController extends BaseController
      *
      * @param ShowProductRequest $request
      * @param Product $product
-     * @return Response
+     * @return Response| \Illuminate\Http\JsonResponse
      *
      *
      * @OA\Get(
@@ -249,7 +250,7 @@ class ProductController extends BaseController
      *
      * @param EditProductRequest $request
      * @param Product $product
-     * @return Response
+     * @return Response| \Illuminate\Http\JsonResponse
      *
      * @OA\Get(
      *      path="/api/v1/products/{id}/edit",
@@ -302,7 +303,7 @@ class ProductController extends BaseController
      *
      * @param UpdateProductRequest $request
      * @param Product $product
-     * @return Response
+     * @return Response| \Illuminate\Http\JsonResponse
      *
      *
      * @OA\Put(
@@ -362,7 +363,7 @@ class ProductController extends BaseController
      *
      * @param DestroyProductRequest $request
      * @param Product $product
-     * @return Response
+     * @return Response| \Illuminate\Http\JsonResponse
      *
      *
      * @throws \Exception
@@ -416,7 +417,7 @@ class ProductController extends BaseController
     /**
      * Perform bulk actions on the list view.
      *
-     * @return \Illuminate\Support\Collection
+     * @return \Illuminate\Http\Response|\Illuminate\Http\JsonResponse
      *
      *
      * @OA\Post(
@@ -473,24 +474,24 @@ class ProductController extends BaseController
 
         $ids = $request->input('ids');
 
-        $products = Product::withTrashed()->whereIn('id', $ids);
+        $products = Product::withTrashed()->company()->whereIn('id', $ids);
 
-        if($action == 'set_tax_id') {
+        if ($action == 'set_tax_id') {
 
             $tax_id = $request->input('tax_id');
 
             $products->update(['tax_id' => $tax_id]);
 
-            return $this->listResponse(Product::withTrashed()->whereIn('id', $ids));
+            return $this->listResponse(Product::withTrashed()->company()->whereIn('id', $ids));
         }
 
-        $products->cursor()->each(function ($product, $key) use ($action, $user) {
+        $products->with('company.account')->lazyById(100)->each(function ($product, $key) use ($action, $user) {
             if ($user->can('edit', $product)) {
                 $this->product_repo->{$action}($product);
             }
         });
 
-        return $this->listResponse(Product::withTrashed()->whereIn('id', $ids));
+        return $this->listResponse(Product::withTrashed()->company()->whereIn('id', $ids));
     }
 
     /**
@@ -498,7 +499,7 @@ class ProductController extends BaseController
      *
      * @param UploadProductRequest $request
      * @param Product $product
-     * @return Response
+     * @return Response| \Illuminate\Http\JsonResponse
      *
      *
      *
@@ -550,7 +551,7 @@ class ProductController extends BaseController
         }
 
         if ($request->has('documents')) {
-            $this->saveDocuments($request->file('documents'), $product, $request->input('is_public', true));
+            $this->saveDocuments($request->file('documents'), $product, $request->has('is_public') ? $request->boolean('is_public') : null);
         }
 
         return $this->itemResponse($product->fresh());

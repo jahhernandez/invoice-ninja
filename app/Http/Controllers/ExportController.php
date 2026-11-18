@@ -1,10 +1,11 @@
 <?php
+
 /**
  * Invoice Ninja (https://invoiceninja.com).
  *
  * @link https://github.com/invoiceninja/invoiceninja source repository
  *
- * @copyright Copyright (c) 2024. Invoice Ninja LLC (https://invoiceninja.com)
+ * @copyright Copyright (c) 2026. Invoice Ninja LLC (https://invoiceninja.com)
  *
  * @license https://www.elastic.co/licensing/elastic-license
  */
@@ -16,6 +17,7 @@ use App\Jobs\Company\CompanyExport;
 use App\Utils\Traits\MakesHash;
 use Illuminate\Http\Response;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\URL;
 use Illuminate\Support\Str;
 
 class ExportController extends BaseController
@@ -59,11 +61,25 @@ class ExportController extends BaseController
         /** @var \App\Models\User $user */
         $user = auth()->user();
 
-        $hash = Str::uuid();
-        $url = \Illuminate\Support\Facades\URL::temporarySignedRoute('protected_download', now()->addHour(), ['hash' => $hash]);
-        Cache::put($hash, $url, now()->addHour());
+        $hash = Str::uuid()->toString();
+        $total_activities = $user->getCompany()->all_activities()->count();
+        $expiry_hours = $total_activities > 10000 ? 5 : 1;
 
-        CompanyExport::dispatch($user->getCompany(), $user, $hash);
+        if (config('filesystems.protected_download_allow_unsigned')) {
+            $url = URL::route('protected_download', ['hash' => $hash]);
+        } else {
+            $signed_path = URL::temporarySignedRoute(
+                'protected_download',
+                now()->addHours($expiry_hours),
+                ['hash' => $hash],
+                absolute: false,
+            );
+            $url = URL::to($signed_path);
+        }
+
+        Cache::put($hash, $url, $expiry_hours * 3600);
+
+        CompanyExport::dispatch($user->getCompany(), $user, $hash, $total_activities);
 
         return response()->json(['message' => 'Processing', 'url' => $url], 200);
     }

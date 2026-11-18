@@ -1,4 +1,5 @@
 <?php
+
 /**
  * Invoice Ninja (https://invoiceninja.com).
  *
@@ -33,21 +34,15 @@ use Tests\MockAccountData;
 use Tests\TestCase;
 
 /**
- * @test
+ *
  */
 class ReportPreviewTest extends TestCase
 {
     use MakesHash;
     use MockAccountData;
-
-    public $faker;
-
     protected function setUp(): void
     {
         parent::setUp();
-
-        $this->faker = \Faker\Factory::create();
-
         $this->withoutMiddleware(
             ThrottleRequests::class
         );
@@ -65,12 +60,13 @@ class ReportPreviewTest extends TestCase
             'company_id' => $this->company->id,
             'user_id' => $this->user->id,
         ]);
-        
+
         $data = [
             'send_email' => false,
             'date_range' => 'all',
             'report_keys' => [],
             'include_deleted' => false,
+            'user_id' => $this->user->id,
         ];
 
         $response = $this->withHeaders([
@@ -79,7 +75,7 @@ class ReportPreviewTest extends TestCase
         ])->postJson('/api/v1/reports/products?output=json', $data)
         ->assertStatus(200);
 
-        $p = (new PreviewReport($this->company, $data, ProductExport::class, '123'))->handle();
+        $p = (new PreviewReport($this->company, $data, ProductExport::class, '123', 'products.csv'))->handle();
 
         $this->assertNull($p);
 
@@ -97,12 +93,13 @@ class ReportPreviewTest extends TestCase
             'user_id' => $this->user->id,
             'client_id' => $this->client->id,
         ]);
-        
+
         $data = [
             'send_email' => false,
             'date_range' => 'all',
             'report_keys' => [],
             'include_deleted' => false,
+            'user_id' => $this->user->id,
         ];
 
         $response = $this->withHeaders([
@@ -111,7 +108,7 @@ class ReportPreviewTest extends TestCase
         ])->postJson('/api/v1/reports/payments?output=json', $data)
         ->assertStatus(200);
 
-        $p = (new PreviewReport($this->company, $data, PaymentExport::class, '123'))->handle();
+        $p = (new PreviewReport($this->company, $data, PaymentExport::class, '123', 'payments.csv'))->handle();
 
         $this->assertNull($p);
 
@@ -129,12 +126,13 @@ class ReportPreviewTest extends TestCase
             'user_id' => $this->user->id,
             'vendor_id' => $this->vendor->id,
         ]);
-        
+
         $data = [
             'send_email' => false,
             'date_range' => 'all',
             'report_keys' => [],
             'include_deleted' => false,
+            'user_id' => $this->user->id,
         ];
 
         $response = $this->withHeaders([
@@ -143,14 +141,14 @@ class ReportPreviewTest extends TestCase
         ])->postJson('/api/v1/reports/purchase_order_items?output=json', $data)
         ->assertStatus(200);
 
-        $p = (new PreviewReport($this->company, $data, \App\Export\CSV\PurchaseOrderItemExport::class, '123'))->handle();
+        $p = (new PreviewReport($this->company, $data, \App\Export\CSV\PurchaseOrderItemExport::class, '123', 'purchase_order_items.csv'))->handle();
 
         $this->assertNull($p);
 
         $r = Cache::pull('123');
 
         $this->assertNotNull($r);
-        
+
         //nlog($r);
 
     }
@@ -162,12 +160,13 @@ class ReportPreviewTest extends TestCase
             'user_id' => $this->user->id,
             'client_id' => $this->client->id,
         ]);
-        
+
         $data = [
             'send_email' => false,
             'date_range' => 'all',
             'report_keys' => [],
             'include_deleted' => false,
+            'user_id' => $this->user->id,
         ];
 
         $response = $this->withHeaders([
@@ -176,14 +175,14 @@ class ReportPreviewTest extends TestCase
         ])->postJson('/api/v1/reports/quote_items?output=json', $data)
         ->assertStatus(200);
 
-        $p = (new PreviewReport($this->company, $data, \App\Export\CSV\QuoteItemExport::class, '123'))->handle();
+        $p = (new PreviewReport($this->company, $data, \App\Export\CSV\QuoteItemExport::class, '123', 'quote_items.csv'))->handle();
 
         $this->assertNull($p);
 
         $r = Cache::pull('123');
 
         $this->assertNotNull($r);
-        
+
         //nlog($r);
 
     }
@@ -196,12 +195,13 @@ class ReportPreviewTest extends TestCase
             'user_id' => $this->user->id,
             'client_id' => $this->client->id,
         ]);
-        
+
         $data = [
             'send_email' => false,
             'date_range' => 'all',
             'report_keys' => [],
             'include_deleted' => false,
+            'user_id' => $this->user->id,
         ];
 
         $response = $this->withHeaders([
@@ -210,14 +210,14 @@ class ReportPreviewTest extends TestCase
         ])->postJson('/api/v1/reports/invoice_items?output=json', $data)
         ->assertStatus(200);
 
-        $p = (new PreviewReport($this->company, $data, \App\Export\CSV\InvoiceItemExport::class, '123'))->handle();
+        $p = (new PreviewReport($this->company, $data, \App\Export\CSV\InvoiceItemExport::class, '123', 'invoice_items.csv'))->handle();
 
         $this->assertNull($p);
 
         $r = Cache::pull('123');
 
         $this->assertNotNull($r);
-        
+
         //nlog($r);
 
     }
@@ -231,12 +231,13 @@ class ReportPreviewTest extends TestCase
             'user_id' => $this->user->id,
             'vendor_id' => $this->vendor->id,
         ]);
-        
+
         $data = [
             'send_email' => false,
             'date_range' => 'all',
             'report_keys' => [],
             'include_deleted' => false,
+            'user_id' => $this->user->id,
         ];
 
         $response = $this->withHeaders([
@@ -245,7 +246,7 @@ class ReportPreviewTest extends TestCase
         ])->postJson('/api/v1/reports/purchase_orders?output=json', $data)
         ->assertStatus(200);
 
-        $p = (new PreviewReport($this->company, $data, PurchaseOrderExport::class, '123'))->handle();
+        $p = (new PreviewReport($this->company, $data, PurchaseOrderExport::class, '123', 'purchase_orders.csv'))->handle();
 
         $this->assertNull($p);
 
@@ -262,12 +263,13 @@ class ReportPreviewTest extends TestCase
             'user_id' => $this->user->id,
             'client_id' => $this->client->id,
         ]);
-        
+
         $data = [
             'send_email' => false,
             'date_range' => 'all',
             'report_keys' => [],
             'include_deleted' => false,
+            'user_id' => $this->user->id,
         ];
 
         $response = $this->withHeaders([
@@ -276,7 +278,7 @@ class ReportPreviewTest extends TestCase
         ])->postJson('/api/v1/reports/quotes?output=json', $data)
         ->assertStatus(200);
 
-        $p = (new PreviewReport($this->company, $data, QuoteExport::class, '123'))->handle();
+        $p = (new PreviewReport($this->company, $data, QuoteExport::class, '123', 'quotes.csv'))->handle();
 
         $this->assertNull($p);
 
@@ -293,12 +295,13 @@ class ReportPreviewTest extends TestCase
             'user_id' => $this->user->id,
             'client_id' => $this->client->id,
         ]);
-        
+
         $data = [
             'send_email' => false,
             'date_range' => 'all',
             'report_keys' => [],
             'include_deleted' => false,
+            'user_id' => $this->user->id,
         ];
 
         $response = $this->withHeaders([
@@ -307,7 +310,7 @@ class ReportPreviewTest extends TestCase
         ])->postJson('/api/v1/reports/invoices?output=json', $data)
         ->assertStatus(200);
 
-        $p = (new PreviewReport($this->company, $data, InvoiceExport::class, '123'))->handle();
+        $p = (new PreviewReport($this->company, $data, InvoiceExport::class, '123', 'invoices.csv'))->handle();
 
         $this->assertNull($p);
 
@@ -317,18 +320,148 @@ class ReportPreviewTest extends TestCase
 
     }
 
+    public function testAllTimeInvoiceExportDoesNotApplyADateFilter(): void
+    {
+        \App\Models\Invoice::factory()->create([
+            'company_id' => $this->company->id,
+            'user_id' => $this->user->id,
+            'client_id' => $this->client->id,
+            'number' => 'ALL-TIME-INVOICE',
+            'date' => '1999-01-01',
+            'due_date' => '1999-01-31',
+        ]);
+
+        $data = [
+            'send_email' => false,
+            'date_range' => 'all_time',
+            'report_keys' => ['invoice.number'],
+            'include_deleted' => false,
+            'user_id' => $this->user->id,
+        ];
+
+        $this->withHeaders([
+            'X-API-SECRET' => config('ninja.api_secret'),
+            'X-API-TOKEN' => $this->token,
+        ])->postJson('/api/v1/reports/invoices?output=json', $data)
+            ->assertStatus(200);
+
+        $csv = (new InvoiceExport($this->company, $data))->run();
+
+        $this->assertStringContainsString('ALL-TIME-INVOICE', $csv);
+    }
+
+    public function testInvoiceJsonPreviewReturnsAllRows(): void
+    {
+        $invoice_count = 5;
+
+        \App\Models\Invoice::factory()->count($invoice_count)->create([
+            "company_id" => $this->company->id,
+            "user_id" => $this->user->id,
+            "client_id" => $this->client->id,
+            "date" => "2030-01-01",
+            "due_date" => "2030-01-31",
+        ]);
+
+        $data = [
+            "send_email" => false,
+            "date_range" => "custom",
+            "start_date" => "2030-01-01",
+            "end_date" => "2030-01-02",
+            "report_keys" => ["invoice.number"],
+            "include_deleted" => false,
+            "user_id" => $this->user->id,
+            "output" => "json",
+        ];
+
+        (new PreviewReport($this->company, $data, InvoiceExport::class, "invoice_preview_full", "invoices.csv"))->handle();
+
+        $report = Cache::pull("invoice_preview_full");
+
+        $this->assertIsArray($report);
+        $this->assertCount($invoice_count + 1, $report);
+    }
+
+    public function testInvoiceFanOutReportEagerLoadsPaymentables(): void
+    {
+        $invoice_count = 5;
+
+        for ($i = 0; $i < $invoice_count; $i++) {
+            $invoice = \App\Models\Invoice::factory()->create([
+                'company_id' => $this->company->id,
+                'user_id' => $this->user->id,
+                'client_id' => $this->client->id,
+                'number' => "INV-FAN-{$i}",
+                'date' => '2030-02-01',
+                'due_date' => '2030-02-28',
+                'status_id' => \App\Models\Invoice::STATUS_SENT,
+            ]);
+
+            $payment = \App\Models\Payment::factory()->create([
+                'company_id' => $this->company->id,
+                'user_id' => $this->user->id,
+                'client_id' => $this->client->id,
+                'number' => "PAY-FAN-{$i}",
+                'amount' => 25,
+                'applied' => 25,
+                'refunded' => 0,
+                'date' => '2030-02-01',
+                'is_deleted' => 0,
+            ]);
+
+            \App\Models\Paymentable::create([
+                'payment_id' => $payment->id,
+                'paymentable_type' => 'invoices',
+                'paymentable_id' => $invoice->id,
+                'amount' => 25,
+                'refunded' => 0,
+                'created_at' => now()->timestamp + $i,
+                'updated_at' => now()->timestamp + $i,
+            ]);
+        }
+
+        $data = [
+            'send_email' => false,
+            'date_range' => 'custom',
+            'start_date' => '2030-02-01',
+            'end_date' => '2030-02-02',
+            'report_keys' => ['invoice.number', 'payment.number', 'payment.amount', 'payment.applied_date'],
+            'include_deleted' => false,
+            'user_id' => $this->user->id,
+        ];
+
+        \Illuminate\Support\Facades\DB::flushQueryLog();
+        \Illuminate\Support\Facades\DB::enableQueryLog();
+
+        $csv = (new InvoiceExport($this->company, $data))->run();
+
+        $queries = \Illuminate\Support\Facades\DB::getQueryLog();
+        \Illuminate\Support\Facades\DB::disableQueryLog();
+
+        $reader = \League\Csv\Reader::fromString($csv);
+        $reader->setHeaderOffset(0);
+        $rows = iterator_to_array($reader->getRecords(), false);
+
+        $paymentable_queries = array_filter($queries, function (array $query): bool {
+            return str_contains($query['query'], 'from `paymentables`');
+        });
+
+        $this->assertCount($invoice_count, $rows);
+        $this->assertLessThanOrEqual(2, count($paymentable_queries));
+    }
+
     public function testExpenseJsonExport()
     {
         Expense::factory()->count(5)->create([
             'company_id' => $this->company->id,
             'user_id' => $this->user->id,
         ]);
-        
+
         $data = [
             'send_email' => false,
             'date_range' => 'all',
             'report_keys' => [],
             'include_deleted' => false,
+            'user_id' => $this->user->id,
         ];
 
         $response = $this->withHeaders([
@@ -337,7 +470,7 @@ class ReportPreviewTest extends TestCase
         ])->postJson('/api/v1/reports/expenses?output=json', $data)
         ->assertStatus(200);
 
-        $p = (new PreviewReport($this->company, $data, ExpenseExport::class, '123'))->handle();
+        $p = (new PreviewReport($this->company, $data, ExpenseExport::class, '123', 'expense.csv'))->handle();
 
         $this->assertNull($p);
 
@@ -355,12 +488,13 @@ class ReportPreviewTest extends TestCase
             'documentable_type' => Client::class,
             'documentable_id' => $this->client->id,
         ]);
-        
+
         $data = [
             'send_email' => false,
             'date_range' => 'all',
             'report_keys' => [],
             'include_deleted' => false,
+            'user_id' => $this->user->id,
         ];
 
         $response = $this->withHeaders([
@@ -369,7 +503,7 @@ class ReportPreviewTest extends TestCase
         ])->postJson('/api/v1/reports/documents?output=json', $data)
         ->assertStatus(200);
 
-        $p = (new PreviewReport($this->company, $data, DocumentExport::class, '123'))->handle();
+        $p = (new PreviewReport($this->company, $data, DocumentExport::class, '123', 'documents.csv'))->handle();
 
         $this->assertNull($p);
 
@@ -386,7 +520,8 @@ class ReportPreviewTest extends TestCase
             'date_range' => 'all',
             'report_keys' => [],
             'include_deleted' => false,
-        ];
+            'user_id' => $this->user->id,
+                ];
 
         $response = $this->withHeaders([
             'X-API-SECRET' => config('ninja.api_secret'),
@@ -399,10 +534,11 @@ class ReportPreviewTest extends TestCase
             'date_range' => 'all',
             'report_keys' => ['client.name','client.balance'],
             'include_deleted' => false,
+            'user_id' => $this->user->id,
         ];
 
 
-        $p = (new PreviewReport($this->company, $data, ClientExport::class, 'client_export1'))->handle();
+        $p = (new PreviewReport($this->company, $data, ClientExport::class, 'client_export1', 'clients.csv'))->handle();
 
         $this->assertNull($p);
 
@@ -421,6 +557,7 @@ class ReportPreviewTest extends TestCase
             'date_range' => 'all',
             'report_keys' => [],
             'include_deleted' => false,
+            'user_id' => $this->user->id,
         ];
 
         $response = $this->withHeaders([
@@ -434,10 +571,10 @@ class ReportPreviewTest extends TestCase
             'date_range' => 'all',
             'report_keys' => ['client.name','client.balance','contact.email'],
             'include_deleted' => false,
+            'user_id' => $this->user->id,
         ];
 
-
-        $p = (new PreviewReport($this->company, $data, ContactExport::class, '123'))->handle();
+        $p = (new PreviewReport($this->company, $data, ContactExport::class, '123', 'contacts.csv'))->handle();
 
         $this->assertNull($p);
 
@@ -454,6 +591,7 @@ class ReportPreviewTest extends TestCase
             'date_range' => 'all',
             'report_keys' => [],
             'include_deleted' => false,
+            'user_id' => $this->user->id,
         ];
 
         $response = $this->withHeaders([
@@ -463,7 +601,7 @@ class ReportPreviewTest extends TestCase
         ->assertStatus(200);
 
 
-        $p = (new PreviewReport($this->company, $data, ActivityExport::class, '123'))->handle();
+        $p = (new PreviewReport($this->company, $data, ActivityExport::class, '123', 'activities.csv'))->handle();
 
         $this->assertNull($p);
 
@@ -476,22 +614,23 @@ class ReportPreviewTest extends TestCase
 
     public function testCreditExportPreview()
     {
-        
+
         $data = [
             'send_email' => false,
             'date_range' => 'all',
             'report_keys' => [],
             'include_deleted' => false,
+            'user_id' => $this->user->id,
         ];
 
-        $p = (new PreviewReport($this->company, $data, CreditExport::class, '123'))->handle();
+        $p = (new PreviewReport($this->company, $data, CreditExport::class, '123', 'credits.csv'))->handle();
 
         $this->assertNull($p);
 
         $r = Cache::pull('123');
 
         $this->assertNotNull($r);
-        
+
     }
 
     public function testCreditPreview()
@@ -501,6 +640,7 @@ class ReportPreviewTest extends TestCase
             'date_range' => 'all',
             'report_keys' => [],
             'include_deleted' => false,
+            'user_id' => $this->user->id,
         ];
 
         $response = $this->withHeaders([
@@ -509,6 +649,6 @@ class ReportPreviewTest extends TestCase
         ])->postJson('/api/v1/reports/credits?output=json', $data)
         ->assertStatus(200);
 
-    
+
     }
 }

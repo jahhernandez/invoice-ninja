@@ -1,10 +1,11 @@
 <?php
+
 /**
  * Invoice Ninja (https://invoiceninja.com).
  *
  * @link https://github.com/invoiceninja/invoiceninja source repository
  *
- * @copyright Copyright (c) 2024. Invoice Ninja LLC (https://invoiceninja.com)
+ * @copyright Copyright (c) 2026. Invoice Ninja LLC (https://invoiceninja.com)
  *
  * @license https://www.elastic.co/licensing/elastic-license
  */
@@ -28,6 +29,8 @@ class TaskObserver
     public function created(Task $task)
     {
         $subscriptions = Webhook::where('company_id', $task->company_id)
+                        ->where('is_deleted', false)
+                        ->whereNull('deleted_at')
                         ->where('event_id', Webhook::EVENT_CREATE_TASK)
                         ->exists();
 
@@ -54,8 +57,9 @@ class TaskObserver
             $event = Webhook::EVENT_DELETE_TASK;
         }
 
-
         $subscriptions = Webhook::where('company_id', $task->company_id)
+                                    ->where('is_deleted', false)
+                                    ->whereNull('deleted_at')
                                     ->where('event_id', $event)
                                     ->exists();
 
@@ -77,12 +81,15 @@ class TaskObserver
         }
 
         $subscriptions = Webhook::where('company_id', $task->company_id)
+                        ->where('is_deleted', false)
+                        ->whereNull('deleted_at')
                         ->where('event_id', Webhook::EVENT_ARCHIVE_TASK)
                         ->exists();
 
         if ($subscriptions) {
             WebhookHandler::dispatch(Webhook::EVENT_ARCHIVE_TASK, $task, $task->company)->delay(0);
         }
+
     }
 
     /**

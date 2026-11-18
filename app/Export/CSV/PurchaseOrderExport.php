@@ -1,4 +1,5 @@
 <?php
+
 /**
  * PurchaseOrder Ninja (https://invoiceninja.com).
  *
@@ -57,28 +58,37 @@ class PurchaseOrderExport extends BaseExport
 
         $query = PurchaseOrder::query()
                         ->withTrashed()
-                        ->with('vendor')
-                        ->whereHas('vendor', function ($q){
+                        ->with('vendor', 'location', 'tags')
+                        ->whereHas('vendor', function ($q) {
                             $q->where('is_deleted', false);
                         })
                         ->where('company_id', $this->company->id);
-                        
-        if(!$this->input['include_deleted'] ?? false){
+
+        if (!$this->input['include_deleted'] ?? false) { // @phpstan-ignore-line
             $query->where('is_deleted', 0);
         }
 
-        $query = $this->addDateRange($query);
+        $query = $this->addDateRange($query, 'purchase_orders');
 
 
         $clients = &$this->input['client_id'];
 
-        if($clients)
+        if ($clients) {
             $query = $this->addClientFilter($query, $clients);
+        }
+
+        $query = $this->addTagFilter($query);
+
+        $query = $this->filterByUserPermissions($query);
 
         $query = $this->addPurchaseOrderStatusFilter($query, $this->input['status'] ?? '');
 
-        if($this->input['document_email_attachment'] ?? false) {
+        if ($this->input['document_email_attachment'] ?? false) {
             $this->queueDocuments($query);
+        }
+
+        if ($this->input['pdf_email_attachment'] ?? false) {
+            $this->queuePdfs($query);
         }
 
         return $query;
@@ -95,8 +105,10 @@ class PurchaseOrderExport extends BaseExport
             return ['identifier' => $key, 'display_value' => $headerdisplay[$value]];
         })->toArray();
 
-        $report = $query->cursor()
+        $report = $this->streamQuery($query)
                 ->map(function ($resource) {
+
+                    /** @var \App\Models\PurchaseOrder $resource */
                     $row = $this->buildRow($resource);
                     return $this->processMetaData($row, $resource);
                 })->toArray();
@@ -110,21 +122,23 @@ class PurchaseOrderExport extends BaseExport
         $query = $this->init();
 
         //load the CSV document from a string
-        $this->csv = Writer::createFromString();
+        $this->csv = Writer::fromString();
         \League\Csv\CharsetConverter::addTo($this->csv, 'UTF-8', 'UTF-8');
 
         //insert the header
         $this->csv->insertOne($this->buildHeader());
 
-        $query->cursor()
+        $this->streamQuery($query)
             ->each(function ($purchase_order) {
+
+                /** @var \App\Models\PurchaseOrder $purchase_order */
                 $this->csv->insertOne($this->buildRow($purchase_order));
             });
 
         return $this->csv->toString();
     }
 
-    private function buildRow(PurchaseOrder $purchase_order): array
+    protected function buildRow(PurchaseOrder $purchase_order): array
     {
         $transformed_purchase_order = $this->purchase_order_transformer->transform($purchase_order);
 
@@ -134,20 +148,29 @@ class PurchaseOrderExport extends BaseExport
 
             $parts = explode('.', $key);
 
-            if (is_array($parts) && $parts[0] == 'purchase_order' && array_key_exists($parts[1], $transformed_purchase_order)) {
+            if (str_ends_with($key, '.tags')) {
+                $entity[$key] = $this->decorator->transform($key, $purchase_order);
+                continue;
+            }
+
+            if ($parts[0] === 'purchase_order' && isset($parts[1], $transformed_purchase_order[$parts[1]])) {
                 $entity[$key] = $transformed_purchase_order[$parts[1]];
             } else {
-                nlog($key);
                 $entity[$key] = $this->decorator->transform($key, $purchase_order);
-                // $entity[$key] = '';
-
-                // $entity[$key] = $this->resolveKey($key, $purchase_order, $this->purchase_order_transformer);
             }
 
 
         }
-        // return $entity;
-        return $this->decorateAdvancedFields($purchase_order, $entity);
+
+        $entity = $this->decorateAdvancedFields($purchase_order, $entity);
+
+        return $this->convertFloats($entity, ['purchase_order' => $purchase_order->id]);
+
+    }
+
+    protected function groupingIdentityForColumn(string $column): ?string
+    {
+        return str_starts_with($column, 'purchase_order.') ? 'purchase_order' : null;
     }
 
     private function decorateAdvancedFields(PurchaseOrder $purchase_order, array $entity): array
@@ -166,13 +189,17 @@ class PurchaseOrderExport extends BaseExport
         }
 
         if (in_array('purchase_order.user_id', $this->input['report_keys'])) {
-            $entity['purchase_order.user_id'] = $purchase_order->user ? $purchase_order->user->present()->name() : '';
+            $entity['purchase_order.user_id'] = $purchase_order->user ? $purchase_order->user->present()->name() : ''; // @phpstan-ignore-line
+
         }
 
         if (in_array('purchase_order.assigned_user_id', $this->input['report_keys'])) {
             $entity['purchase_order.assigned_user_id'] = $purchase_order->assigned_user ? $purchase_order->assigned_user->present()->name() : '';
         }
 
+        if (in_array('purchase_order.subtotal', $this->input['report_keys'])) {
+            $entity['purchase_order.subtotal'] = $purchase_order->calc()->getSubTotal();
+        }
 
         return $entity;
     }

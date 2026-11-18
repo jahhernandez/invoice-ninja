@@ -1,10 +1,11 @@
 <?php
+
 /**
  * Invoice Ninja (https://invoiceninja.com).
  *
  * @link https://github.com/invoiceninja/invoiceninja source repository
  *
- * @copyright Copyright (c) 2024. Invoice Ninja LLC (https://invoiceninja.com)
+ * @copyright Copyright (c) 2026. Invoice Ninja LLC (https://invoiceninja.com)
  *
  * @license https://www.elastic.co/licensing/elastic-license
  */
@@ -23,14 +24,13 @@ class BankIntegrationFactory
         $bank_integration->company_id = $company_id;
 
         $bank_integration->provider_name = '';
-        $bank_integration->bank_account_id = '';
         $bank_integration->bank_account_name = '';
         $bank_integration->bank_account_number = '';
         $bank_integration->bank_account_status = '';
         $bank_integration->bank_account_type = '';
         $bank_integration->balance = 0;
         $bank_integration->currency = '';
-        $bank_integration->auto_sync = 1;
+        $bank_integration->auto_sync = true;
 
         return $bank_integration;
     }

@@ -1,42 +1,45 @@
 <?php
+
 /**
  * Invoice Ninja (https://invoiceninja.com).
  *
  * @link https://github.com/invoiceninja/invoiceninja source repository
  *
- * @copyright Copyright (c) 2024. Invoice Ninja LLC (https://invoiceninja.com)
+ * @copyright Copyright (c) 2026. Invoice Ninja LLC (https://invoiceninja.com)
  *
  * @license https://www.elastic.co/licensing/elastic-license
  */
 
 namespace App\Http\Controllers;
 
-use App\Events\Expense\ExpenseWasCreated;
-use App\Events\Expense\ExpenseWasUpdated;
+use App\Utils\Ninja;
+use App\Models\Account;
+use App\Models\Expense;
+use Illuminate\Http\Response;
 use App\Factory\ExpenseFactory;
 use App\Filters\ExpenseFilters;
+use App\Utils\Traits\MakesHash;
+use App\Utils\Traits\Uploadable;
+use App\Utils\Traits\BulkOptions;
+use App\Utils\Traits\SavesDocuments;
+use App\Jobs\EDocument\ImportEDocument;
+use App\Repositories\ExpenseRepository;
+use App\Transformers\ExpenseTransformer;
+use App\Events\Expense\ExpenseWasCreated;
+use App\Events\Expense\ExpenseWasUpdated;
+use App\Services\Template\TemplateAction;
+use App\Http\Requests\Expense\EDocumentRequest;
 use App\Http\Requests\Expense\BulkExpenseRequest;
-use App\Http\Requests\Expense\CreateExpenseRequest;
-use App\Http\Requests\Expense\DestroyExpenseRequest;
 use App\Http\Requests\Expense\EditExpenseRequest;
 use App\Http\Requests\Expense\ShowExpenseRequest;
 use App\Http\Requests\Expense\StoreExpenseRequest;
+use App\Http\Requests\Expense\CreateExpenseRequest;
 use App\Http\Requests\Expense\UpdateExpenseRequest;
 use App\Http\Requests\Expense\UploadExpenseRequest;
-use App\Models\Account;
-use App\Models\Expense;
-use App\Repositories\ExpenseRepository;
-use App\Transformers\ExpenseTransformer;
-use App\Utils\Ninja;
-use App\Utils\Traits\BulkOptions;
-use App\Utils\Traits\MakesHash;
-use App\Utils\Traits\SavesDocuments;
-use App\Utils\Traits\Uploadable;
-use Illuminate\Http\Response;
+use App\Http\Requests\Expense\DestroyExpenseRequest;
 
 /**
  * Class ExpenseController.
- * @covers App\Http\Controllers\ExpenseController
  */
 class ExpenseController extends BaseController
 {
@@ -98,11 +101,11 @@ class ExpenseController extends BaseController
      *       ),
      *     )
      * @param ExpenseFilters $filters
-     * @return Response|mixed
+     * @return Response| \Illuminate\Http\JsonResponse|mixed
      */
     public function index(ExpenseFilters $filters)
     {
-        $expenses = Expense::filter($filters);
+        $expenses = Expense::filter($filters)->with('tags');
 
         return $this->listResponse($expenses);
     }
@@ -112,7 +115,7 @@ class ExpenseController extends BaseController
      *
      * @param ShowExpenseRequest $request
      * @param Expense $expense
-     * @return Response
+     * @return Response| \Illuminate\Http\JsonResponse
      *
      *
      * @OA\Get(
@@ -166,7 +169,7 @@ class ExpenseController extends BaseController
      *
      * @param EditExpenseRequest $request
      * @param Expense $expense
-     * @return Response
+     * @return Response| \Illuminate\Http\JsonResponse
      *
      *
      * @OA\Get(
@@ -220,7 +223,7 @@ class ExpenseController extends BaseController
      *
      * @param UpdateExpenseRequest $request
      * @param Expense $expense
-     * @return Response
+     * @return Response| \Illuminate\Http\JsonResponse
      *
      *
      *
@@ -286,7 +289,7 @@ class ExpenseController extends BaseController
      * Show the form for creating a new resource.
      *
      * @param CreateExpenseRequest $request
-     * @return Response
+     * @return Response| \Illuminate\Http\JsonResponse
      *
      *
      *
@@ -326,6 +329,7 @@ class ExpenseController extends BaseController
         $user = auth()->user();
 
         $expense = ExpenseFactory::create($user->company()->id, $user->id);
+        $expense->date = now()->addSeconds($user->company()->utc_offset())->format('Y-m-d');
 
         return $this->itemResponse($expense);
     }
@@ -334,7 +338,7 @@ class ExpenseController extends BaseController
      * Store a newly created resource in storage.
      *
      * @param StoreExpenseRequest $request
-     * @return Response
+     * @return Response| \Illuminate\Http\JsonResponse
      *
      *
      *
@@ -375,7 +379,7 @@ class ExpenseController extends BaseController
 
         $expense = $this->expense_repo->save($request->all(), ExpenseFactory::create($user->company()->id, $user->id));
 
-        event(new ExpenseWasCreated($expense, $expense->company, Ninja::eventVars($user ? $user->id : null)));
+        event(new ExpenseWasCreated($expense, $expense->company, Ninja::eventVars($user->id)));
 
         event('eloquent.created: App\Models\Expense', $expense);
 
@@ -387,7 +391,7 @@ class ExpenseController extends BaseController
      *
      * @param DestroyExpenseRequest $request
      * @param Expense $expense
-     * @return Response
+     * @return Response| \Illuminate\Http\JsonResponse
      *
      *
      * @throws \Exception
@@ -441,7 +445,7 @@ class ExpenseController extends BaseController
     /**
      * Perform bulk actions on the list view.
      *
-     * @return Response
+     * @return Response| \Illuminate\Http\JsonResponse
      *
      *
      * @OA\Post(
@@ -493,10 +497,41 @@ class ExpenseController extends BaseController
         /** @var \App\Models\User $user */
         $user = auth()->user();
 
-        $expenses = Expense::withTrashed()->find($request->ids);
+        $expenses = Expense::withTrashed()->company()->find($request->ids);
 
-        if($request->action == 'bulk_categorize' && $user->can('edit', $expenses->first())) {
-            $this->expense_repo->categorize($expenses, $request->category_id);
+        if ($request->action == 'template' && $user->can('view', $expenses->first())) {
+
+            $hash_or_response = $request->boolean('send_email') ? 'email sent' : \Illuminate\Support\Str::uuid();
+
+            TemplateAction::dispatch(
+                $expenses->pluck('hashed_id')->toArray(),
+                $request->template_id,
+                Expense::class,
+                $user->id,
+                $user->company(),
+                $user->company()->db,
+                $hash_or_response,
+                $request->boolean('send_email')
+            );
+
+            return response()->json(['message' => $hash_or_response], 200);
+        }
+
+
+        if ($request->action == 'bulk_update' && $user->can('edit', $expenses->first())) {
+
+            $expenses = Expense::withTrashed()
+                    ->company()
+                    ->whereIn('id', $request->ids);
+
+            $this->expense_repo->bulkUpdate($expenses, $request->column, $request->new_value);
+
+            return $this->listResponse(Expense::query()->withTrashed()->company()->whereIn('id', $request->ids));
+
+        }
+
+        if ($request->action == 'bulk_categorize' && $user->can('edit', $expenses->first())) {
+            $this->expense_repo->categorize($expenses, $request->category_id); //@phpstan-ignore-line
             $expenses = collect([]);
         }
 
@@ -506,7 +541,7 @@ class ExpenseController extends BaseController
             }
         });
 
-        return $this->listResponse(Expense::withTrashed()->whereIn('id', $request->ids));
+        return $this->listResponse(Expense::withTrashed()->company()->whereIn('id', $request->ids));
     }
 
     /**
@@ -524,7 +559,7 @@ class ExpenseController extends BaseController
      *
      * @param UploadExpenseRequest $request
      * @param Expense $expense
-     * @return Response
+     * @return Response| \Illuminate\Http\JsonResponse
      *
      *
      *
@@ -571,14 +606,82 @@ class ExpenseController extends BaseController
      */
     public function upload(UploadExpenseRequest $request, Expense $expense)
     {
-        if (! $this->checkFeature(Account::FEATURE_DOCUMENTS)) {
+        if (!$this->checkFeature(Account::FEATURE_DOCUMENTS)) {
             return $this->featureFailure();
         }
 
         if ($request->has('documents')) {
-            $this->saveDocuments($request->file('documents'), $expense, $request->input('is_public', true));
+            $this->saveDocuments($request->file('documents'), $expense, $request->has('is_public') ? $request->boolean('is_public') : null);
         }
 
         return $this->itemResponse($expense->fresh());
+    }
+
+    /**
+     * @OA\Post(
+     *      path="/api/v1/expenses/edocument",
+     *      operationId="edocumentExpense",
+     *      tags={"expenses"},
+     *      summary="Uploads an electronic document to a expense",
+     *      description="Handles the uploading of an electronic document to a expense",
+     *      @OA\Parameter(ref="#/components/parameters/X-API-TOKEN"),
+     *      @OA\Parameter(ref="#/components/parameters/X-Requested-With"),
+     *      @OA\Parameter(ref="#/components/parameters/include"),
+     *      @OA\RequestBody(
+     *         description="User credentials",
+     *         required=true,
+     *         @OA\MediaType(
+     *             mediaType="multipart/form-data",
+     *             @OA\Schema(
+     *                 type="array",
+     *                 @OA\Items(
+     *                     type="string",
+     *                     format="binary",
+     *                     description="The files to be uploaded",
+     *                 ),
+     *             )
+     *         )
+     *     ),
+     *      @OA\Response(
+     *          response=200,
+     *          description="Returns a HTTP status",
+     *          @OA\Header(header="X-MINIMUM-CLIENT-VERSION", ref="#/components/headers/X-MINIMUM-CLIENT-VERSION"),
+     *          @OA\Header(header="X-RateLimit-Remaining", ref="#/components/headers/X-RateLimit-Remaining"),
+     *          @OA\Header(header="X-RateLimit-Limit", ref="#/components/headers/X-RateLimit-Limit"),
+     *       ),
+     *       @OA\Response(
+     *          response=422,
+     *          description="Validation error",
+     *          @OA\JsonContent(ref="#/components/schemas/ValidationError"),
+     *
+     *       ),
+     *       @OA\Response(
+     *           response="default",
+     *           response="default",
+     *           description="Unexpected Error",
+     *           @OA\JsonContent(ref="#/components/schemas/Error"),
+     *       ),
+     *     )
+     */
+    public function edocument(EDocumentRequest $request)
+    {
+        $user = auth()->user();
+
+        //Handle single - or - array of uploaded files
+        $files = $request->file('documents') instanceof \Illuminate\Http\UploadedFile ? [$request->file('documents')] : (array) $request->file('documents');
+
+        foreach ($files as $file) {
+            $extension = $file->getClientOriginalExtension();
+
+            $parsed_filename = sprintf(
+                '%s.%s',
+                \Illuminate\Support\Str::random(32),
+                preg_replace('/[^a-zA-Z0-9]/', '', $extension) // Sanitize extension
+            );
+
+            ImportEDocument::dispatch($file->get(), $parsed_filename, $file->getMimeType(), $user->company());
+        }
+
+        return response()->json(['message' => 'Processing....'], 200);
     }
 }

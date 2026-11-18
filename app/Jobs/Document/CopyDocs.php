@@ -1,10 +1,11 @@
 <?php
+
 /**
  * Invoice Ninja (https://invoiceninja.com).
  *
  * @link https://github.com/invoiceninja/invoiceninja source repository
  *
- * @copyright Copyright (c) 2024. Invoice Ninja LLC (https://invoiceninja.com)
+ * @copyright Copyright (c) 2026. Invoice Ninja LLC (https://invoiceninja.com)
  *
  * @license https://www.elastic.co/licensing/elastic-license
  */
@@ -32,11 +33,9 @@ class CopyDocs implements ShouldQueue
     public $tries = 1;
 
     /**
-     * 
+     *
      */
-    public function __construct(private \Illuminate\Support\Collection $document_ids, private $entity, private string $db)
-    {
-    }
+    public function __construct(private \Illuminate\Support\Collection $document_ids, private $entity, private string $db) {}
 
     /**
      * Execute the job.
@@ -47,27 +46,31 @@ class CopyDocs implements ShouldQueue
     {
         MultiDB::setDb($this->db);
 
-        Document::whereIn('id', $this->document_ids)
+        Document::query()
+                ->whereIn('id', $this->document_ids)
                 ->where('company_id', $this->entity->company_id)
-                ->each(function ($document){
+                ->each(function ($document) {
 
+                    /** @var \App\Models\Document $document */
                     $file = $document->getFile();
-                    
-                     $extension = pathinfo($document->name, PATHINFO_EXTENSION);
+
+                    $extension = pathinfo($document->name, PATHINFO_EXTENSION);
 
                     $new_hash = \Illuminate\Support\Str::random(32) . "." . $extension;
- 
+
+                    $relative_path = "{$this->entity->company->company_key}/documents/{$new_hash}";
+
                     Storage::disk($document->disk)->put(
-                        "{$this->entity->company->company_key}/documents/{$new_hash}",
+                        $relative_path,
                         $file,
                     );
 
-                    $instance = Storage::disk($document->disk)->path("{$this->entity->company->company_key}/documents/{$new_hash}");
+                    // $instance = Storage::disk($document->disk)->path("{$this->entity->company->company_key}/documents/{$new_hash}");
 
                     $new_doc = new Document();
                     $new_doc->user_id = $this->entity->user_id;
                     $new_doc->company_id = $this->entity->company_id;
-                    $new_doc->url = $instance;
+                    $new_doc->url = $relative_path;
                     $new_doc->name = $document->name;
                     $new_doc->type = $extension;
                     $new_doc->disk = $document->disk;
@@ -76,7 +79,7 @@ class CopyDocs implements ShouldQueue
                     $new_doc->width = $document->width;
                     $new_doc->height = $document->height;
                     $new_doc->is_public = $document->is_public;
-                    
+
                     $this->entity->documents()->save($new_doc);
 
                 });

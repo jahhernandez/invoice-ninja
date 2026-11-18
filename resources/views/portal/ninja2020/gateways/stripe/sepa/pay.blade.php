@@ -18,6 +18,8 @@
     <meta name="translation-name-required" content="{{ ctrans('texts.missing_account_holder_name') }}">
     <meta name="translation-email-required" content="{{ ctrans('texts.provide_email') }}">
     <meta name="translation-terms-required" content="{{ ctrans('texts.you_need_to_accept_the_terms_before_proceeding') }}">
+
+    <meta name="instant-payment" content="yes" />
 @endsection
 
 @section('gateway_content')
@@ -40,21 +42,27 @@
     @endcomponent
 
     @component('portal.ninja2020.components.general.card-element', ['title' => ctrans('texts.pay_with')])
+        <ul class="payment-method-list">
         @if (count($tokens) > 0)
             @foreach ($tokens as $token)
-                <label class="mr-4">
+            <li class="payment-method-item">
+            <label class="payment-method-label">
                     <input type="radio" data-token="{{ $token->token }}" name="payment-type"
                         class="form-radio cursor-pointer toggle-payment-with-token" />
-                    <span class="ml-1 cursor-pointer">**** {{ $token->meta?->last4 }}</span>
+                    <span class="ml-1">**** {{ $token->meta?->last4 }}</span>
                 </label>
+            </li>
             @endforeach
         @endisset
 
-        <label>
+        <li class="payment-method-item">
+        <label class="payment-method-label">
             <input type="radio" id="toggle-payment-with-new-bank-account" class="form-radio cursor-pointer" name="payment-type"
                 checked />
-            <span class="ml-1 cursor-pointer">{{ __('texts.new_bank_account') }}</span>
+            <span class="ml-1">{{ __('texts.new_bank_account') }}</span>
         </label>
+        </li>
+            </ul>
     @endcomponent
 
     @component('portal.ninja2020.components.general.card-element-single')

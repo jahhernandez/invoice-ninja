@@ -1,10 +1,11 @@
 <?php
+
 /**
  * Invoice Ninja (https://invoiceninja.com).
  *
  * @link https://github.com/invoiceninja/invoiceninja source repository
  *
- * @copyright Copyright (c) 2024. Invoice Ninja LLC (https://invoiceninja.com)
+ * @copyright Copyright (c) 2026. Invoice Ninja LLC (https://invoiceninja.com)
  *
  * @license https://www.elastic.co/licensing/elastic-license
  */
@@ -40,10 +41,10 @@ class RecurringInvoiceToInvoiceFactory
         $invoice->tax_rate3 = $recurring_invoice->tax_rate3;
         $invoice->total_taxes = $recurring_invoice->total_taxes;
         $invoice->subscription_id = $recurring_invoice->subscription_id;
-        $invoice->custom_value1 = $recurring_invoice->custom_value1;
-        $invoice->custom_value2 = $recurring_invoice->custom_value2;
-        $invoice->custom_value3 = $recurring_invoice->custom_value3;
-        $invoice->custom_value4 = $recurring_invoice->custom_value4;
+        $invoice->custom_value1 = self::tranformObject($recurring_invoice->custom_value1, $client);
+        $invoice->custom_value2 = self::tranformObject($recurring_invoice->custom_value2, $client);
+        $invoice->custom_value3 = self::tranformObject($recurring_invoice->custom_value3, $client);
+        $invoice->custom_value4 = self::tranformObject($recurring_invoice->custom_value4, $client);
         $invoice->amount = $recurring_invoice->amount;
         $invoice->uses_inclusive_taxes = $recurring_invoice->uses_inclusive_taxes;
         $invoice->is_proforma = $recurring_invoice->is_proforma;
@@ -66,8 +67,82 @@ class RecurringInvoiceToInvoiceFactory
         $invoice->auto_bill_enabled = $recurring_invoice->auto_bill_enabled;
         $invoice->paid_to_date = 0;
         $invoice->design_id = $recurring_invoice->design_id;
+        $invoice->e_invoice = self::transformEInvoice($recurring_invoice);
+        $invoice->vendor_id = $recurring_invoice->vendor_id;
+        $invoice->location_id = $recurring_invoice->location_id;
+        $invoice->project_id = $recurring_invoice->project_id ?? null;
 
         return $invoice;
+    }
+
+    /**
+     * transformEInvoice
+     *
+     * @param  \App\Models\RecurringInvoice $recurring_invoice
+     * @return \stdClass|null
+     */
+    private static function transformEInvoice($recurring_invoice)
+    {
+        if (!$recurring_invoice->e_invoice) {
+            return null;
+        }
+
+        if (isset($recurring_invoice->e_invoice->Invoice)) {
+
+            if (isset($recurring_invoice->e_invoice->Invoice->InvoicePeriod) && is_array($recurring_invoice->e_invoice->Invoice->InvoicePeriod)) {
+                $period = $recurring_invoice->e_invoice->Invoice->InvoicePeriod[0];
+
+                if ($description = $period->Description) {
+                    $parts = explode('|', $description);
+
+                    if (count($parts) == 2) {
+                        $start_template = explode(',', $parts[0]);
+                        $end_template = explode(',', $parts[1]);
+
+                        $start_date = date_create('now', new \DateTimeZone($recurring_invoice->client->timezone()->name));
+
+                        foreach ($start_template as $template) {
+                            $start_date->modify($template);
+                        }
+
+                        $start_date = $start_date->format('Y-m-d');
+
+                        $end_date = date_create('now', new \DateTimeZone($recurring_invoice->client->timezone()->name));
+
+                        foreach ($end_template as $template) {
+                            $end_date->modify($template);
+                        }
+
+                        $end_date = $end_date->format('Y-m-d');
+
+                        // $einvoice = new \InvoiceNinja\EInvoice\Models\Peppol\Invoice();
+                        // $ip = new \InvoiceNinja\EInvoice\Models\Peppol\PeriodType\InvoicePeriod();
+                        // $ip->StartDate = new \DateTime($start_date);
+                        // $ip->EndDate = new \DateTime($end_date);
+                        // $einvoice->InvoicePeriod = [$ip];
+
+                        // 2026-01-12 - To prevent storing datetime objects in the database, we manually build the InvoicePeriod object
+                        $einvoice = new \stdClass();
+
+                        $invoice_period = new \stdClass();
+                        $invoice_period->StartDate = $start_date;
+                        $invoice_period->EndDate = $end_date;
+                        $einvoice->InvoicePeriod = [$invoice_period];
+
+                        $stub = new \stdClass();
+                        $stub->Invoice = $einvoice;
+
+                        return $stub;
+
+                    }
+                }
+
+            }
+
+
+        }
+
+        return null;
     }
 
     private static function transformItems($recurring_invoice, $client)

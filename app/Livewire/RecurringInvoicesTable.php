@@ -5,7 +5,7 @@
  *
  * @link https://github.com/invoiceninja/invoiceninja source repository
  *
- * @copyright Copyright (c) 2024. Invoice Ninja LLC (https://invoiceninja.com)
+ * @copyright Copyright (c) 2026. Invoice Ninja LLC (https://invoiceninja.com)
  *
  * @license https://www.elastic.co/licensing/elastic-license
  */
@@ -25,11 +25,13 @@ class RecurringInvoicesTable extends Component
 
     public $per_page = 10;
 
-    public $company;
+    public $company_id;
+
+    public $db;
 
     public function mount()
     {
-        MultiDB::setDb($this->company->db);
+        MultiDB::setDb($this->db);
 
         $this->sort_asc = false;
 
@@ -41,8 +43,9 @@ class RecurringInvoicesTable extends Component
         $query = RecurringInvoice::query();
 
         $query = $query
+            // ->with('client')
             ->where('client_id', auth()->guard('contact')->user()->client_id)
-            ->where('company_id', $this->company->id)
+            ->where('company_id', auth()->guard('contact')->user()->company_id)
             ->whereIn('status_id', [RecurringInvoice::STATUS_ACTIVE])
             ->orderBy('status_id', 'asc')
             ->with('client')

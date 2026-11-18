@@ -1,10 +1,11 @@
 <?php
+
 /**
  * Invoice Ninja (https://invoiceninja.com).
  *
  * @link https://github.com/invoiceninja/invoiceninja source repository
  *
- * @copyright Copyright (c) 2024. Invoice Ninja LLC (https://invoiceninja.com)
+ * @copyright Copyright (c) 2026. Invoice Ninja LLC (https://invoiceninja.com)
  *
  * @license https://www.elastic.co/licensing/elastic-license
  */
@@ -30,16 +31,13 @@ class ReportPreviewController extends BaseController
 
         $report = Cache::get($hash);
 
-        if(!$report) {
+        if (!$report) {
             return response()->json(['message' => 'Still working.....'], 409);
         }
 
-        if($report) {
+        Cache::forget($hash);
 
-            Cache::forget($hash);
-
-            return response()->json($report, 200);
-        }
+        return response()->json($report, 200);
 
 
     }

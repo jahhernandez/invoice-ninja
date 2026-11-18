@@ -5,7 +5,7 @@
  *
  * @link https://github.com/invoiceninja/invoiceninja source repository
  *
- * @copyright Copyright (c) 2024. Invoice Ninja LLC (https://invoiceninja.com)
+ * @copyright Copyright (c) 2026. Invoice Ninja LLC (https://invoiceninja.com)
  *
  * @license https://www.elastic.co/licensing/elastic-license
  */
@@ -13,15 +13,19 @@
 namespace App\Livewire;
 
 use App\Libraries\MultiDB;
-use App\Models\Company;
 use App\Models\Invoice;
+use App\Utils\Traits\WithBulkSelection;
 use App\Utils\Traits\WithSorting;
 use Carbon\Carbon;
+use Illuminate\Contracts\View\Factory;
+use Illuminate\Contracts\View\View;
+use Illuminate\Database\Eloquent\Builder;
 use Livewire\Component;
 use Livewire\WithPagination;
 
 class InvoicesTable extends Component
 {
+    use WithBulkSelection;
     use WithPagination;
     use WithSorting;
 
@@ -29,33 +33,64 @@ class InvoicesTable extends Component
 
     public array $status = [];
 
-    public Company $company;
-
     public int $company_id;
 
     public string $db;
 
-    public function mount()
+    public function mount(): void
     {
         MultiDB::setDb($this->db);
-
-        $this->company = Company::find($this->company_id);
 
         $this->sort_asc = false;
 
         $this->sort_field = 'date';
     }
 
-    public function render()
+    public function toggleStatus(string $value): void
+    {
+        if (in_array($value, $this->status, true)) {
+            $this->status = array_values(array_diff($this->status, [$value]));
+        } else {
+            $this->status[] = $value;
+        }
+
+        $this->resetSelection();
+    }
+
+    public function sortBy($field): void
+    {
+        $this->sort_field === $field
+            ? $this->sort_asc = ! $this->sort_asc
+            : $this->sort_asc = true;
+
+        $this->sort_field = $field;
+
+        $this->resetSelection();
+    }
+
+    protected function selectablePageIds(): array
+    {
+        return $this->buildQuery()
+            ->paginate($this->per_page, ['id'], 'page', $this->getPage())
+            ->pluck('hashed_id')
+            ->toArray();
+    }
+
+    private function buildQuery(): Builder
     {
         $local_status = [];
 
         $query = Invoice::query()
-            ->where('company_id', $this->company->id)
+            ->where('company_id', auth()->guard('contact')->user()->company_id)
             ->where('is_deleted', false)
             ->where('is_proforma', false)
             ->with('client.gateway_tokens', 'client.contacts')
-            ->orderBy($this->sort_field, $this->sort_asc ? 'asc' : 'desc');
+            ->when($this->sort_field == 'number', function ($q) {
+                $q->orderByRaw("REGEXP_REPLACE(number,'[^0-9]+','')+0 " . ($this->sort_asc ? 'desc' : 'asc'));
+            })
+            ->when($this->sort_field != 'number', function ($q) {
+                $q->orderBy($this->sort_field, ($this->sort_asc ? 'asc' : 'desc'));
+            });
 
         if (in_array('paid', $this->status)) {
             $local_status[] = Invoice::STATUS_PAID;
@@ -83,18 +118,22 @@ class InvoicesTable extends Component
             });
         }
 
-        $query = $query
+        return $query
             ->where('client_id', auth()->guard('contact')->user()->client_id)
             ->where('status_id', '<>', Invoice::STATUS_DRAFT)
             ->where('status_id', '<>', Invoice::STATUS_CANCELLED)
-            ->withTrashed()
-            ->paginate($this->per_page);
+            ->withTrashed();
+    }
+
+    public function render(): Factory|View
+    {
+        $invoices = $this->buildQuery()->paginate($this->per_page);
 
         /** @var \App\Models\ClientContact $client_contact */
         $client_contact = auth()->user();
 
         return render('components.livewire.invoices-table', [
-            'invoices' => $query,
+            'invoices' => $invoices,
             'gateway_available' => ! empty($client_contact->client->service()->getPaymentMethods(-1)),
         ]);
     }

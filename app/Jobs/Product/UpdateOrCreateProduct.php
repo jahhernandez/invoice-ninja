@@ -1,10 +1,11 @@
 <?php
+
 /**
  * Invoice Ninja (https://invoiceninja.com).
  *
  * @link https://github.com/invoiceninja/invoiceninja source repository
  *
- * @copyright Copyright (c) 2024. Invoice Ninja LLC (https://invoiceninja.com)
+ * @copyright Copyright (c) 2026. Invoice Ninja LLC (https://invoiceninja.com)
  *
  * @license https://www.elastic.co/licensing/elastic-license
  */
@@ -96,7 +97,7 @@ class UpdateOrCreateProduct implements ShouldQueue
             $string_hit = false;
 
             foreach ([':MONTH',':YEAR',':QUARTER',':WEEK'] as $string) {
-                if (stripos($product->notes, $string) !== false) {
+                if (stripos($product->notes ?? '', $string) !== false) {
                     $string_hit = true;
                 }
             }
@@ -106,11 +107,11 @@ class UpdateOrCreateProduct implements ShouldQueue
             }
 
             $product->product_key = $item->product_key;
-            $product->notes = isset($item->notes) ? $item->notes : '';
-            $product->price = isset($item->cost) ? $item->cost : 0;
+            $product->notes = $item->notes ?? '';
+            $product->price = $item->cost ?? 0;
 
             if (! $product->id) {
-                $product->quantity = isset($item->quantity) ? $item->quantity : 0;
+                $product->quantity = $item->quantity ?? 0;
             }
 
             if (isset($item->custom_value1) && strlen($item->custom_value1) >= 1) {
@@ -139,7 +140,7 @@ class UpdateOrCreateProduct implements ShouldQueue
 
     public function failed($exception = null)
     {
-        info('update create failed with = ');
-        info(print_r($exception->getMessage(), 1));
+        nlog('update create failed with = ');
+        nlog($exception->getMessage());
     }
 }

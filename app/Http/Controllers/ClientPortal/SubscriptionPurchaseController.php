@@ -5,7 +5,7 @@
  *
  * @link https://github.com/invoiceninja/invoiceninja source repository
  *
- * @copyright Copyright (c) 2024. Invoice Ninja LLC (https://invoiceninja.com)
+ * @copyright Copyright (c) 2026. Invoice Ninja LLC (https://invoiceninja.com)
  *
  * @license https://www.elastic.co/licensing/elastic-license
  */
@@ -77,7 +77,6 @@ class SubscriptionPurchaseController extends Controller
 
     public function v3(Subscription $subscription, Request $request)
     {
-        // Todo: Prerequirement checks for subscription.
 
         return view('billing-portal.v3.index', [
             'subscription' => $subscription,
@@ -90,15 +89,20 @@ class SubscriptionPurchaseController extends Controller
      * Set locale for incoming request.
      *
      * @param string $locale
+     * @return string
      */
-    private function setLocale(string $locale): void
+    private function setLocale(string $locale): string
     {
-        $record = Cache::get('languages')->filter(function ($item) use ($locale) {
-            return $item->locale == $locale;
-        })->first();
 
-        if ($record) {
-            App::setLocale($record->locale);
-        }
+        /** @var \Illuminate\Support\Collection<\App\Models\Language> */
+        $languages = app('languages');
+
+        $record = $languages->first(function ($item) use ($locale) {
+            /** @var \App\Models\Language $item */
+            return $item->locale == $locale;
+        });
+
+        return $record ? $record->locale : 'en';
+
     }
 }

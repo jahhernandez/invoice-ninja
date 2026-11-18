@@ -1,14 +1,24 @@
 <?php
-
+/**
+ * Invoice Ninja (https://invoiceninja.com).
+ *
+ * @link https://github.com/invoiceninja/invoiceninja source repository
+ *
+ * @copyright Copyright (c) 2026. Invoice Ninja LLC (https://invoiceninja.com)
+ *
+ * @license https://www.elastic.co/licensing/elastic-license
+ */
 namespace App\Http\Controllers;
 
 use App\Filters\SystemLogFilters;
+use App\Http\Requests\SystemLog\AdminSystemLogRequest;
 use App\Models\SystemLog;
 use App\Transformers\SystemLogTransformer;
 use App\Utils\Traits\MakesHash;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
 use stdClass;
+use Illuminate\Http\JsonResponse;
 
 class SystemLogController extends BaseController
 {
@@ -23,7 +33,7 @@ class SystemLogController extends BaseController
      *
      * @param SystemLogFilters $filters The filters
      *
-     * @return Response
+     * @return Response| \Illuminate\Http\JsonResponse
      *
      * @OA\Get(
      *      path="/api/v1/system_logs",
@@ -73,7 +83,7 @@ class SystemLogController extends BaseController
     /**
      * Show the form for creating a new resource.
      *
-     * @return Response
+     * @return Response| \Illuminate\Http\JsonResponse
      */
     public function create()
     {
@@ -89,7 +99,7 @@ class SystemLogController extends BaseController
      * Store a newly created resource in storage.
      *
      * @param Request $request
-     * @return Response
+     * @return Response| \Illuminate\Http\JsonResponse
      */
     public function store(Request $request)
     {
@@ -104,9 +114,9 @@ class SystemLogController extends BaseController
     /**
      * Display the specified resource.
      *
-     * @param Request $request The request
+     * @param AdminSystemLogRequest $request The request
      * @param SystemLog $system_log
-     * @return Response
+     * @return Response| \Illuminate\Http\JsonResponse
      *
      *
      * @OA\Get(
@@ -150,7 +160,7 @@ class SystemLogController extends BaseController
      *       ),
      *     )
      */
-    public function show(Request $request, SystemLog $system_log)
+    public function show(AdminSystemLogRequest $request, SystemLog $system_log)
     {
         return $this->itemResponse($system_log);
     }
@@ -159,7 +169,7 @@ class SystemLogController extends BaseController
      * Show the form for editing the specified resource.
      *
      * @param  int  $id
-     * @return Response
+     * @return Response| \Illuminate\Http\JsonResponse
      */
     public function edit($id)
     {
@@ -176,7 +186,7 @@ class SystemLogController extends BaseController
      *
      * @param Request $request
      * @param  int  $id
-     * @return Response
+     * @return Response| JsonResponse
      */
     public function update(Request $request, $id)
     {
@@ -192,7 +202,7 @@ class SystemLogController extends BaseController
      * Remove the specified resource from storage.
      *
      * @param  int  $id
-     * @return Response
+     * @return Response| \Illuminate\Http\JsonResponse
      */
     public function destroy($id)
     {

@@ -25,8 +25,9 @@ use App\Utils\Traits\AppSetup;
 use Faker\Factory;
 use Illuminate\Foundation\Testing\DatabaseTransactions;
 use Livewire\Livewire;
-use function now;
 use Tests\TestCase;
+
+use function now;
 
 class CreditsTest extends TestCase
 {
@@ -34,14 +35,13 @@ class CreditsTest extends TestCase
     use AppSetup;
 
     private $faker;
-    
+
     protected function setUp(): void
     {
         parent::setUp();
 
         $this->faker = Factory::create();
-        $this->buildCache(true);
-        
+
     }
 
     public function testShowingOnlyCreditsWithDueDateLessOrEqualToNow()
@@ -49,7 +49,7 @@ class CreditsTest extends TestCase
         $account = Account::factory()->create();
 
         $user = User::factory()->create(
-            ['account_id' => $account->id, 'email' => $this->faker->safeEmail()]
+            ['account_id' => $account->id, 'email' => uniqid('testuser') . '@gmail.com']
         );
 
         $company = Company::factory()->create(['account_id' => $account->id]);
@@ -116,7 +116,7 @@ class CreditsTest extends TestCase
         $account = Account::factory()->create();
 
         $user = User::factory()->create(
-            ['account_id' => $account->id, 'email' => $this->faker->safeEmail()]
+            ['account_id' => $account->id, 'email' => uniqid('testuser') . '@gmail.com']
         );
 
         $company = Company::factory()->create(['account_id' => $account->id]);

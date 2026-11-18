@@ -1,10 +1,11 @@
 <?php
+
 /**
  * Invoice Ninja (https://invoiceninja.com).
  *
  * @link https://github.com/invoiceninja/invoiceninja source repository
  *
- * @copyright Copyright (c) 2024. Invoice Ninja LLC (https://invoiceninja.com)
+ * @copyright Copyright (c) 2026. Invoice Ninja LLC (https://invoiceninja.com)
  *
  * @license https://www.elastic.co/licensing/elastic-license
  */
@@ -74,7 +75,7 @@ class BankTransactionSync implements ShouldQueue
 
                 if ($account->isEnterprisePaidClient()) {
                     $account->bank_integrations()->where('integration_type', BankIntegration::INTEGRATION_TYPE_YODLEE)->where('auto_sync', true)->where('disabled_upstream', 0)->cursor()->each(function ($bank_integration) use ($account) {
-                        (new ProcessBankTransactionsYodlee($account->bank_integration_account_id, $bank_integration))->handle();
+                        ProcessBankTransactionsYodlee::dispatch($account->bank_integration_account_id, $bank_integration);
                     });
                 }
 
@@ -92,8 +93,8 @@ class BankTransactionSync implements ShouldQueue
                     $account->bank_integrations()->where('integration_type', BankIntegration::INTEGRATION_TYPE_NORDIGEN)->where('auto_sync', true)->where('disabled_upstream', 0)->cursor()->each(function ($bank_integration) {
                         try {
                             (new ProcessBankTransactionsNordigen($bank_integration))->handle();
-                        }
-                        catch(\Exception $e) {
+                        } catch (\Exception $e) {
+                            nlog("Exception:: BankTransactioSync::" . $e->getMessage());
                             sleep(20);
                         }
 

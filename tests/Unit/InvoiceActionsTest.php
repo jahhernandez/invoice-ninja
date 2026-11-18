@@ -1,4 +1,5 @@
 <?php
+
 /**
  * Invoice Ninja (https://invoiceninja.com).
  *
@@ -18,8 +19,8 @@ use Tests\MockAccountData;
 use Tests\TestCase;
 
 /**
- * @test
- * @covers  App\Utils\Traits\Invoice\ActionsInvoice
+ *
+ *   App\Utils\Traits\Invoice\ActionsInvoice
  */
 class InvoiceActionsTest extends TestCase
 {
@@ -27,7 +28,7 @@ class InvoiceActionsTest extends TestCase
     use DatabaseTransactions;
     use ActionsInvoice;
 
-    protected function setUp() :void
+    protected function setUp(): void
     {
         parent::setUp();
 
@@ -36,7 +37,8 @@ class InvoiceActionsTest extends TestCase
 
     public function testInvoiceIsDeletable()
     {
-        $this->assertFalse($this->invoiceDeletable($this->invoice));
+
+        $this->assertTrue($this->invoiceDeletable($this->invoice));
         $this->assertTrue($this->invoiceReversable($this->invoice));
         $this->assertTrue($this->invoiceCancellable($this->invoice));
     }
@@ -46,7 +48,7 @@ class InvoiceActionsTest extends TestCase
 
         $this->invoice = $this->invoice->service()->markPaid()->save();
 
-        $this->assertFalse($this->invoiceDeletable($this->invoice));
+        $this->assertTrue($this->invoiceDeletable($this->invoice));
         $this->assertTrue($this->invoiceReversable($this->invoice));
         $this->assertFalse($this->invoiceCancellable($this->invoice));
     }
@@ -64,7 +66,7 @@ class InvoiceActionsTest extends TestCase
 
         $this->invoice->service()->applyPayment($payment, 5)->save();
 
-        $this->assertFalse($this->invoiceDeletable($this->invoice));
+        $this->assertTrue($this->invoiceDeletable($this->invoice));
         $this->assertTrue($this->invoiceReversable($this->invoice));
         $this->assertTrue($this->invoiceCancellable($this->invoice));
     }
@@ -74,7 +76,7 @@ class InvoiceActionsTest extends TestCase
 
         $this->invoice->delete();
 
-        $this->assertFalse($this->invoiceDeletable($this->invoice));
+        $this->assertTrue($this->invoiceDeletable($this->invoice));
         $this->assertFalse($this->invoiceReversable($this->invoice));
         $this->assertFalse($this->invoiceCancellable($this->invoice));
     }

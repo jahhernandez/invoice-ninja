@@ -1,10 +1,11 @@
 <?php
+
 /**
  * Invoice Ninja (https://invoiceninja.com).
  *
  * @link https://github.com/invoiceninja/invoiceninja source repository
  *
- * @copyright Copyright (c) 2024. Invoice Ninja LLC (https://invoiceninja.com)
+ * @copyright Copyright (c) 2026. Invoice Ninja LLC (https://invoiceninja.com)
  *
  * @license https://www.elastic.co/licensing/elastic-license
  */
@@ -30,7 +31,7 @@ class UserSalesReport extends BaseExport
     //Amount with Tax
     public Writer $csv;
 
-    public string $date_key = 'created_at';
+    public string $date_key = 'date';
 
     public array $report_keys = [
         'name',
@@ -48,9 +49,7 @@ class UserSalesReport extends BaseExport
             'client_id',
         ]
     */
-    public function __construct(public Company $company, public array $input)
-    {
-    }
+    public function __construct(public Company $company, public array $input) {}
 
     public function run()
     {
@@ -60,7 +59,7 @@ class UserSalesReport extends BaseExport
         $t = app('translator');
         $t->replace(Ninja::transformTranslations($this->company->settings));
 
-        $this->csv = Writer::createFromString();
+        $this->csv = Writer::fromString();
         \League\Csv\CharsetConverter::addTo($this->csv, 'UTF-8', 'UTF-8');
 
         $query = Invoice::query()
@@ -69,9 +68,11 @@ class UserSalesReport extends BaseExport
                         ->where('is_deleted', 0)
                         ->whereIn('status_id', [Invoice::STATUS_SENT, Invoice::STATUS_PARTIAL, Invoice::STATUS_PAID]);
 
-        $query = $this->addDateRange($query);
+        $query = $this->addDateRange($query, 'invoices');
 
         $query = $this->filterByClients($query);
+
+        // $query = $this->filterByUserPermissions($query);
 
         $this->csv->insertOne([ctrans('texts.user_sales_report_header', ['client' => $this->client_description, 'start_date' => $this->start_date, 'end_date' => $this->end_date])]);
 
@@ -85,8 +86,7 @@ class UserSalesReport extends BaseExport
 
         $report = $users->map(function ($user) use ($query) {
 
-            $new_query = $query;
-            $new_query->where('user_id', $user->id);
+            $new_query = $query->clone()->where('user_id', $user->id);
 
             return [
                 $user->present()->name(),

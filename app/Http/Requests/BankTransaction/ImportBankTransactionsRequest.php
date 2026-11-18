@@ -1,10 +1,11 @@
 <?php
+
 /**
  * Invoice Ninja (https://invoiceninja.com).
  *
  * @link https://github.com/invoiceninja/invoiceninja source repository
  *
- * @copyright Copyright (c) 2024. Invoice Ninja LLC (https://invoiceninja.com)
+ * @copyright Copyright (c) 2026. Invoice Ninja LLC (https://invoiceninja.com)
  *
  * @license https://www.elastic.co/licensing/elastic-license
  */
@@ -31,10 +32,10 @@ class ImportBankTransactionsRequest extends Request
             'transactions' => 'bail|array',
             'transactions.*.id' => 'bail|required',
             'transactions.*.invoice_ids' => 'nullable|string|sometimes',
-            'transactions.*.ninja_category_id' => 'nullable|string|sometimes'
+            'transactions.*.ninja_category_id' => 'nullable|string|sometimes',
         ];
 
-        $rules['transactions.*.vendor_id'] = 'bail|sometimes|exists:vendors,id,company_id,'.auth()->user()->company()->id.',is_deleted,0';
+        $rules['transactions.*.vendor_id'] = 'bail|sometimes|exists:vendors,id,company_id,' . auth()->user()->company()->id . ',is_deleted,0';
 
         return $rules;
     }
@@ -43,7 +44,7 @@ class ImportBankTransactionsRequest extends Request
     {
         $inputs = $this->all();
 
-        foreach ($inputs['transactions'] as $key => $input) {
+        foreach ($inputs['transactions'] ?? [] as $key => $input) {
             if (array_key_exists('id', $inputs['transactions'][$key])) {
                 $inputs['transactions'][$key]['id'] = $this->decodePrimaryKey($input['id']);
             }
@@ -56,7 +57,6 @@ class ImportBankTransactionsRequest extends Request
                 $inputs['transactions'][$key]['vendor_id'] = $this->decodePrimaryKey($inputs['transactions'][$key]['vendor_id']);
             }
 
-            // $input = $this->decodePrimaryKeys($input);
         }
 
         $this->replace($inputs);

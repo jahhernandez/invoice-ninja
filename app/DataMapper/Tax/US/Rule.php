@@ -1,10 +1,11 @@
 <?php
+
 /**
  * Invoice Ninja (https://invoiceninja.com).
  *
  * @link https://github.com/invoiceninja/invoiceninja source repository
  *
- * @copyright Copyright (c) 2024. Invoice Ninja LLC (https://invoiceninja.com)
+ * @copyright Copyright (c) 2026. Invoice Ninja LLC (https://invoiceninja.com)
  *
  * @license https://www.elastic.co/licensing/elastic-license
  */
@@ -66,7 +67,7 @@ class Rule extends BaseRule implements RuleInterface
     public function taxByType($item): self
     {
 
-        match(intval($item->tax_id)) {
+        match (intval($item->tax_id)) {
             Product::PRODUCT_TYPE_EXEMPT => $this->taxExempt($item),
             Product::PRODUCT_TYPE_DIGITAL => $this->taxDigital($item),
             Product::PRODUCT_TYPE_SERVICE => $this->taxService($item),
@@ -116,7 +117,7 @@ class Rule extends BaseRule implements RuleInterface
      */
     public function taxService($item): self
     {
-        if(in_array($this->tax_data?->txbService, ['Y','L'])) {
+        if (in_array($this->tax_data?->txbService, ['Y','L'])) {
             $this->default($item);
         } else {
             $this->taxExempt($item);
@@ -133,7 +134,7 @@ class Rule extends BaseRule implements RuleInterface
      */
     public function taxShipping($item): self
     {
-        if($this->tax_data?->txbFreight == 'Y') {
+        if ($this->tax_data?->txbFreight == 'Y') {
             return $this->default($item);
         }
 
@@ -164,7 +165,7 @@ class Rule extends BaseRule implements RuleInterface
     public function default($item): self
     {
 
-        if($this->tax_data?->stateSalesTax == 0) {
+        if ($this->tax_data?->stateSalesTax == 0) {
 
             $this->tax_rate1 = 0;
             $this->tax_name1 = '';
@@ -182,7 +183,7 @@ class Rule extends BaseRule implements RuleInterface
     {
 
         $this->tax_rate1 = 0;
-        $this->tax_name1 = "{$this->tax_data->geoState} Zero Rated Tax";
+        $this->tax_name1 = "Zero Rated Tax";
 
         return $this;
 

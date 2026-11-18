@@ -1,10 +1,11 @@
 <?php
+
 /**
  * Invoice Ninja (https://invoiceninja.com).
  *
  * @link https://github.com/invoiceninja/invoiceninja source repository
  *
- * @copyright Copyright (c) 2024. Invoice Ninja LLC (https://invoiceninja.com)
+ * @copyright Copyright (c) 2026. Invoice Ninja LLC (https://invoiceninja.com)
  *
  * @license https://www.elastic.co/licensing/elastic-license
  */
@@ -25,12 +26,16 @@ class ProductRepository extends BaseRepository
      */
     public function save(array $data, Product $product): ?Product
     {
+        $tag_ids = $this->resolveTagIdsForSync($data, $product);
+
         $product->fill($data);
         $product->save();
 
         if (array_key_exists('documents', $data)) {
             $this->saveDocuments($data['documents'], $product);
         }
+
+        $this->syncResolvedTags($product, $tag_ids);
 
         return $product;
     }

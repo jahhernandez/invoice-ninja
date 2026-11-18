@@ -4,6 +4,7 @@ ctrans('texts.credit_card')])
 @section('gateway_head')
     <meta name="mollie-testmode" content="{{ $gateway->company_gateway->getConfigField('testMode') }}">
     <meta name="mollie-profileId" content="{{ $gateway->company_gateway->getConfigField('profileId') }}">
+    <meta name="instant-payment" content="yes">
 
     <script src="https://code.jquery.com/jquery-1.11.3.min.js"></script>
     
@@ -33,21 +34,27 @@ ctrans('texts.credit_card')])
     @include('portal.ninja2020.gateways.includes.payment_details')
 
     @component('portal.ninja2020.components.general.card-element', ['title' => ctrans('texts.pay_with')])
+        <ul class="payment-method-list">
         @if (count($tokens) > 0)
             @foreach ($tokens as $token)
-                <label class="mr-4">
+            <li class="payment-method-item">
+            <label class="payment-method-label">
                     <input type="radio" data-token="{{ $token->token }}" name="payment-type"
                         class="form-radio cursor-pointer toggle-payment-with-token" />
-                    <span class="ml-1 cursor-pointer">**** {{ $token->meta?->last4 }}</span>
+                    <span class="ml-1">**** {{ $token->meta?->last4 }}</span>
                 </label>
+            </li>
             @endforeach
         @endif
 
-        <label>
+        <li class="payment-method-item">
+        <label class="payment-method-label">
             <input type="radio" id="toggle-payment-with-credit-card" class="form-radio cursor-pointer" name="payment-type"
                 checked />
-            <span class="ml-1 cursor-pointer">{{ __('texts.new_card') }}</span>
+            <span class="ml-1">{{ __('texts.new_card') }}</span>
         </label>
+        </li>
+            </ul>
     @endcomponent
 
     @component('portal.ninja2020.components.general.card-element-single')

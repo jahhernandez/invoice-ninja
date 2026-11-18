@@ -5,7 +5,7 @@
  *
  * @link https://github.com/invoiceninja/invoiceninja source repository
  *
- * @copyright Copyright (c) 2024. Invoice Ninja LLC (https://invoiceninja.com)
+ * @copyright Copyright (c) 2026. Invoice Ninja LLC (https://invoiceninja.com)
  *
  * @license https://www.elastic.co/licensing/elastic-license
  */
@@ -75,8 +75,9 @@ class ConvertQuote
         $quote->status_id = Quote::STATUS_CONVERTED;
         $quote->save();
 
-        if($quote->documents()->count() > 0)
+        if ($quote->documents()->count() > 0) {
             CopyDocs::dispatch($quote->documents()->pluck('id'), $invoice, $invoice->company->db);
+        }
 
         return $invoice;
     }

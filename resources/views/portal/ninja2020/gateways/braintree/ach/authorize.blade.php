@@ -1,10 +1,13 @@
 @extends('portal.ninja2020.layout.payments', ['gateway_title' => 'ACH', 'card_title' => 'ACH'])
 
 @section('gateway_head')
-    <meta name="client-token" content="{{ $client_token ?? '' }}"/>
+    <meta name="client-token" content="{{ $client_token ?? '' }}" />
+    <meta name="instant-payment" content="yes" />
 @endsection
 
 @section('gateway_content')
+<div id="braintree-ach-authorize" data-retry-message="{{ ctrans('texts.try_again') }}" data-error-message="{{ ctrans('texts.generic_gateway_error') }}" data-mandate-error="{{ ctrans('texts.you_need_to_accept_the_terms_before_proceeding') }}">
+    <meta name="client-token" content="{{ $client_token ?? '' }}" />
     @if(session()->has('ach_error'))
         <div class="alert alert-failure mb-4">
             <p>{{ session('ach_error') }}</p>
@@ -19,10 +22,23 @@
         <input type="hidden" name="gateway_type_id" value="2">
         <input type="hidden" name="gateway_response" id="gateway_response">
         <input type="hidden" name="is_default" id="is_default">
-        <input type="hidden" name="nonce" hidden>
+        <input type="hidden" name="nonce" hidden />
+        
+        @isset($payment_hash)
+            <input type="hidden" name="payment_hash" value="{{ $payment_hash }}" />
+        @endisset
+
+        @isset($authorize_then_redirect)
+            <input type="hidden" name="authorize_then_redirect" value="true" />
+        @endisset
     </form>
 
     <div class="alert alert-failure mb-4" hidden id="errors"></div>
+
+    @component('portal.ninja2020.components.general.card-element-single')
+        <input type="checkbox" class="form-checkbox mr-1" id="accept-terms" required>
+        <label for="accept-terms" class="cursor-pointer">By clicking ["Add Payment Method"], I authorize Braintree, a service of PayPal, on behalf of <b>{{ $company->present()->name() }}</b> (i) to verify my bank account information using bank information and consumer reports and (ii) to debit my bank account.</label>
+    @endcomponent
 
     @component('portal.ninja2020.components.general.card-element', ['title' => ctrans('texts.account_type')])
         <span class="flex items-center mr-4">
@@ -64,7 +80,7 @@
     @endcomponent
 
     @component('portal.ninja2020.components.general.card-element', ['title' => ctrans('texts.address2')])
-        <input class="input w-full" id="billing-extended-address" type="text" required>
+        <input class="input w-full" id="billing-extended-address" type="text">
     @endcomponent
 
     @component('portal.ninja2020.components.general.card-element', ['title' => ctrans('texts.locality')])
@@ -72,7 +88,7 @@
     @endcomponent
 
     @component('portal.ninja2020.components.general.card-element', ['title' => ctrans('texts.state')])
-        <select class="input w-full" id="billing-region">
+        <select class="input w-full" id="billing-region" required>
             <option disabled selected></option>
             @foreach(\App\DataProviders\USStates::get() as $code => $state)
                 <option value="{{ $code }}">{{ $state }} ({{ $code }})</option>
@@ -87,12 +103,12 @@
     @component('portal.ninja2020.gateways.includes.pay_now', ['id' => 'authorize-bank-account'])
         {{ ctrans('texts.add_payment_method') }}
     @endcomponent
+</div>
 @endsection
 
 @section('gateway_footer')
-    <script src="https://js.braintreegateway.com/web/3.81.0/js/client.min.js"></script>
-    <script src="https://js.braintreegateway.com/web/3.81.0/js/us-bank-account.min.js"></script>
+    <script src="https://js.braintreegateway.com/web/3.147.0/js/client.min.js"></script>
+    <script src="https://js.braintreegateway.com/web/3.147.0/js/us-bank-account.min.js"></script>
     
-    <script defer src="{{ asset('js/clients/payment_methods/braintree-ach.js') }}"></script>
-
+    @vite('resources/js/clients/payment_methods/braintree-ach.js')
 @endsection

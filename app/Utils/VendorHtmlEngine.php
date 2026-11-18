@@ -5,26 +5,26 @@
  *
  * @link https://github.com/invoiceninja/invoiceninja source repository
  *
- * @copyright Copyright (c) 2024. Invoice Ninja LLC (https://invoiceninja.com)
+ * @copyright Copyright (c) 2026. Invoice Ninja LLC (https://invoiceninja.com)
  *
  * @license https://www.elastic.co/licensing/elastic-license
  */
 
 namespace App\Utils;
 
+use Exception;
+use App\Utils\Ninja;
 use App\Models\Account;
 use App\Models\Country;
-use App\Models\CreditInvitation;
-use App\Models\InvoiceInvitation;
-use App\Models\PurchaseOrderInvitation;
-use App\Models\QuoteInvitation;
-use App\Models\RecurringInvoiceInvitation;
 use App\Utils\Traits\AppSetup;
-use App\Utils\Traits\DesignCalculator;
+use App\Models\QuoteInvitation;
+use App\Models\CreditInvitation;
 use App\Utils\Traits\MakesDates;
-use Exception;
+use App\Models\InvoiceInvitation;
 use Illuminate\Support\Facades\App;
-use Illuminate\Support\Facades\Cache;
+use App\Utils\Traits\DesignCalculator;
+use App\Models\PurchaseOrderInvitation;
+use App\Models\RecurringInvoiceInvitation;
 
 /**
  * Note the premise used here is that any currencies will be formatted back to the company currency and not
@@ -136,9 +136,13 @@ class VendorHtmlEngine
         $data['$line_tax_values'] = ['value' => $this->lineTaxValues(), 'label' => ctrans('texts.taxes')];
         $data['$date'] = ['value' => $this->translateDate($this->entity->date, $this->company->date_format(), $this->vendor->locale()) ?: '&nbsp;', 'label' => ctrans('texts.date')];
 
+        $data['$show_shipping_address'] = ['value' => strlen($this->entity->client->shipping_address1 ?? '') > 0 && $this->settings->show_shipping_address ? 'flex' : 'none', 'label' => ''];
+        $data['$show_shipping_address_block'] = ['value' => strlen($this->entity->client->shipping_address1 ?? '') > 0 && $this->settings->show_shipping_address ? 'block' : 'none', 'label' => ''];
+        $data['$show_shipping_address_visibility'] = ['value' => strlen($this->entity->client->shipping_address1 ?? '') > 0 && $this->settings->show_shipping_address ? 1 : 0, 'label' => ''];
+
         $data['$due_date'] = ['value' => $this->translateDate($this->entity->due_date, $this->company->date_format(), $this->vendor->locale()) ?: '&nbsp;', 'label' => ctrans('texts.due_date')];
 
-        $data['$partial_due_date'] = ['value' => $this->translateDate($this->entity->partial_due_date, $this->company->date_format(), $this->vendor->locale()) ?: '&nbsp;', 'label' => ctrans('texts.'.$this->entity_string.'_due_date')];
+        $data['$partial_due_date'] = ['value' => $this->translateDate($this->entity->partial_due_date, $this->company->date_format(), $this->vendor->locale()) ?: '&nbsp;', 'label' => ctrans('texts.' . $this->entity_string . '_due_date')];
 
         $data['$dueDate'] = &$data['$due_date'];
         $data['$purchase_order.due_date'] = &$data['$due_date'];
@@ -154,7 +158,7 @@ class VendorHtmlEngine
         $data['$entity'] = ['value' => '', 'label' => ctrans('texts.purchase_order')];
         $data['$number'] = ['value' => $this->entity->number ?: '&nbsp;', 'label' => ctrans('texts.number')];
         $data['$number_short'] = ['value' => $this->entity->number ?: '&nbsp;', 'label' => ctrans('texts.purchase_order_number_short')];
-        $data['$entity.terms'] = ['value' => Helpers::processReservedKeywords(\nl2br($this->entity->terms), $this->company) ?: '', 'label' => ctrans('texts.invoice_terms')];
+        $data['$entity.terms'] = ['value' => Helpers::processReservedKeywords(\nl2br($this->entity->terms ?? ''), $this->company) ?: '', 'label' => ctrans('texts.purchase_order_terms')];
         $data['$terms'] = &$data['$entity.terms'];
         $data['$view_link'] = ['value' => $this->buildViewButton($this->invitation->getLink(), ctrans('texts.view_purchase_order')), 'label' => ctrans('texts.view_purchase_order')];
         $data['$viewLink'] = &$data['$view_link'];
@@ -175,6 +179,15 @@ class VendorHtmlEngine
         $data['$subtotal'] = ['value' => Number::formatMoney($this->entity_calc->getSubTotal(), $this->vendor) ?: '&nbsp;', 'label' => ctrans('texts.subtotal')];
         $data['$gross_subtotal'] = ['value' => Number::formatMoney($this->entity_calc->getGrossSubTotal(), $this->vendor) ?: '&nbsp;', 'label' => ctrans('texts.subtotal')];
 
+        $data['$location1'] = ['value' => $this->helpers->formatCustomFieldValue($this->company->custom_fields, 'location1', $this->entity->location?->custom_value1, $this->vendor) ?: ' ', 'label' => $this->helpers->makeCustomField($this->company->custom_fields, 'location1')];
+        $data['$location2'] = ['value' => $this->helpers->formatCustomFieldValue($this->company->custom_fields, 'location2', $this->entity->location?->custom_value2, $this->vendor) ?: ' ', 'label' => $this->helpers->makeCustomField($this->company->custom_fields, 'location2')];
+        $data['$location3'] = ['value' => $this->helpers->formatCustomFieldValue($this->company->custom_fields, 'location3', $this->entity->location?->custom_value3, $this->vendor) ?: ' ', 'label' => $this->helpers->makeCustomField($this->company->custom_fields, 'location3')];
+        $data['$location4'] = ['value' => $this->helpers->formatCustomFieldValue($this->company->custom_fields, 'location4', $this->entity->location?->custom_value4, $this->vendor) ?: ' ', 'label' => $this->helpers->makeCustomField($this->company->custom_fields, 'location4')];
+        $data['$location.custom1'] = &$data['$location1'];
+        $data['$location.custom2'] = &$data['$location2'];
+        $data['$location.custom3'] = &$data['$location3'];
+        $data['$location.custom4'] = &$data['$location4'];
+
         if ($this->entity->uses_inclusive_taxes) {
             $data['$net_subtotal'] = ['value' => Number::formatMoney(($this->entity_calc->getSubTotal() - $this->entity->total_taxes - $this->entity_calc->getTotalDiscount()), $this->vendor) ?: '&nbsp;', 'label' => ctrans('texts.net_subtotal')];
         } else {
@@ -186,7 +199,7 @@ class VendorHtmlEngine
             $data['$balance_due_dec'] = ['value' => sprintf("%01.2f", $this->entity->partial), 'label' => ctrans('texts.partial_due')];
             $data['$balance_due_raw'] = ['value' => $this->entity->partial, 'label' => ctrans('texts.partial_due')];
             $data['$amount_raw'] = ['value' => $this->entity->partial, 'label' => ctrans('texts.partial_due')];
-            $data['$due_date'] = ['value' => $this->translateDate($this->entity->partial_due_date, $this->company->date_format(), $this->vendor->locale()) ?: '&nbsp;', 'label' => ctrans('texts.'.$this->entity_string.'_due_date')];
+            $data['$due_date'] = ['value' => $this->translateDate($this->entity->partial_due_date, $this->company->date_format(), $this->vendor->locale()) ?: '&nbsp;', 'label' => ctrans('texts.' . $this->entity_string . '_due_date')];
         } else {
             if ($this->entity->status_id == 1) {
                 $data['$balance_due'] = ['value' => Number::formatMoney($this->entity->amount, $this->vendor) ?: '&nbsp;', 'label' => ctrans('texts.balance_due')];
@@ -337,7 +350,12 @@ class VendorHtmlEngine
         $data['$signature'] = ['value' => $this->settings->email_signature ?: '&nbsp;', 'label' => ''];
         $data['$emailSignature'] = &$data['$signature'];
 
-        $logo = $this->company->present()->logo_base64($this->settings);
+        if (Ninja::isHosted()) {
+            $logo = $this->company->present()->logo($this->settings);
+        } else {
+            $logo = $this->company->present()->logo_base64($this->settings);
+        }
+
 
         $data['$company.logo'] = ['value' => $logo ?: '&nbsp;', 'label' => ctrans('texts.logo')];
         $data['$company_logo'] = &$data['$company.logo'];
@@ -360,6 +378,7 @@ class VendorHtmlEngine
         $data['$product.date'] = ['value' => '', 'label' => ctrans('texts.date')];
         $data['$product.discount'] = ['value' => '', 'label' => ctrans('texts.discount')];
         $data['$product.product_key'] = ['value' => '', 'label' => ctrans('texts.product_key')];
+        $data['$product.tags'] = ['value' => '', 'label' => ctrans('texts.tags')];
         $data['$product.description'] = ['value' => '', 'label' => ctrans('texts.description')];
         $data['$product.unit_cost'] = ['value' => '', 'label' => ctrans('texts.unit_cost')];
         $data['$product.quantity'] = ['value' => '', 'label' => ctrans('texts.quantity')];
@@ -377,11 +396,18 @@ class VendorHtmlEngine
         $data['$product.product3'] = ['value' => '', 'label' => $this->helpers->makeCustomField($this->company->custom_fields, 'product3')];
         $data['$product.product4'] = ['value' => '', 'label' => $this->helpers->makeCustomField($this->company->custom_fields, 'product4')];
 
+        $signature_invite = $this->invitation->signature_base64 ? $this->invitation : $this->entity->invitations()->whereNotNull('signature_base64')->orderBy('updated_at', 'desc')->first();
+
         if ($this->settings->signature_on_pdf) {
-            $data['$contact.signature'] = ['value' => $this->invitation->signature_base64, 'label' => ctrans('texts.signature')];
+            $data['$contact.signature'] = ['value' => $signature_invite?->signature_base64 ?? '', 'label' => ctrans('texts.signature')];
         } else {
             $data['$contact.signature'] = ['value' => '', 'label' => ''];
         }
+
+        $data['$contact.signature_raw'] = ['value' => $signature_invite?->signature_base64 ?? '', 'label' => ctrans('texts.signature')];
+        $data['$contact.signature_date'] = ['value' => $signature_invite?->signature_date ? $this->translateDate($signature_invite->signature_date, $this->company->date_format(), $this->vendor->locale()) : ' ', 'label' => ctrans('texts.date')];
+        $data['$contact.signature_ip'] = ['value' => $signature_invite?->signature_ip ?? '', 'label' => ctrans('texts.address')];
+
 
         $data['$thanks'] = ['value' => '', 'label' => ctrans('texts.thanks')];
         $data['$from'] = ['value' => '', 'label' => ctrans('texts.from')];
@@ -396,7 +422,7 @@ class VendorHtmlEngine
         $data['$font_name'] = ['value' => Helpers::resolveFont($this->settings->primary_font)['name'], 'label' => ''];
         $data['$font_url'] = ['value' => Helpers::resolveFont($this->settings->primary_font)['url'], 'label' => ''];
 
-        $data['$invoiceninja.whitelabel'] = ['value' => 'https://invoicing.co/images/new_logo.png', 'label' => ''];
+        $data['$invoiceninja.whitelabel'] = ['value' => '/images/blank.png', 'label' => ''];
 
         $data['$primary_color'] = ['value' => $this->settings->primary_color, 'label' => ''];
         $data['$secondary_color'] = ['value' => $this->settings->secondary_color, 'label' => ''];
@@ -404,7 +430,7 @@ class VendorHtmlEngine
         $data['$item'] = ['value' => '', 'label' => ctrans('texts.item')];
         $data['$description'] = ['value' => '', 'label' => ctrans('texts.description')];
 
-        $data['$entity_footer'] = ['value' => Helpers::processReservedKeywords(\nl2br($this->entity->footer), $this->company), 'label' => ''];
+        $data['$entity_footer'] = ['value' => Helpers::processReservedKeywords(\nl2br($this->entity->footer ?? ''), $this->company), 'label' => ''];
         $data['$footer'] = &$data['$entity_footer'];
 
         $data['$page_size'] = ['value' => $this->settings->page_size, 'label' => ''];
@@ -428,7 +454,16 @@ class VendorHtmlEngine
 
         $data['$payments'] = ['value' => '', 'label' => ctrans('texts.payments')];
 
+        $data['$shipping'] = ['value' => '', 'label' => ctrans('texts.ship_to')];
+        $data['$ship_to'] = &$data['$shipping'];
+        $data['$bill_to'] = ['value' => '', 'label' => ctrans('texts.bill_to')];
+
+        $data['$verifactu_qr_code'] = ['value' => '', 'label' => ''];
+
         if ($this->entity->client()->exists()) {
+
+            // $locationData = $this->entity->client->locations()->first();
+
             $data['$client1'] = ['value' => $this->helpers->formatCustomFieldValue($this->company->custom_fields, 'client1', $this->entity->client->custom_value1, $this->entity->client) ?: '&nbsp;', 'label' => $this->helpers->makeCustomField($this->company->custom_fields, 'client1')];
             $data['$client2'] = ['value' => $this->helpers->formatCustomFieldValue($this->company->custom_fields, 'client2', $this->entity->client->custom_value2, $this->entity->client) ?: '&nbsp;', 'label' => $this->helpers->makeCustomField($this->company->custom_fields, 'client2')];
             $data['$client3'] = ['value' => $this->helpers->formatCustomFieldValue($this->company->custom_fields, 'client3', $this->entity->client->custom_value3, $this->entity->client) ?: '&nbsp;', 'label' => $this->helpers->makeCustomField($this->company->custom_fields, 'client3')];
@@ -443,6 +478,28 @@ class VendorHtmlEngine
             $data['$client.name'] = &$data['$client_name'];
             $data['$client'] = &$data['$client_name'];
 
+            $data['$client.shipping_location_name'] = ['value' => '', 'label' => ''];
+            $data['$client.shipping_address'] = ['value' => $this->entity->client->present()->shipping_address() ?: '&nbsp;', 'label' => ctrans('texts.shipping_address')];
+            $data['$client.shipping_address1'] = ['value' => $this->entity->client->shipping_address1 ?: '&nbsp;', 'label' => ctrans('texts.shipping_address1')];
+            $data['$client.shipping_address2'] = ['value' => $this->entity->client->shipping_address2 ?: '&nbsp;', 'label' => ctrans('texts.shipping_address2')];
+            $data['$client.shipping_city'] = ['value' => $this->entity->client->shipping_city ?: '&nbsp;', 'label' => ctrans('texts.shipping_city')];
+            $data['$client.shipping_state'] = ['value' => $this->entity->client->shipping_state ?: '&nbsp;', 'label' => ctrans('texts.shipping_state')];
+            $data['$client.shipping_postal_code'] = ['value' => $this->entity->client->shipping_postal_code ?: '&nbsp;', 'label' => ctrans('texts.shipping_postal_code')];
+            $data['$client.shipping_country'] = ['value' => isset($this->entity->client->shipping_country->name) ? ctrans('texts.country_' . $this->entity->client->shipping_country->name) : '', 'label' => ctrans('texts.shipping_country')];
+
+            $data['$show_shipping_address'] = ['value' => 'flex', 'label' => ''];
+            $data['$show_shipping_address_block'] = ['value' => 'block', 'label' => ''];
+            $data['$show_shipping_address_visibility'] = ['value' => 1, 'label' => ''];
+            // $data['$client.shipping_location_name'] = ['value' => $locationData['shipping_location_name'], 'label' => ctrans('texts.shipping_location_name')];
+            // $data['$client.shipping_address'] = ['value' => $locationData['shipping_address'], 'label' => ctrans('texts.shipping_address')];
+            // $data['$client.shipping_address1'] = ['value' => $locationData['shipping_address1'], 'label' => ctrans('texts.shipping_address1')];
+            // $data['$client.shipping_address2'] = ['value' => $locationData['shipping_address2'], 'label' => ctrans('texts.shipping_address2')];
+            // $data['$client.shipping_city'] = ['value' => $locationData['shipping_city'], 'label' => ctrans('texts.shipping_city')];
+            // $data['$client.shipping_state'] = ['value' => $locationData['shipping_state'], 'label' => ctrans('texts.shipping_state')];
+            // $data['$client.shipping_postal_code'] = ['value' => $locationData['shipping_postal_code'], 'label' => ctrans('texts.shipping_postal_code')];
+            // $data['$client.shipping_country'] = ['value' => ctrans('texts.country_' . $locationData['shipping_country_name']), 'label' => ctrans('texts.shipping_country')];
+
+
             $data['$client.address1'] = &$data['$address1'];
             $data['$client.address2'] = &$data['$address2'];
             $data['$client_address'] = ['value' => $this->entity->client->present()->address() ?: '&nbsp;', 'label' => ctrans('texts.address')];
@@ -451,18 +508,13 @@ class VendorHtmlEngine
             $data['$client.public_notes'] = ['value' => $this->entity->client->public_notes ?: '&nbsp;', 'label' => ctrans('texts.notes')];
             $data['$client.city'] = ['value' => $this->entity->client->city ?: '&nbsp;', 'label' => ctrans('texts.city')];
             $data['$client.state'] = ['value' => $this->entity->client->state ?: '&nbsp;', 'label' => ctrans('texts.state')];
-            $data['$client.id_number'] = &$data['$id_number'];
-            $data['$client.vat_number'] = &$data['$vat_number'];
-            $data['$client.website'] = &$data['$website'];
-            $data['$client.phone'] = &$data['$phone'];
-            $data['$city_state_postal'] = ['value' => $this->entity->client->present()->cityStateZip($this->entity->client->city, $this->entity->client->state, $this->entity->client->postal_code, false) ?: '&nbsp;', 'label' => ctrans('texts.city_state_postal')];
+            // $data['$city_state_postal'] = ['value' => $this->entity->client->present()->cityStateZip($this->entity->client->city, $this->entity->client->state, $this->entity->client->postal_code, false) ?: '&nbsp;', 'label' => ctrans('texts.city_state_postal')];
             $data['$client.city_state_postal'] = &$data['$city_state_postal'];
-            $data['$postal_city_state'] = ['value' => $this->entity->client->present()->cityStateZip($this->entity->client->city, $this->entity->client->state, $this->entity->client->postal_code, true) ?: '&nbsp;', 'label' => ctrans('texts.postal_city_state')];
+            // $data['$postal_city_state'] = ['value' => $this->entity->client->present()->cityStateZip($this->entity->client->city, $this->entity->client->state, $this->entity->client->postal_code, true) ?: '&nbsp;', 'label' => ctrans('texts.postal_city_state')];
             $data['$client.postal_city_state'] = &$data['$postal_city_state'];
-            $data['$postal_city'] = ['value' => $this->entity->client->present()->cityStateZip($this->entity->client->city, null, $this->entity->client->postal_code, true) ?: '&nbsp;', 'label' => ctrans('texts.postal_city')];
+            // $data['$postal_city'] = ['value' => $this->entity->client->present()->cityStateZip($this->entity->client->city, null, $this->entity->client->postal_code, true) ?: '&nbsp;', 'label' => ctrans('texts.postal_city')];
             $data['$client.postal_city'] = &$data['$postal_city'];
             $data['$client.country'] = &$data['$country'];
-            $data['$client.email'] = &$data['$email'];
 
             $data['$client.billing_address'] = &$data['$client_address'];
             $data['$client.billing_address1'] = &$data['$client.address1'];
@@ -472,18 +524,16 @@ class VendorHtmlEngine
             $data['$client.billing_postal_code'] = &$data['$client.postal_code'];
             $data['$client.billing_country'] = &$data['$client.country'];
 
-            $data['$client.shipping_address'] = ['value' => $this->entity->client->present()->shipping_address() ?: '&nbsp;', 'label' => ctrans('texts.shipping_address')];
-            $data['$client.shipping_address1'] = ['value' => $this->entity->client->shipping_address1 ?: '&nbsp;', 'label' => ctrans('texts.shipping_address1')];
-            $data['$client.shipping_address2'] = ['value' => $this->entity->client->shipping_address2 ?: '&nbsp;', 'label' => ctrans('texts.shipping_address2')];
-            $data['$client.shipping_city'] = ['value' => $this->entity->client->shipping_city ?: '&nbsp;', 'label' => ctrans('texts.shipping_city')];
-            $data['$client.shipping_state'] = ['value' => $this->entity->client->shipping_state ?: '&nbsp;', 'label' => ctrans('texts.shipping_state')];
-            $data['$client.shipping_postal_code'] = ['value' => $this->entity->client->shipping_postal_code ?: '&nbsp;', 'label' => ctrans('texts.shipping_postal_code')];
-            $data['$client.shipping_country'] = ['value' => isset($this->entity->client->shipping_country->name) ? ctrans('texts.country_' . $this->entity->client->shipping_country->name) : '', 'label' => ctrans('texts.shipping_country')];
+
+            $data['$client.id_number'] = &$data['$id_number'];
+            $data['$client.vat_number'] = &$data['$vat_number'];
+            $data['$client.website'] = &$data['$website'];
+            $data['$client.phone'] = &$data['$phone'];
+            $data['$client.email'] = &$data['$email'];
+
 
             $data['$client.currency'] = ['value' => $this->entity->client->currency()->code, 'label' => ''];
-
             $data['$client.lang_2'] = ['value' => optional($this->entity->client->language())->locale, 'label' => ''];
-
             $data['$client.balance'] = ['value' => Number::formatMoney($this->entity->client->balance, $this->entity->client), 'label' => ctrans('texts.account_balance')];
             $data['$client_balance'] = ['value' => Number::formatMoney($this->entity->client->balance, $this->entity->client), 'label' => ctrans('texts.account_balance')];
         }
@@ -516,7 +566,7 @@ class VendorHtmlEngine
 
         foreach ($values as $key => $value) {
             $data['values'][$key] = $value['value'];
-            $data['labels'][$key.'_label'] = $value['label'];
+            $data['labels'][$key . '_label'] = $value['label'];
         }
 
         return $data;
@@ -531,7 +581,7 @@ class VendorHtmlEngine
         }
 
         foreach ($this->entity_calc->getTotalTaxMap() as $tax) {
-            $data .= '<span>'.$tax['name'].'</span>';
+            $data .= '<span>' . $tax['name'] . '</span>';
         }
 
         return $data;
@@ -546,7 +596,7 @@ class VendorHtmlEngine
         }
 
         foreach ($this->entity_calc->getTotalTaxMap() as $tax) {
-            $data .= '<span>'.Number::formatMoney($tax['total'], $this->vendor).'</span>';
+            $data .= '<span>' . Number::formatMoney($tax['total'], $this->vendor) . '</span>';
         }
 
         return $data;
@@ -559,7 +609,7 @@ class VendorHtmlEngine
         $data = '';
 
         foreach ($tax_map as $tax) {
-            $data .= '<span>'.$tax['name'].'</span>';
+            $data .= '<span>' . $tax['name'] . '</span>';
         }
 
         return $data;
@@ -567,27 +617,16 @@ class VendorHtmlEngine
 
     private function getCountryName(): string
     {
-        $countries = Cache::get('countries');
+        return once(function () {
+            /** @var \Illuminate\Support\Collection<\App\Models\Country> */
+            $countries = app('countries');
 
-        if (! $countries) {
-            $this->buildCache(true);
-
-            $countries = Cache::get('countries');
-        }
-
-        if ($countries) {
-            $country = $countries->filter(function ($item) {
+            $country = $countries->first(function ($item) {
                 return $item->id == $this->settings->country_id;
-            })->first();
-        } else {
-            $country = Country::find($this->settings->country_id);
-        }
+            });
 
-        if ($country) {
-            return ctrans('texts.country_' . $country->name);
-        }
-
-        return '&nbsp;';
+            return $country ? ctrans('texts.country_' . $country->name) : '&nbsp;';
+        });
     }
 
 
@@ -598,9 +637,6 @@ class VendorHtmlEngine
         if ($country) {
             return $country->iso_3166_2;
         }
-        // if ($country) {
-        //     return ctrans('texts.country_' . $country->iso_3166_2);
-        // }
 
         return '&nbsp;';
     }
@@ -762,7 +798,7 @@ html {
         $data = '';
 
         foreach ($tax_map as $tax) {
-            $data .= '<span>'.Number::formatMoney($tax['total'], $this->company).'</span>';
+            $data .= '<span>' . Number::formatMoney($tax['total'], $this->company) . '</span>';
         }
 
         return $data;
@@ -787,7 +823,7 @@ html {
     protected function generateEntityImagesMarkup()
     {
 
-        if (!$this->vendor->getSetting('embed_documents') || !$this->company->account->hasFeature(Account::FEATURE_DOCUMENTS)) {
+        if (!$this->settings->embed_documents || !$this->company->account->hasFeature(Account::FEATURE_DOCUMENTS)) {
             return '';
         }
 
@@ -803,7 +839,7 @@ html {
 
             $image = $dom->createElement('img');
 
-            $image->setAttribute('src', "data:image/png;base64,".base64_encode($document->getFile()));
+            $image->setAttribute('src', "data:image/png;base64," . base64_encode($document->getFile()));
             $image->setAttribute('style', 'max-width: 50%; margin-top: 20px;');
 
             $container->appendChild($image);
@@ -829,7 +865,7 @@ html {
     private function buildViewButton(string $link, string $text): string
     {
         if ($this->settings->email_style == 'plain') {
-            return '<a href="'. $link .'" target="_blank">'. $text .'</a>';
+            return '<a href="' . $link . '" target="_blank">' . $text . '</a>';
         }
 
 
@@ -842,9 +878,9 @@ html {
         <![endif]-->        
         <table align="center" border="0" cellpadding="0" cellspacing="0" role="presentation" >
         <tbody><tr>
-        <td align="center" class="new_button" style="border-radius: 2px; background-color: '.$this->settings->primary_color.'">
-            <a href="'. $link . '" target="_blank" class="new_button" style="text-decoration: none; border: 1px solid '.$this->settings->primary_color.'; display: inline-block; border-radius: 2px; padding-top: 15px; padding-bottom: 15px; padding-left: 25px; padding-right: 25px; font-size: 20px; color: #fff">
-            <singleline label="cta button">'. $text .'</singleline>
+        <td align="center" class="new_button" style="border-radius: 2px; background-color: ' . $this->settings->primary_color . '">
+            <a href="' . $link . '" target="_blank" class="new_button" style="text-decoration: none; border: 1px solid ' . $this->settings->primary_color . '; display: inline-block; border-radius: 2px; padding-top: 15px; padding-bottom: 15px; padding-left: 25px; padding-right: 25px; font-size: 20px; color: #fff">
+            <singleline label="cta button">' . $text . '</singleline>
             </a>
         </td>
         </tr>

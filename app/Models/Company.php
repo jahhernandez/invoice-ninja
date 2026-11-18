@@ -1,10 +1,11 @@
 <?php
+
 /**
  * Invoice Ninja (https://invoiceninja.com).
  *
  * @link https://github.com/invoiceninja/invoiceninja source repository
  *
- * @copyright Copyright (c) 2024. Invoice Ninja LLC (https://invoiceninja.com)
+ * @copyright Copyright (c) 2026. Invoice Ninja LLC (https://invoiceninja.com)
  *
  * @license https://www.elastic.co/licensing/elastic-license
  */
@@ -13,6 +14,7 @@ namespace App\Models;
 
 use App\Casts\EncryptedCast;
 use App\DataMapper\CompanySettings;
+use App\DataMapper\QuickbooksSettings;
 use App\Models\Presenters\CompanyPresenter;
 use App\Services\Company\CompanyService;
 use App\Services\Notification\NotificationService;
@@ -24,7 +26,6 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Notifications\Notification;
 use Illuminate\Support\Facades\App;
-use Illuminate\Support\Facades\Cache;
 use Laracasts\Presenter\PresentableTrait;
 
 /**
@@ -40,10 +41,10 @@ use Laracasts\Presenter\PresentableTrait;
  * @property bool $update_products
  * @property bool $show_product_details
  * @property bool $client_can_register
- * @property int $custom_surcharge_taxes1
- * @property int $custom_surcharge_taxes2
- * @property int $custom_surcharge_taxes3
- * @property int $custom_surcharge_taxes4
+ * @property bool $custom_surcharge_taxes1
+ * @property bool $custom_surcharge_taxes2
+ * @property bool $custom_surcharge_taxes3
+ * @property bool $custom_surcharge_taxes4
  * @property int $show_product_cost
  * @property int $enabled_tax_rates
  * @property int $enabled_modules
@@ -57,9 +58,9 @@ use Laracasts\Presenter\PresentableTrait;
  * @property string|null $first_month_of_year
  * @property string $portal_mode
  * @property string|null $portal_domain
- * @property int $enable_modules
+ * @property bool $enable_modules //alias for DocuNinja is active / available
  * @property object $custom_fields
- * @property \App\DataMapper\CompanySettings $settings
+ * @property \App\DataMapper\CompanySettings|\stdClass|array $settings
  * @property string $slack_webhook_url
  * @property string $google_analytics_key
  * @property int|null $created_at
@@ -92,6 +93,7 @@ use Laracasts\Presenter\PresentableTrait;
  * @property bool $markdown_enabled
  * @property bool $use_comma_as_decimal_place
  * @property bool $report_include_drafts
+ * @property bool $invoice_task_project_header
  * @property array|null $client_registration_fields
  * @property bool $convert_rate_to_client
  * @property bool $markdown_email_enabled
@@ -111,16 +113,39 @@ use Laracasts\Presenter\PresentableTrait;
  * @property int $convert_expense_currency
  * @property int $notify_vendor_when_paid
  * @property int $invoice_task_hours
+ * @property string|null $expense_mailbox
+ * @property boolean $expense_mailbox_active
+ * @property bool $inbound_mailbox_allow_company_users
+ * @property bool $inbound_mailbox_allow_vendors
+ * @property bool $inbound_mailbox_allow_clients
+ * @property bool $inbound_mailbox_allow_unknown
+ * @property string|null $inbound_mailbox_whitelist
+ * @property string|null $inbound_mailbox_blacklist
+ * @property string|null $e_invoice_certificate_passphrase
+ * @property string|null $e_invoice_certificate
+ * @property object|null $e_invoice
+ * @property string|null $shopify_name
+ * @property string|null $shopify_access_token
+ * @property object|null $origin_tax_data
  * @property int $deleted_at
- * @property string $smtp_username
- * @property string $smtp_password
- * @property string $smtp_host
- * @property string $smtp_port
- * @property string $smtp_encryption
- * @property string $smtp_local_domain
+ * @property string|null $smtp_username
+ * @property string|null $smtp_password
+ * @property string|null $smtp_host
+ * @property int|null $smtp_port
+ * @property string|null $smtp_encryption
+ * @property string|null $smtp_local_domain
+ * @property boolean $invoice_task_item_description
+ * @property \App\DataMapper\QuickbooksSettings|null $quickbooks
  * @property boolean $smtp_verify_peer
+ * @property object|null $origin_tax_data
+ * @property int|null $legal_entity_id
+ * @property bool $invoice_task_item_description
+ * @property bool $show_task_item_description
+ * @property bool $invoice_task_project_header
  * @property-read \App\Models\Account $account
  * @property-read \Illuminate\Database\Eloquent\Collection<int, \App\Models\Activity> $activities
+ * @property-read \Illuminate\Database\Eloquent\Collection<int, \App\Models\Location> $locations
+ * @property-read \Illuminate\Database\Eloquent\Collection<int, \App\Models\VerifactuLog> $verifactu_logs
  * @property-read int|null $activities_count
  * @property-read \Illuminate\Database\Eloquent\Collection<int, \App\Models\Activity> $all_activities
  * @property-read int|null $all_activities_count
@@ -210,12 +235,13 @@ use Laracasts\Presenter\PresentableTrait;
  * @property-read int|null $users_count
  * @property-read \Illuminate\Database\Eloquent\Collection<int, \App\Models\Vendor> $vendors
  * @property-read int|null $vendors_count
+ * @property-read \Illuminate\Database\Eloquent\Collection<int, \App\Models\Location> $locations
  * @property-read \Illuminate\Database\Eloquent\Collection<int, \App\Models\Webhook> $webhooks
  * @method static \Illuminate\Database\Eloquent\Builder|Company where($query)
  * @method static \Illuminate\Database\Eloquent\Builder|Company find($query)
  * @property-read int|null $webhooks_count
  * @property int $calculate_taxes
- * @property mixed $tax_data
+ * @property \App\DataMapper\Tax\TaxModel $tax_data
  * @method \App\Models\User|null owner()
  * @mixin \Eloquent
  */
@@ -226,30 +252,6 @@ class Company extends BaseModel
     use CompanySettingsSaver;
     use AppSetup;
     use \Awobaz\Compoships\Compoships;
-
-    // const ENTITY_RECURRING_INVOICE = 'recurring_invoice';
-
-    // const ENTITY_CREDIT = 'credit';
-
-    // const ENTITY_QUOTE = 'quote';
-
-    // const ENTITY_TASK = 'task';
-
-    // const ENTITY_EXPENSE = 'expense';
-
-    // const ENTITY_PROJECT = 'project';
-
-    // const ENTITY_VENDOR = 'vendor';
-
-    // const ENTITY_TICKET = 'ticket';
-
-    // const ENTITY_PROPOSAL = 'proposal';
-
-    // const ENTITY_RECURRING_EXPENSE = 'recurring_expense';
-
-    // const ENTITY_RECURRING_TASK = 'task';
-
-    // const ENTITY_RECURRING_QUOTE = 'recurring_quote';
 
     /** @var CompanyPresenter */
     protected $presenter = CompanyPresenter::class;
@@ -359,12 +361,21 @@ class Company extends BaseModel
         'calculate_taxes',
         'tax_data',
         'e_invoice_certificate_passphrase',
+        'expense_mailbox_active',
+        'expense_mailbox',
+        'inbound_mailbox_allow_company_users',
+        'inbound_mailbox_allow_vendors',
+        'inbound_mailbox_allow_clients',
+        'inbound_mailbox_allow_unknown',
+        'inbound_mailbox_whitelist',
+        'inbound_mailbox_blacklist',
         'smtp_host',
         'smtp_port',
         'smtp_encryption',
         'smtp_local_domain',
         'smtp_verify_peer',
-        'e_invoice',
+        // 'e_invoice',
+        // 'e_invoicing_token',
     ];
 
     protected $hidden = [
@@ -373,6 +384,7 @@ class Company extends BaseModel
         'ip',
         'smtp_username',
         'smtp_password',
+        'quickbooks',
     ];
 
     protected $casts = [
@@ -384,30 +396,17 @@ class Company extends BaseModel
         'created_at' => 'timestamp',
         'deleted_at' => 'timestamp',
         'client_registration_fields' => 'array',
-        'tax_data' => 'object',
+        'tax_data' => \App\Casts\TaxModelCast::class,
         'origin_tax_data' => 'object',
         'e_invoice_certificate_passphrase' => EncryptedCast::class,
         'smtp_username' => 'encrypted',
         'smtp_password' => 'encrypted',
         'e_invoice' => 'object',
+        'quickbooks' => QuickbooksSettings::class,
+        'smtp_port' => 'int',
     ];
 
     protected $with = [];
-
-    // public static $modules = [
-    //     self::ENTITY_RECURRING_INVOICE => 1,
-    //     self::ENTITY_CREDIT => 2,
-    //     self::ENTITY_QUOTE => 4,
-    //     self::ENTITY_TASK => 8,
-    //     self::ENTITY_EXPENSE => 16,
-    //     self::ENTITY_PROJECT => 32,
-    //     self::ENTITY_VENDOR => 64,
-    //     self::ENTITY_TICKET => 128,
-    //     self::ENTITY_PROPOSAL => 256,
-    //     self::ENTITY_RECURRING_EXPENSE => 512,
-    //     self::ENTITY_RECURRING_TASK => 1024,
-    //     self::ENTITY_RECURRING_QUOTE => 2048,
-    // ];
 
     public function shouldCalculateTax()
     {
@@ -415,7 +414,7 @@ class Company extends BaseModel
     }
 
     /**
-     * @return \Illuminate\Database\Eloquent\Relations\MorphMany<Document>
+     * @return \Illuminate\Database\Eloquent\Relations\MorphMany
      */
     public function documents()
     {
@@ -425,6 +424,11 @@ class Company extends BaseModel
     public function schedulers(): HasMany
     {
         return $this->hasMany(Scheduler::class);
+    }
+
+    public function verifactu_logs(): HasMany
+    {
+        return $this->hasMany(VerifactuLog::class)->orderBy('id', 'DESC');
     }
 
     public function task_schedulers(): HasMany
@@ -454,7 +458,7 @@ class Company extends BaseModel
 
     public function bank_transactions(): HasMany
     {
-        return $this->hasMany(BankTransaction::class);
+        return $this->hasMany(BankTransaction::class)->withTrashed();
     }
 
     public function bank_transaction_rules(): HasMany
@@ -475,6 +479,11 @@ class Company extends BaseModel
     public function client_contacts(): HasMany
     {
         return $this->hasMany(ClientContact::class)->withTrashed();
+    }
+
+    public function locations(): \Illuminate\Database\Eloquent\Relations\HasMany
+    {
+        return $this->hasMany(Location::class)->withTrashed();
     }
 
     /**
@@ -554,7 +563,7 @@ class Company extends BaseModel
 
     public function activities(): HasMany
     {
-        return $this->hasMany(Activity::class)->orderBy('id', 'DESC')->take(50);
+        return $this->hasMany(Activity::class)->where('created_at', '>=', now()->subDays(90)->toDateTimeString())->orderBy('id', 'DESC')->take(50);
     }
 
     /**
@@ -568,6 +577,18 @@ class Company extends BaseModel
     public function groups()
     {
         return $this->hasMany(GroupSetting::class);
+    }
+
+    public function backups(): \Illuminate\Database\Eloquent\Relations\HasManyThrough
+    {
+        return $this->hasManyThrough(
+            Backup::class, // Target model
+            Activity::class, // Intermediate model
+            'company_id', // Foreign key on activities table
+            'activity_id', // Foreign key on backups table
+            'id', // Local key on companies table
+            'id' // Local key on activities table
+        );
     }
 
     /**
@@ -636,20 +657,18 @@ class Company extends BaseModel
 
     public function country()
     {
-        $companies = Cache::get('countries');
+        return once(function () {
 
-        if (! $companies) {
-            $this->buildCache(true);
+            /** @var \Illuminate\Support\Collection<\App\Models\Country> */
 
-            $companies = Cache::get('countries');
-        }
+            $countries = app('countries');
+            $country_id = $this->getSetting('country_id');
 
-        return $companies->filter(function ($item) {
-            return $item->id == $this->getSetting('country_id');
-        })->first();
+            return $countries->first(function ($item) use ($country_id) {
+                return $item->id == $country_id;
+            });
 
-        //        return $this->belongsTo(Country::class);
-        // return Country::find($this->settings->country_id);
+        });
     }
 
     public function group_settings()
@@ -659,17 +678,16 @@ class Company extends BaseModel
 
     public function timezone()
     {
-        $timezones = Cache::get('timezones');
+        return once(function () {
 
-        if (! $timezones) {
-            $this->buildCache(true);
-        }
+            /** @var \Illuminate\Support\Collection<\App\Models\TimeZone> */
+            $timezones = app('timezones');
 
-        return $timezones->filter(function ($item) {
-            return $item->id == $this->settings->timezone_id;
-        })->first();
+            return $timezones->first(function ($item) {
+                return $item->id == $this->settings->timezone_id;
+            });
 
-        // return Timezone::find($this->settings->timezone_id);
+        });
     }
 
     public function designs()
@@ -694,22 +712,18 @@ class Company extends BaseModel
 
     public function language()
     {
-        $languages = Cache::get('languages');
+        return once(function () {
 
-        //build cache and reinit
-        if (! $languages) {
-            $this->buildCache(true);
-            $languages = Cache::get('languages');
-        }
+            /** @var \Illuminate\Support\Collection<\App\Models\Language> */
+            $languages = app('languages');
 
-        //if the cache is still dead, get from DB
-        if (!$languages && property_exists($this->settings, 'language_id')) {
-            return Language::find($this->settings->language_id);
-        }
+            $language = $languages->first(function ($item) {
+                return $item->id == $this->settings->language_id;
+            });
 
-        return $languages->filter(function ($item) {
-            return $item->id == $this->settings->language_id;
-        })->first();
+            return $language ?? $languages->first();
+
+        });
     }
 
     public function getLocale()
@@ -734,7 +748,8 @@ class Company extends BaseModel
 
     public function getSetting($setting)
     {
-        //todo $this->setting ?? false
+        $setting = $setting ?? '';
+        
         if (property_exists($this->settings, $setting) != false) {
             return $this->settings->{$setting};
         }
@@ -750,11 +765,14 @@ class Company extends BaseModel
 
     public function currency()
     {
-        $currencies = Cache::get('currencies');
+        return once(function () {
+            /** @var \Illuminate\Support\Collection<\App\Models\Currency> */
+            $currencies = app('currencies');
 
-        return $currencies->filter(function ($item) {
-            return $item->id == $this->settings->currency_id;
-        })->first();
+            return $currencies->first(function ($item) {
+                return $item->id == $this->settings->currency_id;
+            });
+        });
     }
 
     /**
@@ -782,7 +800,12 @@ class Company extends BaseModel
     {
         return $this->hasMany(Payment::class)->withTrashed();
     }
-
+    
+    /**
+     * tokens
+     *
+     * @return Illuminate\Database\Eloquent\Relations\HasMany
+     */
     public function tokens(): \Illuminate\Database\Eloquent\Relations\HasMany
     {
         return $this->hasMany(CompanyToken::class);
@@ -805,7 +828,7 @@ class Company extends BaseModel
 
     public function tokens_hashed(): \Illuminate\Database\Eloquent\Relations\HasMany
     {
-        return $this->hasMany(CompanyToken::class);
+        return $this->hasMany(CompanyToken::class)->where('is_system', false);
     }
 
     public function company_users(): \Illuminate\Database\Eloquent\Relations\HasMany
@@ -844,25 +867,24 @@ class Company extends BaseModel
     public function credit_rules()
     {
         return BankTransactionRule::query()
-                                  ->where('company_id', $this->id)
-                                  ->where('applies_to', 'CREDIT')
-                                  ->get();
+            ->where('company_id', $this->id)
+            ->where('applies_to', 'CREDIT')
+            ->get();
     }
 
     public function debit_rules()
     {
         return BankTransactionRule::query()
-                          ->where('company_id', $this->id)
-                          ->where('applies_to', 'DEBIT')
-                          ->get();
+            ->where('company_id', $this->id)
+            ->where('applies_to', 'DEBIT')
+            ->get();
     }
-
 
     public function resolveRouteBinding($value, $field = null)
     {
         return $this->where('id', $this->decodePrimaryKey($value))
-                    ->where('account_id', auth()->user()->account_id)
-                    ->firstOrFail();
+            ->where('account_id', auth()->user()->account_id)
+            ->firstOrFail();
     }
 
     public function domain(): string
@@ -872,7 +894,7 @@ class Company extends BaseModel
                 return $this->portal_domain;
             }
 
-            return "https://{$this->subdomain}.".config('ninja.app_domain');
+            return "https://{$this->subdomain}." . config('ninja.app_domain');
         }
 
         return config('ninja.app_url');
@@ -880,7 +902,13 @@ class Company extends BaseModel
 
     public function notification(Notification $notification)
     {
-        return new NotificationService($this, $notification);
+        try {
+            return new NotificationService($this, $notification);
+        } catch (\Throwable $th) {
+            nlog("Could not access notification service");
+            nlog($th->getMessage());
+            return null;
+        }
     }
 
     public function routeNotificationForSlack($notification): string
@@ -890,7 +918,7 @@ class Company extends BaseModel
 
     public function file_path(): string
     {
-        return $this->company_key.'/';
+        return $this->company_key . '/';
     }
 
     public function rBits()
@@ -933,7 +961,7 @@ class Company extends BaseModel
         $timezone = $this->timezone();
 
         date_default_timezone_set('GMT');
-        $date = new \DateTime("now", new \DateTimeZone($timezone->name));
+        $date = new \DateTime("now", new \DateTimeZone($timezone->name ?? 'UTC'));
         $offset = $date->getOffset();
 
         return $offset;
@@ -952,7 +980,7 @@ class Company extends BaseModel
         $timezone = $this->timezone();
 
         date_default_timezone_set('GMT');
-        $date = new \DateTime("now", new \DateTimeZone($timezone->name));
+        $date = new \DateTime("now", new \DateTimeZone($timezone->name ?? 'UTC'));
         $offset -= $date->getOffset();
 
         $offset += ($entity_send_time * 3600);
@@ -967,20 +995,20 @@ class Company extends BaseModel
 
     public function date_format()
     {
-        $date_formats = Cache::get('date_formats');
+        return once(function () {
+            /** @var \Illuminate\Support\Collection<\App\Models\DateFormat> */
+            $date_formats = app('date_formats');
+            $date_format = $this->getSetting('date_format_id');
 
-        if (! $date_formats) {
-            $this->buildCache(true);
-        }
-
-        return $date_formats->filter(function ($item) {
-            return $item->id == $this->getSetting('date_format_id');
-        })->first()->format;
+            return $date_formats->first(function ($item) use ($date_format) {
+                return $item->id == $date_format;
+            })->format;
+        });
     }
 
     public function getInvoiceCert()
     {
-        if($this->e_invoice_certificate) {
+        if ($this->e_invoice_certificate) {
             return base64_decode($this->e_invoice_certificate);
         }
 
@@ -997,4 +1025,86 @@ class Company extends BaseModel
         return new CompanyService($this);
     }
 
+    public function isPeppolSender()
+    {
+        return Ninja::isHosted() && $this->account->isPaid() && $this->account->isEnterpriseClient() && $this->account->e_invoice_quota > 0 && $this->settings->e_invoice_type == 'PEPPOL' && $this->tax_data->acts_as_sender;
+    }
+
+
+    /**
+     * peppolSendingEnabled
+     *
+     * Determines the sending status of the company
+     *
+     * @return bool
+     */
+    public function peppolSendingEnabled(): bool
+    {
+        /** FRREPORTING:: French senders are not permitted on the network - fail silently. */
+        if ($this->country()?->iso_3166_2 === 'FR') {
+            return false;
+        }
+
+        return !$this->account->is_flagged && $this->account->e_invoice_quota > 0 && isset($this->legal_entity_id) && isset($this->tax_data->acts_as_sender) && $this->tax_data->acts_as_sender;
+    }
+
+    /**
+     * verifactuEnabled
+     *
+     * Returns a flag if the current company is using verifactu as the e-invoice provider
+     *
+     * @return bool
+     */
+    public function verifactuEnabled(): bool
+    {
+        return once(function () {
+            return $this->getSetting('e_invoice_type') == 'VERIFACTU';
+        });
+    }
+
+    /**
+     * Check if QuickBooks push should be triggered for an entity/action.
+     *
+     * Uses efficient checks to avoid overhead for companies not using QuickBooks.
+     * Uses once() to cache the result for the request lifecycle.
+     *
+     * This method is designed to be called from model observers to efficiently
+     * determine if a push job should be dispatched, with zero overhead for
+     * companies that don't use QuickBooks.
+     *
+     * @param string $entity Entity type: 'client', 'invoice', etc.
+     * @return bool
+     */
+    public function shouldPushToQuickbooks(string $entity): bool
+    {
+        
+        if (is_null($this->getRawOriginal('quickbooks')) || $this->account->isFreeHostedClient()) {
+            return false;
+        }
+
+        // Cache the detailed check for this request lifecycle
+        // This prevents re-checking if called multiple times in the same request
+        return once(function () use ($entity) {
+            // Check if QuickBooks is actually configured (has token)
+            if (!$this->quickbooks->isConfigured()) {
+                return false;
+            }
+
+            // Verify entity exists in settings
+            if (!isset($this->quickbooks->settings->{$entity})) {
+                return false;
+            }
+
+            $entitySettings = $this->quickbooks->settings->{$entity};
+            $direction = $entitySettings->direction->value;
+
+            // Check if sync direction allows push
+            return $direction === 'push' || $direction === 'bidirectional';
+        });
+    }
+
+    public function docuninjaActive(): bool
+    {
+        return (app()->environment('local') || Ninja::isHosted()) && $this->enable_modules && $this->account->hasFeature(\App\Models\Account::FEATURE_INVOICE_SETTINGS);
+    }
 }

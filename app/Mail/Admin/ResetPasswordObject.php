@@ -1,10 +1,11 @@
 <?php
+
 /**
  * Invoice Ninja (https://invoiceninja.com).
  *
  * @link https://github.com/invoiceninja/invoiceninja source repository
  *
- * @copyright Copyright (c) 2024. Invoice Ninja LLC (https://invoiceninja.com)
+ * @copyright Copyright (c) 2026. Invoice Ninja LLC (https://invoiceninja.com)
  *
  * @license https://www.elastic.co/licensing/elastic-license
  */
@@ -18,9 +19,7 @@ use Illuminate\Support\Facades\App;
 
 class ResetPasswordObject
 {
-    public function __construct(private string $token, protected User $user, protected Company $company, protected bool $is_react)
-    {
-    }
+    public function __construct(private string $token, protected User $user, protected Company $company, protected bool $is_react) {}
 
     public function build()
     {

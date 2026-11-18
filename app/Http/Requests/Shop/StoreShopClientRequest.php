@@ -1,10 +1,11 @@
 <?php
+
 /**
  * Invoice Ninja (https://invoiceninja.com).
  *
  * @link https://github.com/invoiceninja/invoiceninja source repository
  *
- * @copyright Copyright (c) 2024. Invoice Ninja LLC (https://invoiceninja.com)
+ * @copyright Copyright (c) 2026. Invoice Ninja LLC (https://invoiceninja.com)
  *
  * @license https://www.elastic.co/licensing/elastic-license
  */
@@ -43,7 +44,7 @@ class StoreShopClientRequest extends Request
             $documents = count($this->input('documents'));
 
             foreach (range(0, $documents) as $index) {
-                $rules['documents.'.$index] = 'file|mimes:png,ai,jpeg,tiff,pdf,gif,psd,txt,doc,xls,ppt,xlsx,docx,pptx|max:20000';
+                $rules['documents.' . $index] = 'file|mimes:png,ai,jpeg,tiff,pdf,gif,psd,txt,doc,xls,ppt,xlsx,docx,pptx|max:20000';
             }
         } elseif ($this->input('documents')) {
             $rules['documents'] = 'file|mimes:png,ai,jpeg,tiff,pdf,gif,psd,txt,doc,xls,ppt,xlsx,docx,pptx|max:20000';
@@ -51,7 +52,7 @@ class StoreShopClientRequest extends Request
 
         /* Ensure we have a client name, and that all emails are unique*/
         //$rules['name'] = 'required|min:1';
-        $rules['id_number'] = 'unique:clients,id_number,'.$this->id.',id,company_id,'.$this->company_id;
+        $rules['id_number'] = 'unique:clients,id_number,' . $this->id . ',id,company_id,' . $this->company_id;
         $rules['settings'] = new ValidClientGroupSettingsRule();
         $rules['contacts.*.email'] = 'nullable|distinct';
         $rules['contacts.*.password'] = [
@@ -108,7 +109,7 @@ class StoreShopClientRequest extends Request
             $settings->currency_id = $this->getCurrencyCode($input['currency_code']);
         }
 
-        $input['settings'] = (array)$settings;
+        $input['settings'] = (array) $settings;
 
         if (isset($input['contacts'])) {
             foreach ($input['contacts'] as $key => $contact) {
@@ -155,23 +156,27 @@ class StoreShopClientRequest extends Request
 
     private function getCountryCode($country_code)
     {
-        $countries = Cache::get('countries');
 
-        $country = $countries->filter(function ($item) use ($country_code) {
+        /** @var \Illuminate\Support\Collection<\App\Models\Country> */
+        $countries = app('countries');
+
+        $country = $countries->first(function ($item) use ($country_code) {
             return $item->iso_3166_2 == $country_code || $item->iso_3166_3 == $country_code;
-        })->first();
+        });
 
-        return (string) $country->id;
+        return $country ? (string) $country->id : '';
     }
 
     private function getCurrencyCode($code)
     {
-        $currencies = Cache::get('currencies');
 
-        $currency = $currencies->filter(function ($item) use ($code) {
+        /** @var \Illuminate\Support\Collection<\App\Models\Country> */
+        $currencies = app('currencies');
+
+        $currency = $currencies->first(function ($item) use ($code) {
             return $item->code == $code;
-        })->first();
+        });
 
-        return (string) $currency->id;
+        return $currency ? (string) $currency->id : '';
     }
 }

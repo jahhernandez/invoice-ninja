@@ -1,10 +1,11 @@
 <?php
+
 /**
  * Invoice Ninja (https://invoiceninja.com).
  *
  * @link https://github.com/invoiceninja/invoiceninja source repository
  *
- * @copyright Copyright (c) 2024. Invoice Ninja LLC (https://invoiceninja.com)
+ * @copyright Copyright (c) 2026. Invoice Ninja LLC (https://invoiceninja.com)
  *
  * @license https://www.elastic.co/licensing/elastic-license
  */
@@ -32,7 +33,7 @@ class DesignFilters extends QueryFilters
         }
 
         return $this->builder->where(function ($query) use ($filter) {
-            $query->where('name', 'like', '%'.$filter.'%');
+            $query->where('name', 'like', '%' . $filter . '%');
         });
     }
 
@@ -47,7 +48,7 @@ class DesignFilters extends QueryFilters
     {
         $sort_col = explode('|', $sort);
 
-        if (!is_array($sort_col) || count($sort_col) != 2) {
+        if (!is_array($sort_col) || count($sort_col) != 2 || !in_array($sort_col[0], \Illuminate\Support\Facades\Schema::getColumnListing($this->builder->getModel()->getTable()))) {
             return $this->builder;
         }
 
@@ -58,10 +59,11 @@ class DesignFilters extends QueryFilters
 
     public function entities(string $entities = ''): Builder
     {
-    
-        if(stripos($entities, 'statement') !== false)
+
+        if (stripos($entities, 'statement') !== false) {
             $entities = 'client';
-     
+        }
+
         if (strlen($entities) == 0 || str_contains($entities, ',')) {
             return $this->builder;
         }

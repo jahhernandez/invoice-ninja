@@ -1,10 +1,11 @@
 <?php
+
 /**
  * Invoice Ninja (https://invoiceninja.com).
  *
  * @link https://github.com/invoiceninja/invoiceninja source repository
  *
- * @copyright Copyright (c) 2024. Invoice Ninja LLC (https://invoiceninja.com)
+ * @copyright Copyright (c) 2026. Invoice Ninja LLC (https://invoiceninja.com)
  *
  * @license https://www.elastic.co/licensing/elastic-license
  */
@@ -43,10 +44,10 @@ use Illuminate\Support\Facades\Storage;
  * @property int|null $created_at
  * @property int|null $updated_at
  * @property int $is_public
- * @property-read \Illuminate\Database\Eloquent\Model|\Eloquent $documentable
+ * @property-read \Illuminate\Database\Eloquent\Model|\Eloquent|null $documentable
  * @property-read mixed $hashed_id
  * @property-read \App\Models\User $user
- * @method static \Illuminate\Database\Eloquent\Builder|BaseModel company()
+ * 
  * @method static \Illuminate\Database\Eloquent\Builder|BaseModel exclude($columns)
  * @method static \Database\Factories\DocumentFactory factory($count = null, $state = [])
  * @method static \Illuminate\Database\Eloquent\Builder|Document filter(\App\Filters\QueryFilters $filters)
@@ -83,6 +84,10 @@ class Document extends BaseModel
         'updated_at' => 'timestamp',
         'created_at' => 'timestamp',
         'deleted_at' => 'timestamp',
+    ];
+
+    protected $touches = [
+        // 'documentable'
     ];
 
     /**
@@ -144,14 +149,25 @@ class Document extends BaseModel
         'tif' => 'tiff',
     ];
 
+    public function getMimeType(): string
+    {
+
+        if (isset(self::$types[$this->type])) {
+            return self::$types[$this->type]['mime'];
+        }
+
+        return 'application/octet-stream';
+
+    }
+
     public function getEntityType()
     {
         return self::class;
     }
 
-    public function documentable()
+    public function documentable(): \Illuminate\Database\Eloquent\Relations\MorphTo
     {
-        return $this->morphTo();
+        return $this->morphTo()->withTrashed();
     }
 
     public function user()
@@ -176,9 +192,10 @@ class Document extends BaseModel
 
     public function generateRoute($absolute = false)
     {
-        try{
-        return route('api.documents.show', ['document' => $this->hashed_id]).'/download';
-        }catch(\Exception $e){
+        try {
+            return route('api.documents.show', ['document' => $this->hashed_id]) . '/download';
+        } catch (\Exception $e) {
+            nlog("Exception:: Document::" . $e->getMessage());
             return '';
         }
     }
@@ -200,7 +217,12 @@ class Document extends BaseModel
 
     public function getFile()
     {
-        return Storage::get($this->url);
+        return Storage::disk($this->disk)->get($this->url);
+    }
+
+    public function fileExists()
+    {
+        return Storage::disk($this->disk)->exists($this->url);
     }
 
     public function translate_entity()
@@ -213,7 +235,7 @@ class Document extends BaseModel
         $entity_id = $this->encodePrimaryKey($this->documentable_id);
         $link = '';
 
-        match($this->documentable_type) {
+        match ($this->documentable_type) {
             'App\Models\Vendor' => $link = "/vendors/{$entity_id}",
             'App\Models\Project' => $link = "/projects/{$entity_id}",
             'invoices' => $link = "/invoices/{$entity_id}/edit",
@@ -237,27 +259,30 @@ class Document extends BaseModel
         $image = $this->getFile();
         $catch_image = $image;
 
-        if(!extension_loaded('imagick')) {
+        if (!extension_loaded('imagick')) {
             return $catch_image;
         }
 
         try {
-            $file = base64_encode($image);
+            // $file = base64_encode($image);
+            $file = $image;
 
-            $img = new \Imagick();
+            $img = new \Imagick(); //@phpstan-ignore-line
             $img->readImageBlob($file);
-            $img->setImageCompression(true);
+            $img->setImageCompression(true); //@phpstan-ignore-line
             $img->setImageCompressionQuality(40);
+            $img->stripImage();
 
             return $img->getImageBlob();
 
-        } catch(\Exception $e) {
-
+        } catch (\Exception $e) {
+            nlog("Exception:: Document::" . $e->getMessage());
             nlog($e->getMessage());
             return $catch_image;
         }
 
     }
+
 
     /**
      * Returns boolean based on checks for image.

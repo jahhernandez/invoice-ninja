@@ -26,7 +26,7 @@
     <title>@yield('meta_title', 'Invoice Ninja') | {{ config('app.name') }}</title>
     <meta name="description" content="@yield('meta_description')"/>
 
-    @if(auth()->guard('contact')->user() && !auth()->guard('contact')->user()->user->account->isPaid())
+    @if(false)
         <link href="{{ asset('favicon.png') }}" rel="shortcut icon" type="image/png">
     @endif
 

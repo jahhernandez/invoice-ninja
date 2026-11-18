@@ -1,10 +1,11 @@
 <?php
+
 /**
  * Invoice Ninja (https://invoiceninja.com).
  *
  * @link https://github.com/invoiceninja/invoiceninja source repository
  *
- * @copyright Copyright (c) 2024. Invoice Ninja LLC (https://invoiceninja.com)
+ * @copyright Copyright (c) 2026. Invoice Ninja LLC (https://invoiceninja.com)
  *
  * @license https://www.elastic.co/licensing/elastic-license
  */
@@ -59,26 +60,26 @@ class ClientContactObserver
         //ensure entity state is preserved
 
         InvoiceInvitation::withTrashed()->where('client_contact_id', $client_contact_id)->cursor()->each(function ($invite) {
-            if ($invite->invoice()->doesnthave('invitations')) {
+            /** @var \App\Models\InvoiceInvitation $invite */
+            if ($invite->invoice && $invite->invoice->invitations()->doesntExist()) {
                 $invite->invoice->service()->createInvitations();
             }
         });
 
-
         QuoteInvitation::withTrashed()->where('client_contact_id', $client_contact_id)->cursor()->each(function ($invite) {
-            if ($invite->quote()->doesnthave('invitations')) {
+            if ($invite->quote && $invite->quote->invitations()->doesntExist()) {
                 $invite->quote->service()->createInvitations();
             }
         });
 
         RecurringInvoiceInvitation::withTrashed()->where('client_contact_id', $client_contact_id)->cursor()->each(function ($invite) {
-            if ($invite->recurring_invoice()->doesnthave('invitations')) {
+            if ($invite->recurring_invoice && $invite->recurring_invoice->invitations()->doesntExist()) {
                 $invite->recurring_invoice->service()->createInvitations();
             }
         });
 
         CreditInvitation::withTrashed()->where('client_contact_id', $client_contact_id)->cursor()->each(function ($invite) {
-            if ($invite->credit()->doesnthave('invitations')) {
+            if ($invite->credit && $invite->credit->invitations()->doesntExist()) {
                 $invite->credit->service()->createInvitations();
             }
         });
@@ -90,9 +91,7 @@ class ClientContactObserver
      * @param ClientContact $clientContact
      * @return void
      */
-    public function restored(ClientContact $clientContact)
-    {
-    }
+    public function restored(ClientContact $clientContact) {}
 
     /**
      * Handle the client contact "force deleted" event.

@@ -1,10 +1,11 @@
 <?php
+
 /**
  * Invoice Ninja (https://invoiceninja.com).
  *
  * @link https://github.com/invoiceninja/invoiceninja source repository
  *
- * @copyright Copyright (c) 2024. Invoice Ninja LLC (https://invoiceninja.com)
+ * @copyright Copyright (c) 2026. Invoice Ninja LLC (https://invoiceninja.com)
  *
  * @license https://www.elastic.co/licensing/elastic-license
  */
@@ -22,12 +23,13 @@ use App\Utils\Ninja;
  */
 function nlog($output, $context = []): void
 {
+
     if (! config('ninja.expanded_logging')) {
         return;
     }
 
     if (gettype($output) == 'object') {
-        $output = print_r($output, 1);
+        $output = print_r($output, true);
     }
 
     // $trace = debug_backtrace();
@@ -53,7 +55,7 @@ function nrlog($output, $context = []): void
     }
 
     if (gettype($output) == 'object') {
-        $output = print_r($output, 1);
+        $output = print_r($output, true);
     }
 
     // $trace = debug_backtrace();

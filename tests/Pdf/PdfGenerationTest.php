@@ -13,17 +13,22 @@
 namespace Tests\Pdf;
 
 use Beganovich\Snappdf\Snappdf;
+use Tests\Concerns\UsesRealPdfGeneration;
 use Tests\TestCase;
 
 /**
- * @test
- * @covers  App\DataMapper\BaseSettings
+ *
+ *   App\DataMapper\BaseSettings
  */
 class PdfGenerationTest extends TestCase
 {
+    use UsesRealPdfGeneration;
+
     protected function setUp(): void
     {
         parent::setUp();
+
+        $this->useRealPdfGeneration();
     }
 
     public function testPdfGeneration()

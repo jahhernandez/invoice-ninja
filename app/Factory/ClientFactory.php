@@ -1,10 +1,11 @@
 <?php
+
 /**
  * Invoice Ninja (https://invoiceninja.com).
  *
  * @link https://github.com/invoiceninja/invoiceninja source repository
  *
- * @copyright Copyright (c) 2024. Invoice Ninja LLC (https://invoiceninja.com)
+ * @copyright Copyright (c) 2026. Invoice Ninja LLC (https://invoiceninja.com)
  *
  * @license https://www.elastic.co/licensing/elastic-license
  */
@@ -29,10 +30,10 @@ class ClientFactory
         $client->balance = 0;
         $client->paid_to_date = 0;
         $client->country_id = null;
-        $client->is_deleted = 0;
+        $client->is_deleted = false;
         $client->client_hash = Str::random(40);
         $client->settings = ClientSettings::defaults();
-        $client->classification = '';
+        $client->classification = 'business';
 
         return $client;
     }

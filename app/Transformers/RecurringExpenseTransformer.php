@@ -1,10 +1,11 @@
 <?php
+
 /**
  * Invoice Ninja (https://invoiceninja.com).
  *
  * @link https://github.com/invoiceninja/invoiceninja source repository
  *
- * @copyright Copyright (c) 2024. Invoice Ninja LLC (https://invoiceninja.com)
+ * @copyright Copyright (c) 2026. Invoice Ninja LLC (https://invoiceninja.com)
  *
  * @license https://www.elastic.co/licensing/elastic-license
  */
@@ -129,6 +130,7 @@ class RecurringExpenseTransformer extends EntityTransformer
             // 'next_send_date' => $recurring_expense->next_send_date ?: '',
             'next_send_date' => $recurring_expense->next_send_date_client ?: '',
             'recurring_dates' => (array) [],
+            'tags' => $this->transformTags($recurring_expense),
         ];
 
         if (request()->has('show_dates') && request()->query('show_dates') == 'true') {

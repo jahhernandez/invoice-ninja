@@ -1,4 +1,5 @@
 <?php
+
 /**
  * Invoice Ninja (https://invoiceninja.com).
  *
@@ -27,15 +28,16 @@ use Illuminate\Foundation\Testing\DatabaseTransactions;
 use Tests\TestCase;
 
 /**
- * @test
+ *
  */
 class MultiPaymentDeleteTest extends TestCase
 {
-    use DatabaseTransactions, MakesHash;
+    use DatabaseTransactions;
+    use MakesHash;
 
     private $faker;
 
-    protected function setUp() :void
+    protected function setUp(): void
     {
         parent::setUp();
 
@@ -55,7 +57,7 @@ class MultiPaymentDeleteTest extends TestCase
         $user = User::factory()->create([
             'account_id' => $account->id,
             'confirmation_code' => '11',
-            'email' => $this->faker->unique()->safeEmail(),
+            'email' => \Illuminate\Support\Str::random(32)."@gmail.com",
         ]);
 
         $cu = CompanyUserFactory::create($user->id, $company->id, $account->id);
@@ -63,7 +65,7 @@ class MultiPaymentDeleteTest extends TestCase
         $cu->is_admin = true;
         $cu->save();
 
-        $token = new CompanyToken;
+        $token = new CompanyToken();
         $token->user_id = $user->id;
         $token->company_id = $company->id;
         $token->account_id = $account->id;
@@ -156,6 +158,8 @@ class MultiPaymentDeleteTest extends TestCase
         $this->assertEquals(162, $invoice->client->fresh()->balance);
         $this->assertEquals(163, $invoice->client->fresh()->paid_to_date);
 
+        sleep(1);
+
         $data = [
             'amount' => 162.0,
             'client_id' => $this->encodePrimaryKey($client->id),
@@ -166,6 +170,7 @@ class MultiPaymentDeleteTest extends TestCase
                 ],
             ],
             'date' => '2019/12/12',
+            'idempotency_key' => md5(time()),
         ];
 
         $response = $this->withHeaders([
@@ -219,6 +224,7 @@ class MultiPaymentDeleteTest extends TestCase
         $this->assertEquals(162, $invoice->client->fresh()->balance);
         $this->assertEquals(163, $invoice->client->fresh()->paid_to_date);
 
+        sleep(1);
         // Pay 162 again and create payment #3
 
         $data = [
@@ -232,6 +238,7 @@ class MultiPaymentDeleteTest extends TestCase
                 ],
             ],
             'date' => '2019/12/12',
+            'idempotency_key' => md5(time()),
         ];
 
         $response = $this->withHeaders([
@@ -285,6 +292,7 @@ class MultiPaymentDeleteTest extends TestCase
             ],
             'date' => '2019/12/12',
         ];
+        sleep(1);
 
         $response = $this->withHeaders([
             'X-API-SECRET' => config('ninja.api_secret'),
@@ -342,6 +350,10 @@ class MultiPaymentDeleteTest extends TestCase
             'X-API-SECRET' => config('ninja.api_secret'),
             'X-API-TOKEN' => $token->token,
         ])->post('/api/v1/invoices/bulk?action=delete', $data);
+
+        $this->assertFalse($invoice->verifactuEnabled());
+
+        $response->assertStatus(200);
 
         $this->assertEquals(0, $invoice->fresh()->balance);
         $this->assertEquals(0, $invoice->client->fresh()->balance);

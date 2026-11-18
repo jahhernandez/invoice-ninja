@@ -14,11 +14,16 @@ namespace App\Livewire\BillingPortal\Payments;
 
 use Livewire\Component;
 use App\Models\Subscription;
+use App\Utils\Traits\MakesHash;
 use Illuminate\Support\Facades\Cache;
+use Livewire\Attributes\Locked;
 
 class Methods extends Component
 {
-    public Subscription $subscription;
+    use MakesHash;
+
+    #[Locked]
+    public string $subscription_id;
 
     public array $context;
 
@@ -26,13 +31,18 @@ class Methods extends Component
 
     public function mount(): void
     {
-        $total = collect($this->context['products'])->sum('total_raw');
+        $client = auth()->guard('contact')->user()->client;
+        $subscription = Subscription::find($this->decodePrimaryKey($this->subscription_id));
+        $calculator = $subscription->calc();
+        $this->context['bundle'] = $calculator->resolveBundle($this->context['bundle']);
+        $total = $calculator->preview(
+            $calculator->buildItems($this->context),
+            $client,
+            $calculator->hasValidCoupon($this->context),
+        )->getTotal();
 
-        $methods = auth()->guard('contact')->user()->client->service()->getPaymentMethods(
-            $total,
-        );
+        $this->methods = $client->service()->getPaymentMethods($total);
 
-        $this->methods = $methods;
     }
 
     public function handleSelect(string $company_gateway_id, string $gateway_type_id)
@@ -40,11 +50,14 @@ class Methods extends Component
         /** @var \App\Models\ClientContact $contact */
         $contact = auth()->guard('contact')->user();
 
+        $sub = Subscription::find($this->decodePrimaryKey($this->subscription_id));
+
         $this->dispatch('purchase.context', property: 'client_id', value: $contact->client->hashed_id);
 
         $this->context['client_id'] = $contact->client->hashed_id;
+        $this->context['bundle'] = $sub->calc()->resolveBundle($this->context['bundle']);
 
-        $invoice = $this->subscription
+        $invoice = $sub
             ->calc()
             ->buildPurchaseInvoice($this->context)
             ->service()
@@ -54,7 +67,7 @@ class Methods extends Component
             ->save();
 
         Cache::put($this->context['hash'], [
-            'subscription_id' => $this->subscription->hashed_id,
+            'subscription_id' => $sub->hashed_id,
             'email' => $contact->email,
             'client_id' => $contact->client->hashed_id,
             'invoice_id' => $invoice->hashed_id,

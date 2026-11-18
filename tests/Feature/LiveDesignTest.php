@@ -1,4 +1,5 @@
 <?php
+
 /**
  * Invoice Ninja (https://invoiceninja.com).
  *
@@ -20,15 +21,15 @@ use Tests\MockAccountData;
 use Tests\TestCase;
 
 /**
- * @test
- * @covers App\Http\Controllers\PreviewController
+ *
+ *  App\Http\Controllers\PreviewController
  */
 class LiveDesignTest extends TestCase
 {
     use DatabaseTransactions;
     use MockAccountData;
 
-    protected function setUp() :void
+    protected function setUp(): void
     {
         parent::setUp();
 
@@ -37,9 +38,9 @@ class LiveDesignTest extends TestCase
         $this->withoutMiddleware(
             ThrottleRequests::class
         );
-        
+
         if (config('ninja.testvars.travis') !== false) {
-            $this->markTestSkipped('Skip test for Travis');
+            $this->markTestSkipped('Skip test for GH Actions');
         }
     }
 
@@ -59,12 +60,14 @@ class LiveDesignTest extends TestCase
         $engine = new HtmlEngine($ii);
 
         $this->assertNotNull($engine);
-        
+
         $data = $engine->generateLabelsAndValues();
 
         $this->assertIsArray($data);
+        $this->assertArrayHasKey('$task.tags', $data['values']);
+        $this->assertSame('', $data['values']['$task.tags']);
+        $this->assertSame(ctrans('texts.tags'), $data['labels']['$task.tags_label']);
 
-        nlog($data);
     }
 
     public function testDesignRoute200()
@@ -88,7 +91,7 @@ class LiveDesignTest extends TestCase
 
         $d = Design::find(1);
 
-        
+
         $data = [
             'entity_type' => 'invoice',
             'settings_type' => 'company',
@@ -100,7 +103,7 @@ class LiveDesignTest extends TestCase
             'X-API-SECRET' => config('ninja.api_secret'),
             'X-API-TOKEN' => $this->token,
         ])->post('/api/v1/live_design/', $data);
-        
+
         $response->assertStatus(200);
 
     }

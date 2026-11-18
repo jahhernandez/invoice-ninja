@@ -1,4 +1,5 @@
 <?php
+
 /**
  * Invoice Ninja (https://invoiceninja.com).
  *
@@ -14,12 +15,12 @@ namespace Tests\Feature\Template;
 use App\Jobs\Entity\CreateRawPdf;
 use App\Models\Credit;
 use App\Models\Design;
+use App\Models\Expense;
 use App\Models\Invoice;
 use App\Models\Payment;
 use App\Models\Project;
-use App\Services\PdfMaker\Design as PdfDesignModel;
-use App\Services\PdfMaker\Design as PdfMakerDesign;
-use App\Services\PdfMaker\PdfMaker;
+use App\Models\Quote;
+use App\Models\Task;
 use App\Services\Template\TemplateMock;
 use App\Services\Template\TemplateService;
 use App\Utils\HtmlEngine;
@@ -33,8 +34,8 @@ use Tests\MockAccountData;
 use Tests\TestCase;
 
 /**
- * @test
- * @covers
+ *
+ *
  */
 class TemplateTest extends TestCase
 {
@@ -167,9 +168,46 @@ class TemplateTest extends TestCase
             </ninja>
         ';
 
+    private string $broken_twig_template = '
+    <tbody>
+                    {% for invoice in invoices %}
+                        <tr class="border-b dark:border-neutral-500">
+                            <td class="whitespace-nowrap px-6 py-4 font-medium">{{ invoice.number }}</td>
+                            <td class="whitespace-nowrap px-6 py-4 font-medium">{{ invoice.date }}</td>
+                            <td class="whitespace-nowrap px-6 py-4 font-medium">{{ invoice.due_date }}</td>
+                            <td class="whitespace-nowrap px-6 py-4 font-medium">{{ invoice.amount }}</td>
+                            <td class="whitespace-nowrap px-6 py-4 font-medium"></td>
+                            <td class="whitespace-nowrap px-6 py-4 font-medium">{{ invoice.balance }}</td>
+                        </tr>
+
+                        {% for payment in invoice.payments|filter(payment => payment.is_deleted == false) %}
+                        
+                            {% for pivot in payment.paymentables %}
+
+                            <tr class="border-b dark:border-neutral-500">
+                                <td class="whitespace-nowrap px-6 py-4 font-medium">{{ payment.number }}</td>
+                                <td class="whitespace-nowrap px-6 py-4 font-medium">{{ payment.date }}</td>
+                                <td class="whitespace-nowrap px-6 py-4 font-medium"></td>
+                                <td class="whitespace-nowrap px-6 py-4 font-medium">
+                                {% if pivot.amount_raw >
+                                    {{ pivot.amount }} - {{ payment.type.name }}
+                                {% else %}
+                                    ({{ pivot.refunded }})
+                                {% endif
+                                </td>
+                                <td class="whitespace-nowrap px-6 py-4 font-medium"></td>
+                                <td class="whitespace-nowrap px-6 py-4 font-medium"></td>
+                            </tr>
+
+                            {% endfor %}
+                        {% endfor %}
+                    {% endfor%}
+                    </tbody>
+    ';
+
     private string $stack = '<html><div id="company-details" labels="true"></div></html>';
 
-    protected function setUp() :void
+    protected function setUp(): void
     {
         parent::setUp();
 
@@ -178,14 +216,45 @@ class TemplateTest extends TestCase
         $this->withoutMiddleware(
             ThrottleRequests::class
         );
-        
+
     }
 
+    public function testLintingSuccess()
+    {
+
+        $ts = new TemplateService();
+        $twig = $ts->twig;
+
+        try {
+            $twig->parse($twig->tokenize(new \Twig\Source($this->payments_body, '')));
+            $this->assertTrue(true);
+            // echo json_encode(['status' => 'ok']);
+        } catch (\Twig\Error\SyntaxError $e) {
+            // echo json_encode(['status' => 'error', 'message' => $e->getMessage()]);
+        }
+
+    }
+
+    public function testLintingFailure()
+    {
+
+        $ts = new TemplateService();
+        $twig = $ts->twig;
+
+        try {
+            $twig->parse($twig->tokenize(new \Twig\Source($this->broken_twig_template, '')));
+            // echo json_encode(['status' => 'ok']);
+        } catch (\Twig\Error\SyntaxError $e) {
+            $this->assertTrue(true);
+            // echo json_encode(['status' => 'error', 'message' => $e->getMessage()]);
+        }
+
+    }
 
     public function testPurchaseOrderDataParse()
     {
         $data = [];
-        
+
         $p = \App\Models\PurchaseOrder::factory()->create([
             'user_id' => $this->user->id,
             'company_id' => $this->company->id,
@@ -204,7 +273,7 @@ class TemplateTest extends TestCase
     public function testTaskDataParse()
     {
         $data = [];
-        
+
         $p = \App\Models\Task::factory()->create([
             'user_id' => $this->user->id,
             'company_id' => $this->company->id,
@@ -220,10 +289,246 @@ class TemplateTest extends TestCase
         $this->assertIsArray($ts->getData());
     }
 
+    public function testProjectExpenseDataParse()
+    {
+        $data = [];
+
+        $p = \App\Models\Project::factory()->create([
+            'user_id' => $this->user->id,
+            'company_id' => $this->company->id,
+            'client_id' => $this->client->id,
+        ]);
+
+        $e = \App\Models\Expense::factory()->create([
+            'user_id' => $this->user->id,
+            'company_id' => $this->company->id,
+            'client_id' => $this->client->id,
+            'project_id' => $p->id,
+        ]);
+
+        $data['projects'][] = $p;
+
+        $ts = new TemplateService();
+        $ts->processData($data);
+
+        $this->assertNotNull($ts);
+        $this->assertIsArray($ts->getData());
+
+        // nlog($ts->getData());
+
+    }
+
+    public function testProjectTemplateBuildsWhenClientHasNoDocuments()
+    {
+        $client = \App\Models\Client::factory()->create([
+            'user_id' => $this->user->id,
+            'company_id' => $this->company->id,
+        ]);
+
+        $project = Project::factory()->create([
+            'user_id' => $this->user->id,
+            'company_id' => $this->company->id,
+            'client_id' => $client->id,
+            'name' => 'Uninvoiced Project',
+        ]);
+
+        $ts = $this->projectTemplate()->setEntity($project)->build([
+            'projects' => collect([$project->fresh()]),
+        ]);
+
+        $html = $ts->getHtml();
+
+        $this->assertStringContainsString('Uninvoiced Project', $html);
+        $this->assertStringContainsString('$client.name', $html);
+    }
+
+    public function testProjectTemplateUsesClientInvoiceInvitation()
+    {
+        $project = Project::factory()->create([
+            'user_id' => $this->user->id,
+            'company_id' => $this->company->id,
+            'client_id' => $this->client->id,
+            'name' => 'Invoiced Project',
+        ]);
+
+        $ts = $this->projectTemplate()->setEntity($project)->build([
+            'projects' => collect([$project->fresh()]),
+        ]);
+
+        $html = $ts->getHtml();
+
+        $this->assertStringContainsString('Invoiced Project', $html);
+        $this->assertStringContainsString($this->client->present()->name(), $html);
+        $this->assertStringNotContainsString('$client.name', $html);
+    }
+
+    public function testClientInvitationCascadePrefersInvoiceThenQuoteThenCredit()
+    {
+        $client = \App\Models\Client::factory()->create([
+            'user_id' => $this->user->id,
+            'company_id' => $this->company->id,
+        ]);
+
+        $contact = \App\Models\ClientContact::factory()->create([
+            'user_id' => $this->user->id,
+            'company_id' => $this->company->id,
+            'client_id' => $client->id,
+        ]);
+
+        $resolve = new \ReflectionMethod(TemplateService::class, 'resolveClientInvitation');
+
+        $this->assertNull($resolve->invoke(new TemplateService(), $client));
+
+        $credit = Credit::factory()->create([
+            'user_id' => $this->user->id,
+            'company_id' => $this->company->id,
+            'client_id' => $client->id,
+        ]);
+
+        $credit_invitation = \App\Models\CreditInvitation::factory()->create([
+            'user_id' => $this->user->id,
+            'company_id' => $this->company->id,
+            'client_contact_id' => $contact->id,
+            'credit_id' => $credit->id,
+        ]);
+
+        $invitation = $resolve->invoke(new TemplateService(), $client);
+        $this->assertInstanceOf(\App\Models\CreditInvitation::class, $invitation);
+        $this->assertSame($credit_invitation->id, $invitation->id);
+
+        $quote = Quote::factory()->create([
+            'user_id' => $this->user->id,
+            'company_id' => $this->company->id,
+            'client_id' => $client->id,
+        ]);
+
+        $quote_invitation = \App\Models\QuoteInvitation::factory()->create([
+            'user_id' => $this->user->id,
+            'company_id' => $this->company->id,
+            'client_contact_id' => $contact->id,
+            'quote_id' => $quote->id,
+        ]);
+
+        $invitation = $resolve->invoke(new TemplateService(), $client);
+        $this->assertInstanceOf(\App\Models\QuoteInvitation::class, $invitation);
+        $this->assertSame($quote_invitation->id, $invitation->id);
+
+        Invoice::factory()->create([
+            'user_id' => $this->user->id,
+            'company_id' => $this->company->id,
+            'client_id' => $client->id,
+        ]);
+
+        $invitation = $resolve->invoke(new TemplateService(), $client);
+        $this->assertInstanceOf(\App\Models\QuoteInvitation::class, $invitation);
+
+        $invoice = Invoice::factory()->create([
+            'user_id' => $this->user->id,
+            'company_id' => $this->company->id,
+            'client_id' => $client->id,
+        ]);
+
+        $invoice_invitation = \App\Models\InvoiceInvitation::factory()->create([
+            'user_id' => $this->user->id,
+            'company_id' => $this->company->id,
+            'client_contact_id' => $contact->id,
+            'invoice_id' => $invoice->id,
+        ]);
+
+        $invitation = $resolve->invoke(new TemplateService(), $client);
+        $this->assertInstanceOf(\App\Models\InvoiceInvitation::class, $invitation);
+        $this->assertSame($invoice_invitation->id, $invitation->id);
+    }
+
+    private function projectTemplate(): TemplateService
+    {
+        $design_model = Design::find(2);
+
+        $replicated_design = $design_model->replicate();
+        $replicated_design->company_id = $this->company->id;
+        $replicated_design->user_id = $this->user->id;
+        $design = $replicated_design->design;
+        $design->body .= 'Token: $client.name <ninja>Project: {{ projects[0].name }}</ninja>';
+        $replicated_design->design = $design;
+        $replicated_design->is_custom = true;
+        $replicated_design->save();
+
+        return $replicated_design->service();
+    }
+
+    public function testExpenseWithoutClientDateParse()
+    {
+        $e = \App\Models\Expense::factory()->create([
+            'user_id' => $this->user->id,
+            'company_id' => $this->company->id,
+            'client_id' => null,
+            'date' => '2024-01-15',
+            'payment_date' => '2024-01-20',
+        ]);
+
+        $this->assertNull($e->client);
+
+        $ts = new TemplateService();
+        $result = $ts->processExpenses([$e]);
+
+        $this->assertNotEmpty($result[0]['date']);
+        $this->assertNotEmpty($result[0]['payment_date']);
+        $this->assertSame($this->translateDate($e->date, $this->company->date_format(), $this->company->locale()), $result[0]['date']);
+        $this->assertSame($this->translateDate($e->payment_date, $this->company->date_format(), $this->company->locale()), $result[0]['payment_date']);
+    }
+
+    public function testExpenseWithClientDateParse()
+    {
+        $e = \App\Models\Expense::factory()->create([
+            'user_id' => $this->user->id,
+            'company_id' => $this->company->id,
+            'client_id' => $this->client->id,
+            'date' => '2024-01-15',
+            'payment_date' => '2024-01-20',
+        ]);
+
+        $ts = new TemplateService();
+        $result = $ts->processExpenses([$e]);
+
+        $this->assertSame($this->translateDate($e->date, $this->client->date_format(), $this->client->locale()), $result[0]['date']);
+        $this->assertSame($this->translateDate($e->payment_date, $this->client->date_format(), $this->client->locale()), $result[0]['payment_date']);
+    }
+
+    public function testInvoiceTagsAreExposed()
+    {
+        $tag = \App\Models\Tag::factory()->create([
+            'company_id' => $this->company->id,
+            'user_id' => $this->user->id,
+            'entity_type' => Invoice::class,
+            'name' => 'priority',
+        ]);
+
+        $this->invoice->tags()->attach($tag->id);
+
+        $ts = new TemplateService();
+        $ts->setCompany($this->company);
+        $result = $ts->processInvoices([$this->invoice->fresh()]);
+
+        $this->assertIsArray($result[0]['tags']);
+        $this->assertSame(['priority'], $result[0]['tags']);
+    }
+
+    public function testInvoiceWithoutTagsReturnsEmptyArray()
+    {
+        $ts = new TemplateService();
+        $ts->setCompany($this->company);
+        $result = $ts->processInvoices([$this->invoice->fresh()]);
+
+        $this->assertIsArray($result[0]['tags']);
+        $this->assertSame([], $result[0]['tags']);
+    }
+
+
+
     public function testQuoteDataParse()
     {
         $data = [];
-        
+
         $p = \App\Models\Quote::factory()->create([
             'user_id' => $this->user->id,
             'company_id' => $this->company->id,
@@ -243,7 +548,7 @@ class TemplateTest extends TestCase
     public function testProjectDataParse()
     {
         $data = [];
-        
+
         $p = Project::factory()->create([
             'user_id' => $this->user->id,
             'company_id' => $this->company->id,
@@ -258,6 +563,117 @@ class TemplateTest extends TestCase
         $this->assertNotNull($ts);
         $this->assertIsArray($ts->getData());
 
+    }
+
+    public function testProjectTemplateExposesQuotes()
+    {
+        $project = Project::factory()->create([
+            'user_id' => $this->user->id,
+            'company_id' => $this->company->id,
+            'client_id' => $this->client->id,
+        ]);
+
+        $quote = Quote::factory()->create([
+            'user_id' => $this->user->id,
+            'company_id' => $this->company->id,
+            'client_id' => $this->client->id,
+            'project_id' => $project->id,
+            'number' => 'Q-PROJECT-1',
+            'po_number' => 'PO-99',
+            'public_notes' => 'Quote public notes',
+            'amount' => 150.50,
+            'balance' => 150.50,
+        ]);
+
+        $ts = new TemplateService();
+        $ts->setCompany($this->company);
+        $result = $ts->processProjects([$project->fresh()]);
+
+        $this->assertArrayHasKey('quotes', $result[0]);
+        $this->assertCount(1, $result[0]['quotes']);
+        $this->assertSame('Q-PROJECT-1', $result[0]['quotes'][0]['number']);
+        $this->assertSame('PO-99', $result[0]['quotes'][0]['po_number']);
+        $this->assertSame('Quote public notes', $result[0]['quotes'][0]['public_notes']);
+        $this->assertSame(Quote::stringStatus($quote->status_id), $result[0]['quotes'][0]['status']);
+        $this->assertSame($quote->status_id, $result[0]['quotes'][0]['status_id']);
+        $this->assertEquals(150.50, $result[0]['quotes'][0]['amount_raw']);
+        $this->assertSame(Number::formatMoney(150.50, $this->client), $result[0]['quotes'][0]['amount']);
+        $this->assertSame($project->hashed_id, $result[0]['quotes'][0]['project']['id']);
+        $this->assertSame($project->name, $result[0]['quotes'][0]['project']['name']);
+    }
+
+    public function testProjectQuoteNestingDoesNotCreateLoops()
+    {
+        $project = Project::factory()->create([
+            'user_id' => $this->user->id,
+            'company_id' => $this->company->id,
+            'client_id' => $this->client->id,
+        ]);
+
+        $quote = Quote::factory()->create([
+            'user_id' => $this->user->id,
+            'company_id' => $this->company->id,
+            'client_id' => $this->client->id,
+            'project_id' => $project->id,
+            'number' => 'Q-LOOP-1',
+        ]);
+
+        $invoice = Invoice::factory()->create([
+            'user_id' => $this->user->id,
+            'company_id' => $this->company->id,
+            'client_id' => $this->client->id,
+            'project_id' => $project->id,
+        ]);
+
+        $task = Task::factory()->create([
+            'user_id' => $this->user->id,
+            'company_id' => $this->company->id,
+            'client_id' => $this->client->id,
+            'project_id' => $project->id,
+        ]);
+
+        $expense = Expense::factory()->create([
+            'user_id' => $this->user->id,
+            'company_id' => $this->company->id,
+            'client_id' => $this->client->id,
+            'project_id' => $project->id,
+        ]);
+
+        $ts = new TemplateService();
+        $ts->setCompany($this->company);
+
+        $project_payload = $ts->processProjects([$project->fresh()])[0];
+
+        $this->assertCount(1, $project_payload['quotes']);
+        $this->assertSame('Q-LOOP-1', $project_payload['quotes'][0]['number']);
+        $this->assertShallowNestedProject($project_payload['quotes'][0]['project']);
+
+        $invoice_payload = $ts->processInvoices([$invoice->fresh()])[0];
+        $this->assertSame($project->hashed_id, $invoice_payload['project']['id']);
+        $this->assertShallowNestedProject($invoice_payload['project']);
+
+        $task_payload = $ts->processTasks([$task->fresh()])[0];
+        $this->assertSame($project->hashed_id, $task_payload['project']['id']);
+        $this->assertShallowNestedProject($task_payload['project']);
+
+        $expense_payload = $ts->processExpenses([$expense->fresh()])[0];
+        $this->assertSame($project->hashed_id, $expense_payload['project']['id']);
+        $this->assertShallowNestedProject($expense_payload['project']);
+
+        $quote_payload = $ts->processQuotes([$quote->fresh()])[0];
+        $this->assertSame($project->hashed_id, $quote_payload['project']['id']);
+        $this->assertShallowNestedProject($quote_payload['project']);
+    }
+
+    /**
+     * @param  array<string, mixed>  $project
+     */
+    private function assertShallowNestedProject(array $project): void
+    {
+        $this->assertSame([], $project['quotes']);
+        $this->assertSame([], $project['invoices']);
+        $this->assertSame([], $project['tasks']);
+        $this->assertSame([], $project['expenses']);
     }
 
     public function testNegativeDivAttribute()
@@ -298,7 +714,7 @@ class TemplateTest extends TestCase
         $tm->init();
 
         $variables = $tm->variables[0];
-        
+
         $ts = new TemplateService();
         $x = $ts->setTemplate($partials)
             ->setCompany($this->company)
@@ -327,7 +743,7 @@ class TemplateTest extends TestCase
         $invoices = Invoice::orderBy('id', 'desc')->where('client_id', $this->client->id)->take(10)->get()->map(function ($c) {
             return $c->service()->markSent()->applyNumber()->save();
         })->map(function ($i) {
-            return ['invoice_id' => $i->hashed_id, 'amount' => rand(0, $i->balance)];
+            return ['invoice_id' => $i->hashed_id, 'amount' => rand(1, $i->balance)];
         })->toArray();
 
         Credit::factory()->count(2)->create([
@@ -342,7 +758,7 @@ class TemplateTest extends TestCase
         $credits = Credit::orderBy('id', 'desc')->where('client_id', $this->client->id)->take(2)->get()->map(function ($c) {
             return $c->service()->markSent()->applyNumber()->save();
         })->map(function ($i) {
-            return ['credit_id' => $i->hashed_id, 'amount' => rand(0, $i->balance)];
+            return ['credit_id' => $i->hashed_id, 'amount' => rand(1, $i->balance)];
         })->toArray();
 
         $data = [
@@ -380,7 +796,7 @@ class TemplateTest extends TestCase
         $this->assertIsArray($data);
 
         $start = microtime(true);
-        
+
         \DB::enableQueryLog();
 
         $invoices = Invoice::with('client', 'payments.client', 'payments.paymentables', 'payments.credits', 'credits.client')
@@ -461,7 +877,7 @@ class TemplateTest extends TestCase
     {
 
         $data = [];
-                        
+
         $credits = $payment->credits->map(function ($credit) use ($payment) {
             return [
                 'credit' => $credit->number,
@@ -524,7 +940,7 @@ class TemplateTest extends TestCase
             ],
             'paymentables' => $pivot,
         ];
-                    
+
         return $data;
 
 
@@ -569,7 +985,7 @@ class TemplateTest extends TestCase
                 shuffle($rand);
                 $p->type_id = $rand[0];
                 $p->save();
-                    
+
             });
         });
 
@@ -582,13 +998,13 @@ class TemplateTest extends TestCase
         $design->body .= $this->payments_body;
         $replicated_design->design = $design;
         $replicated_design->is_custom = true;
-        $replicated_design->is_template =true;
+        $replicated_design->is_template = true;
         $replicated_design->entities = 'client';
         $replicated_design->save();
 
         $data['invoices'] = $invoices;
         $ts = $replicated_design->service()->build($data);
-        
+
         $this->assertNotNull($ts->getHtml());
 
     }
@@ -620,7 +1036,7 @@ class TemplateTest extends TestCase
         $data['invoices'] = collect([$this->invoice, $i2]);
 
         $ts = $replicated_design->service()->build($data);
-        
+
         // nlog("results = ");
         // nlog($ts->getHtml());
         $this->assertNotNull($ts->getHtml());
@@ -653,7 +1069,7 @@ class TemplateTest extends TestCase
         $data['invoices'] = collect([$this->invoice, $i2]);
 
         $ts = $replicated_design->service()->build($data);
-        
+
         // nlog("results = ");
         // nlog($ts->getHtml());
         $this->assertNotNull($ts->getHtml());
@@ -675,7 +1091,7 @@ class TemplateTest extends TestCase
         $data['invoices'] = collect([$this->invoice]);
 
         $ts = $replicated_design->service()->build($data);
-        
+
         // nlog("results = ");
         // nlog($ts->getHtml());
         $this->assertNotNull($ts->getHtml());
@@ -734,7 +1150,7 @@ class TemplateTest extends TestCase
 
         $this->assertNotNull($pdf);
 
-        nlog("Twig + PDF Gen Time: " . $end-$start);
+        // nlog("Twig + PDF Gen Time: " . $end-$start);
 
     }
 
@@ -748,83 +1164,7 @@ class TemplateTest extends TestCase
 
         $this->assertNotNull($pdf);
 
-        nlog("Plain PDF Gen Time: " . $end-$start);
-    }
-
-    public function testTemplateGeneration()
-    {
-        $entity_obj = $this->invoice;
-        
-        $design = new Design();
-        $design->design = json_decode(json_encode($this->invoice->company->settings->pdf_variables), true);
-        $design->name = 'test';
-        $design->is_active = true;
-        $design->is_template = true;
-        $design->is_custom = true;
-        $design->user_id = $this->invoice->user_id;
-        $design->company_id = $this->invoice->company_id;
-
-        $design_object = new \stdClass;
-        $design_object->includes = '';
-        $design_object->header = '';
-        $design_object->body = $this->body;
-        $design_object->product = '';
-        $design_object->task = '';
-        $design_object->footer = '';
-
-        $design->design = $design_object;
-
-        $design->save();
-
-        $start = microtime(true);
-
-        App::forgetInstance('translator');
-        $t = app('translator');
-        App::setLocale($entity_obj->client->locale());
-        $t->replace(Ninja::transformTranslations($entity_obj->client->getMergedSettings()));
-
-        $html = new HtmlEngine($entity_obj->invitations()->first());
-
-        $options = [
-            'custom_partials' => json_decode(json_encode($design->design), true),
-        ];
-        $template = new PdfMakerDesign(PdfDesignModel::CUSTOM, $options);
-    
-        $variables = $html->generateLabelsAndValues();
-
-        $state = [
-            'template' => $template->elements([
-                'client' => $entity_obj->client,
-                'entity' => $entity_obj,
-                'pdf_variables' => (array) $entity_obj->company->settings->pdf_variables,
-                '$product' => $design->design->product,
-                'variables' => $variables,
-            ]),
-            'variables' => $variables,
-            'options' => [
-                'all_pages_header' => $entity_obj->client->getSetting('all_pages_header'),
-                'all_pages_footer' => $entity_obj->client->getSetting('all_pages_footer'),
-                'client' => $entity_obj->client,
-                'entity' => [$entity_obj],
-                'invoices' => [$entity_obj],
-                'variables' => $variables,
-            ],
-            'process_markdown' => $entity_obj->client->company->markdown_enabled,
-        ];
-
-        $maker = new PdfMaker($state);
-        $maker
-                ->design($template)
-                ->build();
-
-        $html = $maker->getCompiledHTML(true);
-
-        $end = microtime(true);
-
-        $this->assertNotNull($html);
-        $this->assertStringContainsStringIgnoringCase($this->company->settings->name, $html);
- 
-        nlog("Twig Solo Gen Time: ". $end - $start);
+        // nlog("Plain PDF Gen Time: " . $end-$start);
     }
 
 }

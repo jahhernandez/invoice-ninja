@@ -5,7 +5,7 @@
  *
  * @link https://github.com/invoiceninja/invoiceninja source repository
  *
- * @copyright Copyright (c) 2021. Invoice Ninja LLC (https://invoiceninja.com)
+ * @copyright Copyright (c) 2026. Invoice Ninja LLC (https://invoiceninja.com)
  *
  * @license https://www.elastic.co/licensing/elastic-license
  */
@@ -17,7 +17,6 @@ use App\Models\GatewayType;
 
 class SquareCustomerFactory
 {
-
     /*
 {
       "id": "A537H7KAQWSAF8M8EM1Y23E16M",
@@ -83,9 +82,9 @@ class SquareCustomerFactory
         $cards = [];
 
 
-        foreach($customer->getCards() ?? [] as $card){
-            
-            $meta = new \stdClass;
+        foreach ($customer->getCards() ?? [] as $card) {
+
+            $meta = new \stdClass();
             $meta->exp_month = $card->getExpMonth();
             $meta->exp_year = $card->getExpYear();
             $meta->last4 = $card->getLast4();
@@ -101,17 +100,17 @@ class SquareCustomerFactory
         }
 
         $address = $customer->getAddress();
-        
+
         return
             collect([
-                'name' => $customer->getCompanyName() ?? ($customer->getGivenName() ?? '' ." " . $customer->getFamilyName() ?? ''),
+                'name' => $customer->getCompanyName() ?? ($customer->getGivenName() ?? '' . " " . $customer->getFamilyName() ?? ''),
                 'contacts' => [
                     [
                         'first_name' => $customer->getGivenName(),
                         'last_name' => $customer->getFamilyName(),
                         'email' => $customer->getEmailAddress(),
                         'phone' => $customer->getPhoneNumber(),
-                    ]
+                    ],
                 ],
                 'currency_id' => $company->settings->currency_id,
                 'address1' => $address->getAddressLine1(),

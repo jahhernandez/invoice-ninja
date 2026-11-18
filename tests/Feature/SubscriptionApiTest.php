@@ -1,4 +1,5 @@
 <?php
+
 /**
  * Invoice Ninja (https://invoiceninja.com).
  *
@@ -17,6 +18,7 @@ use App\Models\Client;
 use App\Models\Company;
 use App\Models\Invoice;
 use App\Models\Product;
+use App\Models\Tag;
 use Tests\MockAccountData;
 use Illuminate\Support\Str;
 use App\Models\CompanyToken;
@@ -25,23 +27,21 @@ use App\Utils\Traits\MakesHash;
 use App\Models\RecurringInvoice;
 use App\DataMapper\CompanySettings;
 use App\Factory\CompanyUserFactory;
+use App\Repositories\SubscriptionRepository;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\Session;
 use Illuminate\Validation\ValidationException;
 use Illuminate\Foundation\Testing\DatabaseTransactions;
 
 /**
- * @test
- * @covers App\Http\Controllers\SubscriptionController
+ *
+ *  App\Http\Controllers\SubscriptionController
  */
 class SubscriptionApiTest extends TestCase
 {
     use MakesHash;
     use DatabaseTransactions;
     use MockAccountData;
-
-    protected $faker;
-
     protected function setUp(): void
     {
         parent::setUp();
@@ -51,9 +51,6 @@ class SubscriptionApiTest extends TestCase
         $this->withoutExceptionHandling();
 
         Session::start();
-
-        $this->faker = \Faker\Factory::create();
-
         Model::reguard();
     }
 
@@ -96,7 +93,7 @@ class SubscriptionApiTest extends TestCase
             'company_id' => $c2->id,
             'user_id' => $this->user->id,
         ]);
-        
+
         $i = Invoice::factory()->create([
             'company_id' => $c2->id,
             'user_id' => $this->user->id,
@@ -161,11 +158,10 @@ class SubscriptionApiTest extends TestCase
         $this->assertEquals('Australia/Sydney', $timezone_now->timezoneName);
 
         $this->travelTo($timezone_now->copy()->startOfDay()->subHour());
-        
-        $i = false;
 
+        $i = false;
         //Capture companies within the window of 00:00 and 00:30
-        if($timezone_now->gte($timezone_now->copy()->startOfDay()) && $timezone_now->lt($timezone_now->copy()->startOfDay()->addMinutes(30))) {
+        if ($timezone_now->gte($timezone_now->copy()->startOfDay()) && $timezone_now->lt($timezone_now->copy()->startOfDay()->addMinutes(30))) {
 
             $i = Invoice::query()
                     ->where('company_id', $company->id)
@@ -178,13 +174,17 @@ class SubscriptionApiTest extends TestCase
                     ->whereDate('due_date', '<=', now()->setTimezone($company->timezone()->name)->addDay()->startOfDay())
                     ->get();
 
+            // nlog($i->count());
+            // nlog($i->toArray());
+
+            $this->assertCount(0, $i);
         }
-        
-        $this->assertFalse($i);
+        else
+            $this->assertFalse($i);
 
         $this->travelTo($timezone_now->copy()->startOfDay());
-        
-        if(now()->gte($timezone_now->copy()->startOfDay()) && now()->lt($timezone_now->copy()->startOfDay()->addMinutes(30))) {
+
+        if (now()->gte($timezone_now->copy()->startOfDay()) && now()->lt($timezone_now->copy()->startOfDay()->addMinutes(30))) {
 
             $i = Invoice::query()
                     ->where('company_id', $company->id)
@@ -204,7 +204,7 @@ class SubscriptionApiTest extends TestCase
 
         $this->travelTo($timezone_now->copy()->startOfDay()->addHours(2));
 
-        if($timezone_now->gte($timezone_now->copy()->startOfDay()) && $timezone_now->lt($timezone_now->copy()->startOfDay()->addMinutes(30))) {
+        if ($timezone_now->gte($timezone_now->copy()->startOfDay()) && $timezone_now->lt($timezone_now->copy()->startOfDay()->addMinutes(30))) {
 
             $i = Invoice::query()
                     ->where('company_id', $company->id)
@@ -217,9 +217,9 @@ class SubscriptionApiTest extends TestCase
                     ->whereDate('due_date', '<=', now()->setTimezone($company->timezone()->name)->addDay()->startOfDay())
                     ->get();
 
-        }
+                     $this->assertCount(0, $i);
 
-        $this->assertFalse($i);
+        }
 
         $count = Invoice::whereNotNull('subscription_id')->whereIn('company_id', [$c2->id, $c->id])->count();
 
@@ -239,7 +239,7 @@ class SubscriptionApiTest extends TestCase
         $i = false;
 
         //Capture companies within the window of 00:00 and 00:30
-        if($timezone_now->gte($timezone_now->copy()->startOfDay()) && $timezone_now->lt($timezone_now->copy()->startOfDay()->addMinutes(30))) {
+        if ($timezone_now->gte($timezone_now->copy()->startOfDay()) && $timezone_now->lt($timezone_now->copy()->startOfDay()->addMinutes(30))) {
 
             $i = Invoice::query()
                     ->where('company_id', $company->id)
@@ -258,7 +258,7 @@ class SubscriptionApiTest extends TestCase
 
         $this->travelTo($timezone_now->copy()->startOfDay());
 
-        if(now()->gte($timezone_now->copy()->startOfDay()) && now()->lt($timezone_now->copy()->startOfDay()->addMinutes(30))) {
+        if (now()->gte($timezone_now->copy()->startOfDay()) && now()->lt($timezone_now->copy()->startOfDay()->addMinutes(30))) {
 
             $i = Invoice::query()
                     ->where('company_id', $company->id)
@@ -278,7 +278,7 @@ class SubscriptionApiTest extends TestCase
 
         $this->travelTo($timezone_now->copy()->startOfDay()->addHours(2));
 
-        if($timezone_now->gte($timezone_now->copy()->startOfDay()) && $timezone_now->lt($timezone_now->copy()->startOfDay()->addMinutes(30))) {
+        if ($timezone_now->gte($timezone_now->copy()->startOfDay()) && $timezone_now->lt($timezone_now->copy()->startOfDay()->addMinutes(30))) {
 
             $i = Invoice::query()
                     ->where('company_id', $company->id)
@@ -308,12 +308,12 @@ class SubscriptionApiTest extends TestCase
             'client_id' => $this->client->id,
         ]);
 
-        
+
         $s = Subscription::factory()
         ->create([
             'company_id' => $this->company->id,
             'user_id' => $this->user->id,
-            
+
         ]);
 
         $data = [
@@ -346,12 +346,12 @@ class SubscriptionApiTest extends TestCase
             'client_id' => $this->client->id,
         ]);
 
-        
+
         $s = Subscription::factory()
         ->create([
             'company_id' => $this->company->id,
             'user_id' => $this->user->id,
-            
+
         ]);
 
         $data = [
@@ -374,7 +374,7 @@ class SubscriptionApiTest extends TestCase
         $this->assertEquals($s->id, $i->subscription_id);
 
     }
-    
+
     public function testSubscriptionFilter()
     {
         $response = $this->withHeaders([
@@ -407,13 +407,39 @@ class SubscriptionApiTest extends TestCase
         $response->assertStatus(200);
     }
 
+    public function testGeneratedSubscriptionLineItemsSnapshotProductTags(): void
+    {
+        $product = Product::factory()->create([
+            'company_id' => $this->company->id,
+            'user_id' => $this->user->id,
+        ]);
+        $tags = collect(['Retail', 'Priority Customer'])->map(fn (string $name): Tag => Tag::factory()->create([
+            'company_id' => $this->company->id,
+            'user_id' => $this->user->id,
+            'entity_type' => Product::class,
+            'name' => $name,
+        ]));
+        $product->syncTags($tags->pluck('id')->all());
+
+        $subscription = Subscription::factory()->create([
+            'product_ids' => (string) $product->hashed_id,
+            'recurring_product_ids' => '',
+            'company_id' => $this->company->id,
+            'user_id' => $this->user->id,
+        ]);
+
+        $line_items = (new SubscriptionRepository())->generateLineItems($subscription);
+
+        $this->assertSame('Retail,Priority Customer', $line_items[0]['tags']);
+    }
+
     public function testSubscriptionsPost()
     {
         $product = Product::factory()->create([
             'company_id' => $this->company->id,
             'user_id' => $this->user->id,
         ]);
-            
+
 
         $response = $this->withHeaders([
             'X-API-SECRET' => config('ninja.api_secret'),

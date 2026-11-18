@@ -5,7 +5,7 @@
  *
  * @link https://github.com/invoiceninja/invoiceninja source repository
  *
- * @copyright Copyright (c) 2024. Invoice Ninja LLC (https://invoiceninja.com)
+ * @copyright Copyright (c) 2026. Invoice Ninja LLC (https://invoiceninja.com)
  *
  * @license https://www.elastic.co/licensing/elastic-license
  */
@@ -18,12 +18,13 @@ use App\Models\Invoice;
 use App\Models\Payment;
 use App\Models\PaymentType;
 use App\Models\SystemLog;
+use App\PaymentDrivers\Common\LivewireMethodInterface;
 use App\PaymentDrivers\PaytracePaymentDriver;
 use App\Utils\Traits\MakesHash;
 use Illuminate\Http\Request;
 use Illuminate\Support\Str;
 
-class CreditCard
+class CreditCard implements LivewireMethodInterface
 {
     use MakesHash;
 
@@ -36,8 +37,7 @@ class CreditCard
 
     public function authorizeView($data)
     {
-        $data['client_key'] = $this->paytrace->getAuthToken();
-        $data['gateway'] = $this->paytrace;
+        $data = $this->paymentData($data);
 
         return render('gateways.paytrace.authorize', $data);
     }
@@ -68,7 +68,7 @@ class CreditCard
 
         if (! $response->success) {
             $error = 'Error creating customer in gateway';
-            $error_code = isset($response->response_code) ? $response->response_code : 'PT_ERR';
+            $error_code = $response->response_code ?? 'PT_ERR';
 
             if (isset($response->errors)) {
                 foreach ($response->errors as $err) {
@@ -126,7 +126,7 @@ class CreditCard
             'city' => $this->paytrace->client->city,
             'state' => $this->paytrace->client->state,
             'zip' => $this->paytrace->client->postal_code,
-            'country' => $this->paytrace->client->country->iso_3166_2
+            'country' => $this->paytrace->client->country->iso_3166_2,
         ];
 
         return $data;
@@ -145,7 +145,10 @@ class CreditCard
         $response_array = $request->all();
 
         if ($request->token) {
-            $token = ClientGatewayToken::find($this->decodePrimaryKey($request->token));
+            $token = ClientGatewayToken::query()
+                ->where('id', $this->decodePrimaryKey($request->token))
+                ->where('client_id', $this->paytrace->client->id)
+                ->firstOrFail();
 
             return $this->processTokenPayment($token->token, $request);
         }
@@ -162,7 +165,7 @@ class CreditCard
             'enc_key' => $response_array['enc_key'],
             'integrator_id' =>  $this->paytrace->company_gateway->getConfigField('integratorId'),
             'billing_address' => $this->buildBillingAddress(),
-            'amount' => $request->input('amount_with_fee'),
+            'amount' => array_sum(array_column($this->paytrace->payment_hash->invoices(), 'amount')) + $this->paytrace->payment_hash->fee_total,
             'invoice_id' => $this->harvestInvoiceId(),
         ];
 
@@ -180,14 +183,14 @@ class CreditCard
         $data = [
             'customer_id' => $token,
             'integrator_id' =>  $this->paytrace->company_gateway->getConfigField('integratorId'),
-            'amount' => $request->input('amount_with_fee'),
+            'amount' => array_sum(array_column($this->paytrace->payment_hash->invoices(), 'amount')) + $this->paytrace->payment_hash->fee_total,
             'invoice_id' => $this->harvestInvoiceId(),
         ];
 
         $response = $this->paytrace->gatewayRequest('/v1/transactions/sale/by_customer', $data);
 
         if ($response->success ?? false) {
-            $this->paytrace->logSuccessfulGatewayResponse(['response' => $response, 'data' => $this->paytrace->payment_hash], SystemLog::TYPE_PAYTRACE);
+            $this->paytrace->logSuccessfulGatewayResponse(['response' => $response, 'data' => $this->paytrace->payment_hash->data], SystemLog::TYPE_PAYTRACE);
 
             return $this->processSuccessfulPayment($response);
         }
@@ -201,10 +204,10 @@ class CreditCard
         $invoice = Invoice::withTrashed()->find($this->decodePrimaryKey($_invoice->invoice_id));
 
         if ($invoice) {
-            return ctrans('texts.invoice_number').'# '.$invoice->number;
+            return ctrans('texts.invoice_number') . '# ' . $invoice->number;
         }
 
-        return ctrans('texts.invoice_number').'####';
+        return ctrans('texts.invoice_number') . '####';
     }
 
     private function processSuccessfulPayment($response)
@@ -239,5 +242,24 @@ class CreditCard
         ];
 
         return $this->paytrace->processUnsuccessfulTransaction($data);
+    }
+
+    /**
+     * @inheritDoc
+     */
+    public function livewirePaymentView(array $data): string
+    {
+        return 'gateways.paytrace.pay_livewire';
+    }
+
+    /**
+     * @inheritDoc
+     */
+    public function paymentData(array $data): array
+    {
+        $data['client_key'] = $this->paytrace->getAuthToken();
+        $data['gateway'] = $this->paytrace;
+
+        return $data;
     }
 }

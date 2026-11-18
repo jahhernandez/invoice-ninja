@@ -31,7 +31,7 @@ return [
     ],
 
     'brevo' => [
-        'key' => env('BREVO_SECRET', ''),
+        'secret' => env('BREVO_SECRET', ''),
     ],
 
     'postmark' => [
@@ -39,29 +39,66 @@ return [
     ],
 
     'postmark-outlook' => [
-        'token' => env('POSTMARK_OUTLOOK_SECRET',''),
+        'token' => env('POSTMARK_OUTLOOK_SECRET', ''),
         'from' => [
             'address' => env('POSTMARK_OUTLOOK_FROM_ADDRESS', '')
         ],
     ],
-    
+
+    'postmark-broadcast' => [
+        'token' => env('POSTMARK_BROADCAST_SECRET', ''),
+        'from' => [
+            'address' => env('POSTMARK_BROADCAST_FROM_ADDRESS', 'community@invoiceninja.com')
+        ],
+    ],
+
     'microsoft' => [
-        'client_id' => env('MICROSOFT_CLIENT_ID'),
+        'client_id' => env('MICROSOFT_CLIENT_ID',false),
         'client_secret' => env('MICROSOFT_CLIENT_SECRET'),
         'redirect' => env('MICROSOFT_REDIRECT_URI'),
+    ],
+
+    'mindee' => [
+        'api_key' => env('MINDEE_API_KEY'),
+        'daily_limit' => env('MINDEE_DAILY_LIMIT', 100),
+        'monthly_limit' => env('MINDEE_MONTHLY_LIMIT', 250),
+        'account_daily_limit' => env('MINDEE_ACCOUNT_DAILY_LIMIT', 0),
+        'account_monthly_limit' => env('MINDEE_ACCOUNT_MONTHLY_LIMIT', 0),
     ],
 
     'apple' => [
         'client_id' => env('APPLE_CLIENT_ID'),
         'client_secret' => env('APPLE_CLIENT_SECRET'),
         'redirect' => env('APPLE_REDIRECT_URI'),
+        'client_ids' => explode(',', env('APPLE_CLIENT_IDS', '')),
+    ],
+
+    'oidc' => [
+        // URL to the identity provider without `/.well-known/openid-configuration` suffix
+        // https://sso.example.com/application/o/invoiceninja
+        'issuer'     => env('OIDC_ISSUER', substr(env('OIDC_WELL_KNOWN', ''), 0, -1 * strlen('/.well-known/openid-configuration'))),
+        'client_id'      => env('OIDC_CLIENT_ID', ''),
+        'client_secret'  => env('OIDC_CLIENT_SECRET', ''),
+        // Fixed callback URL. Must be registered at the IdP.
+        'redirect'       => rtrim((string) env('APP_URL', ''), '/') . '/auth/oidc',
+        // Space-separated scopes.
+        'scopes'         => env('OIDC_SCOPES', 'openid profile email'),
+        // Human-readable label used on the Blade login page button.
+        'provider_label' => env('OIDC_PROVIDER_LABEL', 'Single Sign-On'),
+        // Redirect automatically to OIDC provider on login page.
+        'auto' => env('OIDC_AUTO', false),
     ],
 
     'ses' => [
-        'key' => env('AWS_ACCESS_KEY_ID'),
-        'secret' => env('AWS_SECRET_ACCESS_KEY'),
+        'key' => env('SES_AWS_ACCESS_KEY_ID'),
+        'secret' => env('SES_AWS_SECRET_ACCESS_KEY'),
         'region' => env('SES_REGION', 'us-east-1'),
+        'topic_arn' => env('SES_TOPIC_ARN', ''),
+        'from' => [
+            'address' => env('SES_FROM_ADDRESS', ''),
+        ],
     ],
+
     'sparkpost' => [
         'secret' => env('SPARKPOST_SECRET'),
     ],
@@ -74,6 +111,7 @@ return [
         'model' => App\Models\User::class,
         'key' => env('STRIPE_KEY'),
         'secret' => env('STRIPE_SECRET'),
+        'run_trial_integration_tests' => env('RUN_STRIPE_TRIAL_INTEGRATION_TESTS', false),
     ],
 
     'github' => [
@@ -117,8 +155,47 @@ return [
             'key' => env('ZIP_TAX_KEY', false),
         ],
     ],
+
     'chorus' => [
         'client_id' => env('CHORUS_CLIENT_ID', false),
         'secret' => env('CHORUS_SECRET', false),
-    ]
+    ],
+    'gocardless' => [
+        'client_id' => env('GOCARDLESS_CLIENT_ID', null),
+        'client_secret' => env('GOCARDLESS_CLIENT_SECRET', null),
+        'debug' => env('APP_DEBUG',false),
+        'redirect_uri' => env('GOCARDLESS_REDIRECT_URI', null),
+        'environment' => env('GOCARDLESS_ENVIRONMENT', 'production'),
+        'webhook_secret' => env('GOCARDLESS_WEBHOOK_SECRET'),
+    ],
+    'quickbooks_webhook' => [
+        'verifier_token' => env('QUICKBOOKS_VERIFIER_TOKEN', false),
+    ],
+
+    'verifactu' => [
+        'sender_nif' => env('VERIFACTU_SENDER_NIF', ''),
+        'certificate' => env('VERIFACTU_CERTIFICATE', ''),
+        'ssl_key' => env('VERIFACTU_SSL_KEY', ''),
+        'sender_name' => env('VERIFACTU_SENDER_NAME', 'CERTIFICADO FISICA PRUEBAS'),
+        'test_mode' => env('VERIFACTU_TEST_MODE', false),
+    ],
+    'quickbooks' => [
+        'client_id' => env('QUICKBOOKS_CLIENT_ID', false),
+        'client_secret' => env('QUICKBOOKS_CLIENT_SECRET', false),
+        'redirect' => env('QUICKBOOKS_REDIRECT_URI'),
+        'test_redirect' => env('QUICKBOOKS_TEST_REDIRECT_URI'),
+        'env' => env('QUICKBOOKS_ENV', 'sandbox'),
+        'debug' => env('APP_DEBUG',false)
+    ],
+    'cloudflare' => [
+        'zone_id' => env('CLOUDFLARE_SAAS_ZONE_ID', false),
+        'api_token' => env('CLOUDFLARE_SAAS_API_TOKEN', false),
+        'email' => env('CLOUDFLARE_SAAS_EMAIL', false),
+    ],
+    'square' => [
+        'redirect_url' => env('SQUARE_REDIRECT_URL'),
+        'application_id' => env('SQUARE_APPLICATION_ID'),
+        'application_secret' => env('SQUARE_APPLICATION_SECRET'),
+        'environment' => env('SQUARE_ENVIRONMENT', 'production'),
+    ],
 ];

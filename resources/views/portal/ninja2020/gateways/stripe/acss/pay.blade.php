@@ -8,7 +8,7 @@
     @else
         <meta name="stripe-publishable-key" content="{{ $gateway->getPublishableKey() }}">
     @endif
-
+    <meta name="instant-payment" content="yes" />
     <meta name="return-url" content="{{ $return_url }}">
     <meta name="amount" content="{{ $stripe_amount }}">
     <meta name="country" content="{{ $country }}">
@@ -34,18 +34,18 @@
         <input type="hidden" name="store_card">
         </form>
 
-        <ul class="list-none hover:list-disc mt-5">
+        <ul class="payment-method-list">
 
             @foreach($tokens as $token)
-                <li class="py-2 hover:text-blue hover:bg-blue-600">
+                <li class="payment-method-item">
 
-                <label class="mr-4">
-                    <input
+                <label class="payment-method-label">
+                <input
                         type="radio"
                         data-token="{{ $token->hashed_id }}"
                         name="payment-type"
                         class="form-radio cursor-pointer toggle-payment-with-token"/>
-                    <span class="ml-1 cursor-pointer">{{ $token->meta?->brand }} (*{{ $token->meta?->last4 }})</span>
+                    <span class="ml-1">{{ $token->meta?->brand }} (*{{ $token->meta?->last4 }})</span>
                 </label>
                 </li>
             @endforeach
@@ -60,5 +60,4 @@
 @push('footer')
     <script src="https://js.stripe.com/v3/"></script>
     @vite('resources/js/clients/payments/stripe-acss.js')
- 
 @endpush

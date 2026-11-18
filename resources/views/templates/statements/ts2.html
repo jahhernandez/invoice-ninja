@@ -93,13 +93,13 @@
             margin-right: 0;
         }
 
-        #entity-container {
+        .entity-container {
             padding-left: 2rem;
             padding-right: 2rem;
             break-inside: avoid-region;
         }
 
-        #entity-container h2 {
+        .entity-container h2 {
             text-align: center;
         }
 
@@ -148,8 +148,8 @@
     </div>
 
     <ninja>
-        {% if invoices|e %}
-        <div id="entity-container">
+        {% if invoices is defined and invoices is not empty %}
+        <div class="entity-container">
             <h2>{{ t('invoices') }}<h2>
                     <table width="100%" cellspacing="0" cellpadding="0" class="">
                         <thead class="">
@@ -189,8 +189,8 @@
     </ninja>
 
     <ninja>
-        {% if invoices|e and show_payments %}
-        <div id="entity-container">
+        {% if invoices is defined and invoices is not empty and show_payments %}
+        <div class="entity-container">
             <h2>{{ t('payments') }}<h2>
                     <table width="100%" cellspacing="0" cellpadding="0" class="">
                         <thead class="">
@@ -270,8 +270,8 @@
     </ninja>
 
     <ninja>
-        {% if credits|e and show_credits %}
-        <div id="entity-container">
+        {% if credits is defined and credits is not empty and show_credits %}
+        <div class="entity-container">
             <h2>{{ t('credits') }}<h2>
                     <table width="100%" cellspacing="0" cellpadding="0" class="">
                         <thead class="">
@@ -299,7 +299,7 @@
 
     <ninja>
         {% if aging and show_aging %}
-        <div id="entity-container" style="break-inside: avoid;">
+        <div class="entity-container" style="break-inside: avoid;">
             <h2>{{ t('aging') }}<h2>
                     <table width="100%" cellspacing="0" cellpadding="0" class="">
                         <thead class="">

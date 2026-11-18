@@ -1,10 +1,11 @@
 <?php
+
 /**
  * Invoice Ninja (https://invoiceninja.com).
  *
  * @link https://github.com/invoiceninja/invoiceninja source repository
  *
- * @copyright Copyright (c) 2024. Invoice Ninja LLC (https://invoiceninja.com)
+ * @copyright Copyright (c) 2026. Invoice Ninja LLC (https://invoiceninja.com)
  *
  * @license https://www.elastic.co/licensing/elastic-license
  */
@@ -19,7 +20,7 @@ use Illuminate\Http\Response;
 use App\Helpers\Encrypt\Secure;
 use App\Jobs\Account\CreateAccount;
 use App\Transformers\AccountTransformer;
-use App\Transformers\CompanyUserTransformer;
+use App\Transformers\AuthenticatedCompanyUserTransformer;
 use Illuminate\Foundation\Bus\DispatchesJobs;
 use App\Http\Requests\Account\CreateAccountRequest;
 use App\Http\Requests\Account\UpdateAccountRequest;
@@ -30,7 +31,7 @@ class AccountController extends BaseController
 
     protected $entity_type = CompanyUser::class;
 
-    protected $entity_transformer = CompanyUserTransformer::class;
+    protected $entity_transformer = AuthenticatedCompanyUserTransformer::class;
 
     public function __construct()
     {
@@ -61,22 +62,22 @@ class AccountController extends BaseController
      * Store a newly created resource in storage.
      *
      * @param CreateAccountRequest $request
-     * @return Response
+     * @return \Illuminate\Http\JsonResponse|\Illuminate\Http\Response
      *
      */
     public function store(CreateAccountRequest $request)
     {
 
-        if($request->has('cf-turnstile-response') && config('ninja.cloudflare.turnstile.secret')) {
+        if ($request->has('cf-turnstile-response') && config('ninja.cloudflare.turnstile.secret')) {
             $r = \Illuminate\Support\Facades\Http::post('https://challenges.cloudflare.com/turnstile/v0/siteverify', [
                 'secret' => config('ninja.cloudflare.turnstile.secret'),
                 'response' => $request->input('cf-turnstile-response'),
                 'remoteip' => $request->getClientIp(),
             ]);
 
-            if($r->successful()) {
+            if ($r->successful()) {
 
-                if($r->json()['success'] === true) {
+                if ($r->json()['success'] === true) {
                     // Captcha passed
                 } else {
                     return response()->json(['message' => 'Captcha Failed'], 400);
@@ -85,9 +86,9 @@ class AccountController extends BaseController
 
         }
 
-        if($request->has('hash') && config('ninja.cloudflare.turnstile.secret')) { //@todo once all platforms are implemented, we disable access to the rest of this route without a success response.
+        if ($request->has('hash') && config('ninja.cloudflare.turnstile.secret')) {
 
-            if(Secure::decrypt($request->input('hash')) !== $request->input('email')) {
+            if (Secure::decrypt($request->input('hash')) !== $request->input('email')) {
                 return response()->json(['message' => 'Invalid Signup Payload'], 400);
             }
 
@@ -115,13 +116,8 @@ class AccountController extends BaseController
 
     public function update(UpdateAccountRequest $request, Account $account)
     {
-        $fi = new \FilesystemIterator(public_path('react'), \FilesystemIterator::SKIP_DOTS);
 
-        if (iterator_count($fi) < 30) {
-            return response()->json(['message' => 'React App Not Installed, Please install the React app before attempting to switch.'], 400);
-        }
-
-        $account->fill($request->all());
+        $account->set_react_as_default_ap = $request->input('set_react_as_default_ap');
         $account->save();
 
         $this->entity_type = Account::class;

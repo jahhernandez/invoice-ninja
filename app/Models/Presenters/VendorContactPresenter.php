@@ -1,10 +1,11 @@
 <?php
+
 /**
  * Invoice Ninja (https://invoiceninja.com).
  *
  * @link https://github.com/invoiceninja/invoiceninja source repository
  *
- * @copyright Copyright (c) 2024. Invoice Ninja LLC (https://invoiceninja.com)
+ * @copyright Copyright (c) 2026. Invoice Ninja LLC (https://invoiceninja.com)
  *
  * @license https://www.elastic.co/licensing/elastic-license
  */
@@ -21,7 +22,7 @@ class VendorContactPresenter extends EntityPresenter
      */
     public function name()
     {
-        $contact_name = $this->entity->first_name.' '.$this->entity->last_name;
+        $contact_name = $this->entity->first_name . ' ' . $this->entity->last_name;
 
         if (strlen($contact_name) > 1) {
             return $contact_name;
@@ -38,5 +39,10 @@ class VendorContactPresenter extends EntityPresenter
     public function last_name()
     {
         return $this->entity->last_name ?: '';
+    }
+
+    public function search_display()
+    {
+        return strlen($this->entity->email ?? '') > 2 ? $this->name() . ' <' . $this->entity->email . '>' : $this->name();
     }
 }

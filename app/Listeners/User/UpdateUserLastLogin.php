@@ -1,10 +1,11 @@
 <?php
+
 /**
  * Invoice Ninja (https://invoiceninja.com).
  *
  * @link https://github.com/invoiceninja/invoiceninja source repository
  *
- * @copyright Copyright (c) 2024. Invoice Ninja LLC (https://invoiceninja.com)
+ * @copyright Copyright (c) 2026. Invoice Ninja LLC (https://invoiceninja.com)
  *
  * @license https://www.elastic.co/licensing/elastic-license
  */
@@ -36,9 +37,7 @@ class UpdateUserLastLogin implements ShouldQueue
      *
      * @return void
      */
-    public function __construct()
-    {
-    }
+    public function __construct() {}
 
     /**
      * Handle the event.
@@ -57,19 +56,25 @@ class UpdateUserLastLogin implements ShouldQueue
 
         $user = $event->user;
         $user->last_login = now();
+        $user->failed_logins = 0;
         $user->save();
 
         $event_vars = $event->event_vars;
         $ip = array_key_exists('ip', $event->event_vars) ? $event->event_vars['ip'] : 'IP address not resolved';
         $key = "user_logged_in_{$user->id}{$event->company->db}";
 
-        if ($user->ip != $ip && is_null(Cache::get($key)) && $user->user_logged_in_notification) {
+        if ($user->ip != $ip && is_null(Cache::get($key)) && $user->user_logged_in_notification && strlen($user->oauth_provider_id ?? '') == 0) {
             $nmo = new NinjaMailerObject();
             $nmo->mailable = new UserLoggedIn($user, $user->account->companies->first(), $ip);
             $nmo->company = $user->account->companies->first();
             $nmo->settings = $user->account->companies->first()->settings;
             $nmo->to_user = $user;
-            NinjaMailerJob::dispatch($nmo, true);
+
+            try {
+                NinjaMailerJob::dispatch($nmo, true);
+            } catch (\Exception $e) {
+                //this will catch for users that don't have their mail server configured correctly.
+            }
 
             $user->ip = $ip;
             $user->save();
@@ -77,7 +82,7 @@ class UpdateUserLastLogin implements ShouldQueue
 
         Cache::put($key, true, 60 * 24);
         $arr = json_encode(['ip' => $ip]);
-        $arr = ctrans('texts.new_login_detected'). " {$ip}";
+        $arr = ctrans('texts.new_login_detected') . " {$ip}";
 
         SystemLogger::dispatch(
             $arr,

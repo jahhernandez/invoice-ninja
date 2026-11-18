@@ -1,10 +1,11 @@
 <?php
+
 /**
  * Invoice Ninja (https://invoiceninja.com).
  *
  * @link https://github.com/invoiceninja/invoiceninja source repository
  *
- * @copyright Copyright (c) 2024. Invoice Ninja LLC (https://invoiceninja.com)
+ * @copyright Copyright (c) 2026. Invoice Ninja LLC (https://invoiceninja.com)
  *
  * @license https://www.elastic.co/licensing/elastic-license
  */
@@ -21,15 +22,15 @@ class ClientDecorator extends Decorator implements DecoratorInterface
     {
         $client = false;
 
-        if($entity instanceof Client) {
+        if ($entity instanceof Client) {
             $client = $entity;
-        } elseif($entity->client) {
+        } elseif ($entity->client) {
             $client = $entity->client;
         }
 
-        if($client && method_exists($this, $key)) {
+        if ($client && method_exists($this, $key)) {
             return $this->{$key}($client);
-        } elseif($client && ($client->{$key} ?? false)) {
+        } elseif ($client && ($client->{$key} ?? false)) {
             return $client->{$key};
         }
 
@@ -83,7 +84,7 @@ class ClientDecorator extends Decorator implements DecoratorInterface
 
     public function payment_terms(Client $client)
     {
-        return $client?->settings?->payment_terms ?? $client->company->settings->payment_terms;
+        return $client->settings->payment_terms ?? $client->company->settings->payment_terms ?? 0;
     }
 
     public function public_notes(Client $client)
@@ -93,7 +94,8 @@ class ClientDecorator extends Decorator implements DecoratorInterface
 
     public function classification(Client $client)
     {
-        ctrans("texts.{$client->classification}") ?? '';
+        $classification = $client->classification ?? 'business';
+        return ctrans("texts.{$classification}");
     }
 
     public function status(Client $client)

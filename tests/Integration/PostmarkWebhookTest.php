@@ -1,4 +1,5 @@
 <?php
+
 /**
  * Invoice Ninja (https://invoiceninja.com).
  *
@@ -17,14 +18,14 @@ use Tests\MockAccountData;
 use Tests\TestCase;
 
 /**
- * @test
+ *
  */
 class PostmarkWebhookTest extends TestCase
 {
     use MockAccountData;
     use DatabaseTransactions;
 
-    protected function setUp() :void
+    protected function setUp(): void
     {
         parent::setUp();
 
@@ -46,7 +47,7 @@ class PostmarkWebhookTest extends TestCase
             'ServerID' => '23',
             'MessageStream' => 'outbound',
             'MessageID' => '00000000-0000-0000-0000-000000000000',
-            'Recipient' => 'john@example.com',
+            'Recipient' => 'john@gmail.com',
             'Tag' => $this->company->company_key,
             'DeliveredAt' => '2021-02-21T16:34:52Z',
             'Details' => 'Test delivery webhook details',
@@ -74,7 +75,7 @@ class PostmarkWebhookTest extends TestCase
             'ServerID' => '23',
             'MessageStream' => 'outbound',
             'MessageID' => '00000000-0000-0000-0000-000000000000',
-            'Recipient' => 'john@example.com',
+            'Recipient' => 'john@gmail.com',
             'Tag' => $this->company->company_key,
             'DeliveredAt' => '2021-02-21T16:34:52Z',
             'Details' => 'Test delivery webhook details',
@@ -94,7 +95,7 @@ class PostmarkWebhookTest extends TestCase
             'ServerID' => '23',
             'MessageStream' => 'outbound',
             'MessageID' => '00000000-0000-0000-0000-000000000001',
-            'Recipient' => 'john@example.com',
+            'Recipient' => 'john@gmail.com',
             'Tag' => $this->company->company_key,
             'DeliveredAt' => '2021-02-21T16:34:52Z',
             'Details' => 'Test delivery webhook details',
@@ -122,7 +123,7 @@ class PostmarkWebhookTest extends TestCase
             'ServerID' => '23',
             'MessageStream' => 'outbound',
             'MessageID' => '00000000-0000-0000-0000-000000000001',
-            'From' => 'john@example.com',
+            'From' => 'john@gmail.com',
             'Tag' => $this->company->company_key,
             'DeliveredAt' => '2021-02-21T16:34:52Z',
             'Details' => 'Test delivery webhook details',

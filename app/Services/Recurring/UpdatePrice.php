@@ -1,10 +1,11 @@
 <?php
+
 /**
  * Invoice Ninja (https://invoiceninja.com).
  *
  * @link https://github.com/invoiceninja/invoiceninja source repository
  *
- * @copyright Copyright (c) 2024. Invoice Ninja LLC (https://invoiceninja.com)
+ * @copyright Copyright (c) 2026. Invoice Ninja LLC (https://invoiceninja.com)
  *
  * @license https://www.elastic.co/licensing/elastic-license
  */
@@ -17,9 +18,7 @@ use App\Services\AbstractService;
 
 class UpdatePrice extends AbstractService
 {
-    public function __construct(public RecurringInvoice $recurring_invoice)
-    {
-    }
+    public function __construct(public RecurringInvoice $recurring_invoice) {}
 
     public function run()
     {
@@ -33,7 +32,7 @@ class UpdatePrice extends AbstractService
             ->where('is_deleted', 0)
             ->first();
 
-            if ($product) {
+            if ($product) { //@phpstan-ignore-line
                 $line_items[$key]->cost = floatval($product->price);
             }
         }

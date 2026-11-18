@@ -1,10 +1,11 @@
 <?php
+
 /**
  * Invoice Ninja (https://invoiceninja.com).
  *
  * @link https://github.com/invoiceninja/invoiceninja source repository
  *
- * @copyright Copyright (c) 2024. Invoice Ninja LLC (https://invoiceninja.com)
+ * @copyright Copyright (c) 2026. Invoice Ninja LLC (https://invoiceninja.com)
  *
  * @license https://www.elastic.co/licensing/elastic-license
  */
@@ -28,7 +29,7 @@ class CreditExport extends BaseExport
 
     private Decorator $decorator;
 
-    public string $date_key = 'created_at';
+    public string $date_key = 'date';
 
     public Writer $csv;
 
@@ -50,8 +51,10 @@ class CreditExport extends BaseExport
             return ['identifier' => $key, 'display_value' => $headerdisplay[$value]];
         })->toArray();
 
-        $report = $query->cursor()
+        $report = $this->streamQuery($query)
                 ->map(function ($credit) {
+
+                    /** @var \App\Models\Credit $credit */
                     $row = $this->buildRow($credit);
                     return $this->processMetaData($row, $credit);
                 })->toArray();
@@ -73,7 +76,7 @@ class CreditExport extends BaseExport
             $clean_row[$key]['value'] = $row[$column_key];
             $clean_row[$key]['identifier'] = $value;
 
-            if(in_array($clean_row[$key]['id'], ['paid_to_date','total_taxes','amount', 'balance', 'partial', 'refunded', 'applied','unit_cost','cost','price'])) {
+            if (in_array($clean_row[$key]['id'], ['paid_to_date','total_taxes','amount', 'balance', 'partial', 'refunded', 'applied','unit_cost','cost','price'])) {
                 $clean_row[$key]['display_value'] = Number::formatMoney($row[$column_key], $resource->client);
             } else {
                 $clean_row[$key]['display_value'] = $row[$column_key];
@@ -84,7 +87,7 @@ class CreditExport extends BaseExport
         return $clean_row;
     }
 
-    private function init(): Builder
+    public function init(): Builder
     {
 
         MultiDB::setDb($this->company->db);
@@ -101,27 +104,35 @@ class CreditExport extends BaseExport
 
         $query = Credit::query()
                         ->withTrashed()
-                        ->with('client')
-                        ->whereHas('client', function ($q){
+                        ->with('client', 'location', 'tags')
+                        ->whereHas('client', function ($q) {
                             $q->where('is_deleted', false);
                         })
                         ->where('company_id', $this->company->id)
                         ->where('is_deleted', $this->input['include_deleted'] ?? false);
 
-        $query = $this->addDateRange($query);
+        $query = $this->addDateRange($query, 'credits');
 
         $clients = &$this->input['client_id'];
 
-        if($clients) {
+        if ($clients) {
             $query = $this->addClientFilter($query, $clients);
         }
 
-        if($this->input['status'] ?? false) {
+        if ($this->input['status'] ?? false) {
             $query = $this->addCreditStatusFilter($query, $this->input['status']);
         }
 
-        if($this->input['document_email_attachment'] ?? false) {
+        $query = $this->addTagFilter($query);
+
+        $query = $this->filterByUserPermissions($query);
+
+        if ($this->input['document_email_attachment'] ?? false) {
             $this->queueDocuments($query);
+        }
+
+        if ($this->input['pdf_email_attachment'] ?? false) {
+            $this->queuePdfs($query);
         }
 
         return $query;
@@ -131,21 +142,22 @@ class CreditExport extends BaseExport
     {
         $query = $this->init();
         //load the CSV document from a string
-        $this->csv = Writer::createFromString();
+        $this->csv = Writer::fromString();
         \League\Csv\CharsetConverter::addTo($this->csv, 'UTF-8', 'UTF-8');
 
         //insert the header
         $this->csv->insertOne($this->buildHeader());
 
-        $query->cursor()
+        $this->streamQuery($query)
             ->each(function ($credit) {
+                /** @var \App\Models\Credit $credit */
                 $this->csv->insertOne($this->buildRow($credit));
             });
 
         return $this->csv->toString();
     }
 
-    private function buildRow(Credit $credit): array
+    protected function buildRow(Credit $credit): array
     {
         $transformed_credit = $this->credit_transformer->transform($credit);
 
@@ -153,27 +165,39 @@ class CreditExport extends BaseExport
 
         foreach (array_values($this->input['report_keys']) as $key) {
 
+            if (str_ends_with($key, '.tags')) {
+                $entity[$key] = $this->decorator->transform($key, $credit);
+                continue;
+            }
+
             $keyval = $key;
             $credit_key = str_replace("credit.", "", $key);
-            $searched_credit_key = array_search(str_replace("credit.", "", $key), $this->credit_report_keys) ?? $key;
+
+            $searched_credit_key = array_search(str_replace("credit.", "", $key), $this->credit_report_keys);
+
+            if($searched_credit_key === false){
+                 $searched_credit_key = $key;
+            }
 
             if (isset($transformed_credit[$credit_key])) {
                 $entity[$keyval] = $transformed_credit[$credit_key];
             } elseif (isset($transformed_credit[$keyval])) {
                 $entity[$keyval] = $transformed_credit[$keyval];
-            } elseif(isset($transformed_credit[$searched_credit_key])) {
+            } elseif (isset($transformed_credit[$searched_credit_key])) {
                 $entity[$keyval] = $transformed_credit[$searched_credit_key];
             } else {
-
-                // nlog($key);
                 $entity[$key] = $this->decorator->transform($key, $credit);
-                // $entity[$key] = '';
-                // $entity[$keyval] = $this->resolveKey($keyval, $credit, $this->credit_transformer);
             }
 
         }
 
-        return $this->decorateAdvancedFields($credit, $entity);
+        $entity = $this->decorateAdvancedFields($credit, $entity);
+        return $this->convertFloats($entity, ['credit' => $credit->id]);
+    }
+
+    protected function groupingIdentityForColumn(string $column): ?string
+    {
+        return str_starts_with($column, 'credit.') ? 'credit' : null;
     }
 
     public function addCreditStatusFilter($query, $status): Builder
@@ -241,9 +265,12 @@ class CreditExport extends BaseExport
         }
 
         if (in_array('credit.user_id', $this->input['report_keys'])) {
-            $entity['credit.user_id'] = $credit->user ? $credit->user->present()->name() : '';
+            $entity['credit.user_id'] = $credit->user ? $credit->user->present()->name() : ''; //@phpstan-ignore-line
         }
 
+        if (in_array('credit.subtotal', $this->input['report_keys'])) {
+            $entity['credit.subtotal'] = $credit->calc()->getSubTotal();
+        }
         return $entity;
     }
 }

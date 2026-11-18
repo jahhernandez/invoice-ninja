@@ -6,9 +6,9 @@
 
         <div class="m-auto md:w-1/3 lg:w-1/5">
             
-        @if($account && !$account->isPaid())
+        @if(false)
         <div>
-            <img src="{{ asset('images/invoiceninja-black-logo-2.png') }}" class="border-b border-gray-100 h-18 pb-4" alt="Invoice Ninja logo">
+            <img src="{{ asset('images/blank.png') }}" class="border-b border-gray-100 h-18 pb-4" alt="Invoice Ninja logo">
         </div>
         @endif
 

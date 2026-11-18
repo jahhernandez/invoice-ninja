@@ -4,8 +4,7 @@
     }
     $primary_color = isset($settings) ? $settings->primary_color : '#4caf50';
 @endphp
-
-    <!DOCTYPE HTML PUBLIC "-//W3C//DTD XHTML 1.0 Transitional //EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD XHTML 1.0 Transitional //EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
 <html xmlns="http://www.w3.org/1999/xhtml" xmlns:v="urn:schemas-microsoft-com:vml" xmlns:o="urn:schemas-microsoft-com:office:office">
 <head>
     <!--[if gte mso 9]>
@@ -19,10 +18,15 @@
     <meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="x-apple-disable-message-reformatting">
+    <meta name="color-scheme" content="{{ $design == 'dark' ? 'light dark' : 'light only' }}">
+    <meta name="supported-color-schemes" content="{{ $design == 'dark' ? 'light dark' : 'light only' }}">
     <!--[if !mso]><!--><meta http-equiv="X-UA-Compatible" content="IE=edge"><!--<![endif]-->
     <title></title>
 
     <style type="text/css">
+        :root {
+            color-scheme: {{ $design == 'dark' ? 'light dark' : 'light' }};
+        }
         a {
             color: #0000ee;
             text-decoration: underline;
@@ -193,18 +197,16 @@
                                                     </tr>
                                                     </tbody>
                                                 </table>
-
                                             </td>
                                         </tr>
                                         </tbody>
                                     </table>
-
                                     <table style="font-family:arial,helvetica,sans-serif;" role="presentation" cellpadding="0" cellspacing="0" width="100%" border="0">
                                         <tbody>
                                         <tr>
                                             <td style="overflow-wrap:break-word;word-break:break-word;padding:10px 10px 15px;font-family:arial,helvetica,sans-serif;" align="left">
 
-                                                <table width="100%" cellpadding="0" cellspacing="0" border="0">
+                                                <table width="100%" cellpadding="0" cellspacing="0" border="0" role="presentation">
                                                     <tr>
                                                         <td style="padding-right: 0px;padding-left: 0px;" align="center">
                                                             {{ $header }}
@@ -216,8 +218,7 @@
                                         </tr>
                                         </tbody>
                                     </table>
-
-                                    <!--[if (!mso)&(!IE)]><!--></div><!--<![endif]-->
+                            <!--[if (!mso)&(!IE)]><!--></div><!--<![endif]-->
                             </div>
                         </div>
                         <!--[if (mso)|(IE)]></td><![endif]-->
@@ -225,8 +226,6 @@
                     </div>
                 </div>
             </div>
-
-
 
             <div class="u-row-container" style="padding: 0px;background-color: transparent">
                 <div class="u-row" style="Margin: 0 auto;min-width: 320px;max-width: 500px;overflow-wrap: break-word;word-wrap: break-word;word-break: break-word;background-color: transparent;">
@@ -286,7 +285,7 @@
                                                             <tr>
                                                                 <td style="padding-right: 0px;padding-left: 0px;" align="center">
 
-                                                                    <img align="center" border="0" src="{{ asset('images/invoiceninja-black-logo-2.png') }}" alt="Image" title="Image" style="outline: none;text-decoration: none;-ms-interpolation-mode: bicubic;clear: both;display: inline-block !important;border: none;height: auto;float: none;width: 34%;max-width: 163.2px; {{ $design == 'dark' ? 'filter: invert(100%);' : '' }}" width="163.2"/>
+                                                                    <img align="center" border="0" src="{{ asset('images/blank.png') }}" alt="Image" title="Image" style="outline: none;text-decoration: none;-ms-interpolation-mode: bicubic;clear: both;display: inline-block !important;border: none;height: auto;float: none;width: 34%;max-width: 163.2px; {{ $design == 'dark' ? 'filter: invert(100%);' : '' }}" width="163.2"/>
 
                                                                 </td>
                                                             </tr>
@@ -298,7 +297,6 @@
                                             </table>
                                         @endif
                                     @endisset
-
                                     <!--[if (!mso)&(!IE)]><!--></div><!--<![endif]-->
                             </div>
                         </div>
@@ -307,8 +305,6 @@
                     </div>
                 </div>
             </div>
-
-
             <!--[if (mso)|(IE)]></td></tr></table><![endif]-->
         </td>
     </tr>

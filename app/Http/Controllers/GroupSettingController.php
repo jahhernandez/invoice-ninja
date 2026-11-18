@@ -1,10 +1,11 @@
 <?php
+
 /**
  * Invoice Ninja (https://invoiceninja.com).
  *
  * @link https://github.com/invoiceninja/invoiceninja source repository
  *
- * @copyright Copyright (c) 2024. Invoice Ninja LLC (https://invoiceninja.com)
+ * @copyright Copyright (c) 2026. Invoice Ninja LLC (https://invoiceninja.com)
  *
  * @license https://www.elastic.co/licensing/elastic-license
  */
@@ -13,6 +14,7 @@ namespace App\Http\Controllers;
 
 use App\Factory\GroupSettingFactory;
 use App\Filters\GroupSettingFilters;
+use App\Http\Requests\GroupSetting\BulkGroupSettingRequest;
 use App\Http\Requests\GroupSetting\CreateGroupSettingRequest;
 use App\Http\Requests\GroupSetting\DestroyGroupSettingRequest;
 use App\Http\Requests\GroupSetting\EditGroupSettingRequest;
@@ -55,7 +57,7 @@ class GroupSettingController extends BaseController
      * Show the form for creating a new resource.
      *
      * @param GroupSettingFilters $filters
-     * @return Response
+     * @return Response| \Illuminate\Http\JsonResponse
      *
     */
     public function index(GroupSettingFilters $filters)
@@ -69,7 +71,7 @@ class GroupSettingController extends BaseController
      * Show the form for creating a new resource.
      *
      * @param CreateGroupSettingRequest $request
-     * @return Response
+     * @return Response| \Illuminate\Http\JsonResponse
      *
     */
     public function create(CreateGroupSettingRequest $request)
@@ -86,7 +88,7 @@ class GroupSettingController extends BaseController
      * Store a newly created resource in storage.
      *
      * @param StoreGroupSettingRequest $request
-     * @return Response
+     * @return Response| \Illuminate\Http\JsonResponse
      *
      */
     public function store(StoreGroupSettingRequest $request)
@@ -108,7 +110,7 @@ class GroupSettingController extends BaseController
      *
      * @param ShowGroupSettingRequest $request
      * @param GroupSetting $group_setting
-     * @return Response
+     * @return Response| \Illuminate\Http\JsonResponse
      *
      */
     public function show(ShowGroupSettingRequest $request, GroupSetting $group_setting)
@@ -121,7 +123,7 @@ class GroupSettingController extends BaseController
      *
      * @param EditGroupSettingRequest $request
      * @param GroupSetting $group_setting
-     * @return Response
+     * @return Response| \Illuminate\Http\JsonResponse
      *
      */
     public function edit(EditGroupSettingRequest $request, GroupSetting $group_setting)
@@ -134,20 +136,20 @@ class GroupSettingController extends BaseController
      *
      * @param UpdateGroupSettingRequest $request
      * @param GroupSetting $group_setting
-     * @return Response
+     * @return Response| \Illuminate\Http\JsonResponse
      *
      */
     public function update(UpdateGroupSettingRequest $request, GroupSetting $group_setting)
     {
         /** Need this to prevent settings from being overwritten */
-        if(!$request->file('company_logo')) {
+        if (!$request->file('company_logo')) {
             $group_setting = $this->group_setting_repo->save($request->all(), $group_setting);
         }
 
         $this->uploadLogo($request->file('company_logo'), $group_setting->company, $group_setting);
 
         if ($request->has('documents')) {
-            $this->saveDocuments($request->input('documents'), $group_setting, $request->input('is_public', true));
+            $this->saveDocuments($request->input('documents'), $group_setting, $request->has('is_public') ? $request->boolean('is_public') : null);
         }
 
         return $this->itemResponse($group_setting);
@@ -158,7 +160,7 @@ class GroupSettingController extends BaseController
      *
      * @param DestroyGroupSettingRequest $request
      * @param GroupSetting $group_setting
-     * @return Response
+     * @return Response| \Illuminate\Http\JsonResponse
      *
      *
      * @throws \Exception
@@ -173,16 +175,15 @@ class GroupSettingController extends BaseController
     /**
      * Perform bulk actions on the list view.
      *
-     * @return Response
+     * @return Response| \Illuminate\Http\JsonResponse
      *
      */
-    public function bulk()
+    public function bulk(BulkGroupSettingRequest $request)
     {
-        $action = request()->input('action');
+        $action = $request->input('action');
+        $ids = $request->input('ids');
 
-        $ids = request()->input('ids');
-
-        $group_settings = GroupSetting::withTrashed()->whereIn('id', $this->transformKeys($ids))->company();
+        $group_settings = GroupSetting::withTrashed()->whereIn('id', $ids)->company();
 
         if ($group_settings->count() == 0) {
             return response()->json(['message' => ctrans('texts.no_group_settings_found')]);
@@ -202,7 +203,7 @@ class GroupSettingController extends BaseController
 
         /* Need to understand which permission are required for the given bulk action ie. view / edit */
 
-        return $this->listResponse(GroupSetting::withTrashed()->whereIn('id', $this->transformKeys($ids))->company());
+        return $this->listResponse(GroupSetting::withTrashed()->whereIn('id', $ids)->company());
     }
 
     /**
@@ -210,7 +211,7 @@ class GroupSettingController extends BaseController
      *
      * @param UploadGroupSettingRequest $request
      * @param GroupSetting $group_setting
-     * @return Response
+     * @return Response| \Illuminate\Http\JsonResponse
      *
      */
     public function upload(UploadGroupSettingRequest $request, GroupSetting $group_setting)
@@ -220,7 +221,7 @@ class GroupSettingController extends BaseController
         }
 
         if ($request->has('documents')) {
-            $this->saveDocuments($request->file('documents'), $group_setting, $request->input('is_public', true));
+            $this->saveDocuments($request->file('documents'), $group_setting, $request->has('is_public') ? $request->boolean('is_public') : null);
         }
 
         return $this->itemResponse($group_setting->fresh());

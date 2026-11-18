@@ -35,7 +35,7 @@ class SubscriptionStepsController extends BaseController
     public function check(): JsonResponse
     {
         request()->validate(([
-            'steps' => ['required', new Steps()]
+            'steps' => ['required', new Steps()],
         ]));
 
         return response()->json([], 200);

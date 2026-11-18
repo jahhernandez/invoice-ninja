@@ -1,10 +1,11 @@
 <?php
+
 /**
  * Invoice Ninja (https://invoiceninja.com).
  *
  * @link https://github.com/invoiceninja/invoiceninja source repository
  *
- * @copyright Copyright (c) 2024. Invoice Ninja LLC (https://invoiceninja.com)
+ * @copyright Copyright (c) 2026. Invoice Ninja LLC (https://invoiceninja.com)
  *
  * @license https://www.elastic.co/licensing/elastic-license
  */
@@ -22,6 +23,7 @@ use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Queue\Middleware\WithoutOverlapping;
 use Illuminate\Queue\SerializesModels;
+use Illuminate\Support\Facades\Cache;
 
 class CheckVat implements ShouldQueue
 {
@@ -31,7 +33,10 @@ class CheckVat implements ShouldQueue
     use SerializesModels;
     use MakesHash;
 
-    public $tries = 1;
+    public $tries = 4;
+
+    /** Retried when VIES gives no verdict: a member state's system is down, or the caller is rate limited */
+    public array $backoff = [60, 600, 3600];
 
     /**
      * Create a new job instance.
@@ -39,9 +44,7 @@ class CheckVat implements ShouldQueue
      * @param Client $client
      * @param Company $company
      */
-    public function __construct(public Client $client, protected Company $company)
-    {
-    }
+    public function __construct(public Client $client, protected Company $company) {}
 
     /**
      * Execute the job.
@@ -52,13 +55,19 @@ class CheckVat implements ShouldQueue
         MultiDB::setDb($this->company->db);
 
         $tax_service = new TaxService($this->client);
-        $tax_service->validateVat();
+
+        try{
+            $tax_service->validateVat();
+        } catch(\Throwable $e){
+            Cache::put('vat_status_'.$this->client->client_hash, 'unavailable', 3600);
+            throw $e;
+        }
 
     }
 
     public function middleware()
     {
-        return [new WithoutOverlapping($this->client->id)];
+        return [(new WithoutOverlapping($this->client->client_hash))->dontRelease()];
     }
 
 }

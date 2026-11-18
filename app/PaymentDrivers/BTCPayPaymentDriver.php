@@ -5,21 +5,28 @@
  *
  * @link https://github.com/invoiceninja/invoiceninja source repository
  *
- * @copyright Copyright (c) 2021. Invoice Ninja LLC (https://invoiceninja.com)
+ * @copyright Copyright (c) 2026. Invoice Ninja LLC (https://invoiceninja.com)
  *
  * @license https://opensource.org/licenses/AAL
  */
 
 namespace App\PaymentDrivers;
 
-use App\Utils\Traits\MakesHash;
-use App\Models\GatewayType;
-use App\PaymentDrivers\BTCPay\BTCPay;
-use App\Models\SystemLog;
-use App\Models\Payment;
 use App\Exceptions\PaymentFailed;
-
+use App\Http\Requests\Payments\PaymentWebhookRequest;
+use App\Jobs\Mail\PaymentFailedMailer;
+use App\Models\Client;
+use App\Models\GatewayType;
+use App\Models\Invoice;
+use App\Models\Payment;
+use App\Models\PaymentHash;
+use App\Models\PaymentType;
+use App\Models\SystemLog;
+use App\PaymentDrivers\BTCPay\BTCPay;
+use App\Utils\Number;
+use App\Utils\Traits\MakesHash;
 use BTCPayServer\Client\Webhook;
+use Illuminate\Support\Facades\Http;
 
 class BTCPayPaymentDriver extends BaseDriver
 {
@@ -39,7 +46,7 @@ class BTCPayPaymentDriver extends BaseDriver
         GatewayType::CRYPTO => BTCPay::class, //maps GatewayType => Implementation class
     ];
 
-    const SYSTEM_LOG_TYPE = SystemLog::TYPE_CHECKOUT; //define a constant for your gateway ie TYPE_YOUR_CUSTOM_GATEWAY - set the const in the SystemLog model
+    public const SYSTEM_LOG_TYPE = SystemLog::TYPE_BTC_PAY; //define a constant for your gateway ie TYPE_YOUR_CUSTOM_GATEWAY - set the const in the SystemLog model
 
     public $btcpay_url  = "";
     public $api_key  = "";
@@ -55,6 +62,40 @@ class BTCPayPaymentDriver extends BaseDriver
         $this->store_id = $this->company_gateway->getConfigField('storeId');
         $this->webhook_secret = $this->company_gateway->getConfigField('webhookSecret');
         return $this; /* This is where you boot the gateway with your auth credentials*/
+    }
+
+    public function auth(): string
+    {
+        $this->init();
+        $baseUrl = rtrim(trim((string) $this->btcpay_url), '/');
+
+        if ($baseUrl === ''
+            || trim((string) $this->api_key) === ''
+            || trim((string) $this->store_id) === ''
+            || trim((string) $this->webhook_secret) === '') {
+            return 'error';
+        }
+
+        $scheme = parse_url($baseUrl, PHP_URL_SCHEME);
+        $host = parse_url($baseUrl, PHP_URL_HOST);
+        if (! in_array($scheme, ['http', 'https'], true) || ! is_string($host) || $host === '') {
+            return 'error';
+        }
+
+        try {
+            $response = Http::withOptions(['allow_redirects' => false])
+                ->withHeaders(['Authorization' => 'token ' . $this->api_key])
+                ->acceptJson()
+                ->timeout(15)
+                ->get($baseUrl . '/api/v1/stores/' . rawurlencode((string) $this->store_id));
+
+            return $response->successful()
+                && hash_equals((string) $this->store_id, (string) $response->json('id'))
+                    ? 'ok'
+                    : 'error';
+        } catch (\Throwable) {
+            return 'error';
+        }
     }
 
     /* Returns an array of gateway types for the payment gateway */
@@ -86,21 +127,35 @@ class BTCPayPaymentDriver extends BaseDriver
 
     public function processWebhookRequest()
     {
+
         $webhook_payload = file_get_contents('php://input');
 
+        /** @var \stdClass $btcpayRep */
         $btcpayRep = json_decode($webhook_payload);
+
         if ($btcpayRep == null) {
-            throw new PaymentFailed('Empty data');
+            return response()->noContent();
         }
-        if (true === empty($btcpayRep->invoiceId)) {
-            throw new PaymentFailed(
-                'Invalid BTCPayServer payment notification- did not receive invoice ID.'
-            );
+
+        if (empty($btcpayRep->invoiceId)) {
+            return response()->json(['error' => 'Invalid BTCPayServer payment notification - did not receive invoice ID.'], 400);
         }
-        if (str_starts_with($btcpayRep->invoiceId, "__test__") || $btcpayRep->type == "InvoiceCreated") {
+
+        if (!isset($btcpayRep->metadata->InvoiceNinjaPaymentHash)) {
+
+            return response()->json(['error' => 'Invalid BTCPayServer payment notification - did not receive Payment Hashed ID.'], 400);
+
+        }
+
+        if (
+            str_starts_with($btcpayRep->invoiceId, "__test__")
+            || $btcpayRep->type == "InvoiceProcessing"
+            || $btcpayRep->type == "InvoiceCreated"
+        ) {
             return;
         }
 
+        $sig = '';
         $headers = getallheaders();
         foreach ($headers as $key => $value) {
             if (strtolower($key) === 'btcpay-sig') {
@@ -108,31 +163,107 @@ class BTCPayPaymentDriver extends BaseDriver
             }
         }
 
+
+        sleep(1);
+
         $this->init();
+
         $webhookClient = new Webhook($this->btcpay_url, $this->api_key);
 
         if (!$webhookClient->isIncomingWebhookRequestValid($webhook_payload, $sig, $this->webhook_secret)) {
-            throw new \RuntimeException(
-                'Invalid BTCPayServer payment notification message received - signature did not match.'
-            );
+            return response()->json(['error' => 'Invalid BTCPayServer payment notification message received - signature did not match.'], 400);
         }
 
-        /** @var \App\Models\Payment $payment **/
-        $payment = Payment::find($btcpayRep->metafata->paymentID);
+        $this->setPaymentMethod(GatewayType::CRYPTO);
+        $this->payment_hash = PaymentHash::where('hash', $btcpayRep->metadata->InvoiceNinjaPaymentHash)->firstOrFail();
+
+        $StatusId = Payment::STATUS_PENDING;
+
+        $payment = $this->payment_hash->payment ?? false;
+        $_invoice = $this->payment_hash->fee_invoice;
+        $this->client = $_invoice->client;
+
+
         switch ($btcpayRep->type) {
             case "InvoiceExpired":
-                $payment->status_id = Payment::STATUS_CANCELLED;
+
+                $payment = Payment::query()->withTrashed()->where('client_id', $_invoice->client_id)->where('id', $this->payment_hash->payment_id)->first();
+
+                if ($payment && $payment->status_id == Payment::STATUS_PENDING) {
+                    $payment->service()->deletePayment();
+                    $this->failedPaymentNotification($payment);
+
+                    /**
+                     * An expired invoice is the same outcome as an invalid one - the money
+                     * never arrived - and failed is what releases the gateway fee.
+                     *
+                     * @see \App\Services\Invoice\ReverseGatewayFee
+                     */
+                    $StatusId = Payment::STATUS_FAILED;
+
+                    $payment->status_id = $StatusId;
+                    $payment->save();
+
+                }
+
                 break;
             case "InvoiceInvalid":
-                $payment->status_id = Payment::STATUS_FAILED;
+
+                $payment = Payment::query()->withTrashed()->where('client_id', $_invoice->client_id)->where('id', $this->payment_hash->payment_id)->first();
+
+                if ($payment && $payment->status_id == Payment::STATUS_PENDING) {
+                    $payment->service()->deletePayment();
+                    $this->failedPaymentNotification($payment);
+                    $StatusId = Payment::STATUS_FAILED;
+
+                    $payment->status_id = $StatusId;
+                    $payment->save();
+
+                }
+
                 break;
             case "InvoiceSettled":
-                $payment->status_id = Payment::STATUS_COMPLETED;
+
+                $payment = Payment::query()->withTrashed()->where('client_id', $_invoice->client_id)->where('id', $this->payment_hash->payment_id)->first();
+                $StatusId = Payment::STATUS_COMPLETED;
+
+                if (!$payment) {
+
+                    $dataPayment = [
+                        'payment_method' => $this->payment_method,
+                        'payment_type' => PaymentType::CRYPTO,
+                        'amount' => $this->payment_hash->amount_with_fee(),
+                        'gateway_type_id' => GatewayType::CRYPTO,
+                        'transaction_reference' => $btcpayRep->invoiceId,
+                    ];
+
+                    $payment = $this->createPayment($dataPayment, $StatusId);
+
+                } else {
+                    $payment = $payment->service()->completePendingPayment();
+                }
+
                 break;
         }
-        $payment->save();
+
     }
 
+    private function failedPaymentNotification(Payment $payment): void
+    {
+
+        $error = ctrans('texts.client_payment_failure_body', [
+            'invoice' => implode(',', $payment->invoices->pluck('number')->toArray()),
+            'amount' => Number::formatMoney($this->payment_hash->amount_with_fee(), $payment->client),
+        ]);
+
+        PaymentFailedMailer::dispatch(
+            $this->payment_hash,
+            $payment->client->company,
+            $payment->client,
+            $error
+        );
+
+    }
 
     public function refund(Payment $payment, $amount, $return_client_response = false)
     {

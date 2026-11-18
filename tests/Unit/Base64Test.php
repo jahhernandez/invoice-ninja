@@ -1,4 +1,5 @@
 <?php
+
 /**
  * Invoice Ninja (https://invoiceninja.com).
  *
@@ -15,7 +16,7 @@ use App\Utils\Ninja;
 use Tests\TestCase;
 
 /**
- * @test
+ *
  */
 class Base64Test extends TestCase
 {
@@ -25,7 +26,7 @@ class Base64Test extends TestCase
      *
      * No method can guarantee against false positives.
      */
-    protected function setUp() :void
+    protected function setUp(): void
     {
         parent::setUp();
     }

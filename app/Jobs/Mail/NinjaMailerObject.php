@@ -1,10 +1,11 @@
 <?php
+
 /**
  * Invoice Ninja (https://invoiceninja.com).
  *
  * @link https://github.com/invoiceninja/invoiceninja source repository
  *
- * @copyright Copyright (c) 2024. Invoice Ninja LLC (https://invoiceninja.com)
+ * @copyright Copyright (c) 2026. Invoice Ninja LLC (https://invoiceninja.com)
  *
  * @license https://www.elastic.co/licensing/elastic-license
  */
@@ -28,7 +29,7 @@ class NinjaMailerObject
 
     public $settings;
 
-    public $transport; //not yet used
+    public $transport; //Used to force the mailer
 
     /* Variable for cascading notifications */
     public $entity_string = false;
@@ -38,8 +39,10 @@ class NinjaMailerObject
 
     public $template = false;
 
-    /* @var bool | App\Models\Invoice | App\Models\Quote | App\Models\Credit | App\Models\RecurringInvoice | App\Models\PurchaseOrder  | App\Models\Payment $entity */
+    /* @var \bool | App\Models\Invoice | App\Models\Quote | App\Models\Credit | App\Models\RecurringInvoice | App\Models\PurchaseOrder  | App\Models\Payment $entity */
     public $entity = false;
 
     public $reminder_template = '';
+
+    public array $cc = [];
 }

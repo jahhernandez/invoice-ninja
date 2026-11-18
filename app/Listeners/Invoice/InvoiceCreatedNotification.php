@@ -1,10 +1,11 @@
 <?php
+
 /**
  * Invoice Ninja (https://invoiceninja.com).
  *
  * @link https://github.com/invoiceninja/invoiceninja source repository
  *
- * @copyright Copyright (c) 2024. Invoice Ninja LLC (https://invoiceninja.com)
+ * @copyright Copyright (c) 2026. Invoice Ninja LLC (https://invoiceninja.com)
  *
  * @license https://www.elastic.co/licensing/elastic-license
  */
@@ -24,11 +25,9 @@ class InvoiceCreatedNotification implements ShouldQueue
 {
     use UserNotifies;
 
-    public $delay = 3;
+    public $delay = 6;
 
-    public function __construct()
-    {
-    }
+    public function __construct() {}
 
     /**
      * Handle the event.
@@ -49,7 +48,7 @@ class InvoiceCreatedNotification implements ShouldQueue
             /* The User */
             $user = $company_user->user;
 
-            if (! $user) {
+            if ($company_user->trashed() || ! $user ) {
                 continue;
             }
 
@@ -64,7 +63,7 @@ class InvoiceCreatedNotification implements ShouldQueue
                 unset($methods[$key]);
 
                 $nmo = new NinjaMailerObject();
-                $nmo->mailable = new NinjaMailer((new EntityCreatedObject($invoice, 'invoice', $company_user->portalType()))->build());
+                $nmo->mailable = new NinjaMailer((new EntityCreatedObject($invoice, 'invoice'))->build());
                 $nmo->company = $invoice->company;
                 $nmo->settings = $invoice->company->settings;
                 $nmo->to_user = $user;

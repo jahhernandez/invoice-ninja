@@ -1,10 +1,11 @@
 <?php
+
 /**
  * Invoice Ninja (https://invoiceninja.com).
  *
  * @link https://github.com/invoiceninja/invoiceninja source repository
  *
- * @copyright Copyright (c) 2024. Invoice Ninja LLC (https://invoiceninja.com)
+ * @copyright Copyright (c) 2026. Invoice Ninja LLC (https://invoiceninja.com)
  *
  * @license https://www.elastic.co/licensing/elastic-license
  */
@@ -93,7 +94,7 @@ class UserEmailChanged implements ShouldQueue
             'signature' => $this->company->owner()->signature,
             'logo' => $this->company->present()->logo(),
             'settings' => $this->settings,
-            'whitelabel' => $this->company->account->isPaid() ? true : false,
+            'whitelabel' => true,
             'template' => $this->company->account->isPremium() ? 'email.template.admin_premium' : 'email.template.admin',
         ];
     }

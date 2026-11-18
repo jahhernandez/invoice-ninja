@@ -1,18 +1,21 @@
 <?php
+
 /**
  * Invoice Ninja (https://invoiceninja.com).
  *
  * @link https://github.com/invoiceninja/invoiceninja source repository
  *
- * @copyright Copyright (c) 2024. Invoice Ninja LLC (https://invoiceninja.com)
+ * @copyright Copyright (c) 2026. Invoice Ninja LLC (https://invoiceninja.com)
  *
  * @license https://www.elastic.co/licensing/elastic-license
  */
 
 namespace App\Models;
 
+use App\Utils\AppLink;
 use App\Utils\Ninja;
 use Illuminate\Support\Str;
+use Elastic\ScoutDriverPlus\Searchable;
 use App\Jobs\Mail\NinjaMailer;
 use App\Utils\Traits\AppSetup;
 use App\Utils\Traits\MakesHash;
@@ -62,6 +65,8 @@ use App\Mail\ClientContact\ClientContactResetPasswordObject;
  * @property string|null $token
  * @property bool $is_locked
  * @property bool $send_email
+ * @property bool $cc_only
+ * @property bool $can_sign
  * @property string|null $contact_key
  * @property string|null $remember_token
  * @property int|null $created_at
@@ -99,6 +104,8 @@ class ClientContact extends Authenticatable implements HasLocalePreference
     use SoftDeletes;
     use HasFactory;
     use AppSetup;
+
+    use Searchable;
 
     /* Used to authenticate a contact */
     protected $guard = 'contact';
@@ -147,6 +154,8 @@ class ClientContact extends Authenticatable implements HasLocalePreference
         'email',
         'is_primary',
         'send_email',
+        'cc_only',
+        'can_sign',
     ];
 
     /**
@@ -165,6 +174,38 @@ class ClientContact extends Authenticatable implements HasLocalePreference
         'email',
     ];
 
+    public function searchableAs(): string
+    {
+        return 'client_contacts';
+    }
+
+    public function toSearchableArray(): array
+    {
+        
+        return [
+            'id' => $this->company->db . ":" . $this->id,
+            'name' => $this->present()->search_display(),
+            'hashed_id' => $this->hashed_id,
+            'email' => $this->email,
+            'first_name' => $this->first_name,
+            'last_name' => $this->last_name,
+            'phone' => $this->phone,
+            'custom_value1' => $this->custom_value1,
+            'custom_value2' => $this->custom_value2,
+            'custom_value3' => $this->custom_value3,
+            'custom_value4' => $this->custom_value4,
+            'company_key' => $this->company->company_key,
+            'client_id' => $this->client->hashed_id,
+            'user_id'          => (string) $this->client->user_id,
+            'assigned_user_id' => (string) $this->client->assigned_user_id,
+        ];
+    }
+
+    public function getScoutKey()
+    {
+        return $this->company->db . ":" . $this->id;
+    }
+
     /*
     V2 type of scope
      */
@@ -180,7 +221,7 @@ class ClientContact extends Authenticatable implements HasLocalePreference
      */
     public function scopeScope($query)
     {
-        $query->where($this->getTable().'.company_id', '=', auth()->user()->company()->id);
+        $query->where($this->getTable() . '.company_id', '=', auth()->user()->company()->id);
 
         return $query;
     }
@@ -209,7 +250,7 @@ class ClientContact extends Authenticatable implements HasLocalePreference
     public function setAvatarAttribute($value)
     {
         if (! filter_var($value, FILTER_VALIDATE_URL) && $value) {
-            $this->attributes['avatar'] = url('/').$value;
+            $this->attributes['avatar'] = url('/') . $value;
         } else {
             $this->attributes['avatar'] = $value;
         }
@@ -271,15 +312,16 @@ class ClientContact extends Authenticatable implements HasLocalePreference
 
     public function preferredLocale()
     {
-        $languages = Cache::get('languages');
+        return once(function () {
+            /** @var \Illuminate\Support\Collection<\App\Models\Language> */
+            $languages = app('languages');
 
-        if (! $languages) {
-            $this->buildCache(true);
-        }
+            $language_id = $this->client->getSetting('language_id');
 
-        return $languages->filter(function ($item) {
-            return $item->id == $this->client->getSetting('language_id');
-        })->first()->locale;
+            return $languages->first(function ($item) use ($language_id) {
+                return $item->id == $language_id;
+            })->locale ?? 'en';
+        });
     }
 
     public function routeNotificationForMail($notification)
@@ -302,12 +344,14 @@ class ClientContact extends Authenticatable implements HasLocalePreference
     }
 
     /**
-     * @return mixed|string
+     * @return string
      */
-    public function avatar()
+    public function avatarUrl(): string
     {
-        if ($this->avatar) {
-            return $this->avatar;
+        $avatar = $this->attributes['avatar'] ?? '';
+
+        if ($avatar) {
+            return $avatar;
         }
 
         return asset('images/svg/user.svg');
@@ -330,32 +374,27 @@ class ClientContact extends Authenticatable implements HasLocalePreference
 
         switch ($this->company->portal_mode) {
             case 'subdomain':
-                return $domain.'/client/key_login/'.$this->contact_key;
+                return $domain . '/client/key_login/' . $this->contact_key;
             case 'iframe':
-                return $domain.'/client/key_login/'.$this->contact_key;
+                return $domain . '/client/key_login/' . $this->contact_key;
             case 'domain':
-                return $domain.'/client/key_login/'.$this->contact_key;
+                return $domain . '/client/key_login/' . $this->contact_key;
 
             default:
                 return '';
         }
     }
 
-    public function getAdminLink($use_react_link = false): string
+    public function getAdminLink(): string
     {
-        return $use_react_link ? $this->getReactLink() : config('ninja.app_url');
-    }
-
-    private function getReactLink(): string
-    {
-        return config('ninja.react_url')."/#/clients/{$this->client->hashed_id}";
+        return AppLink::forRecord('clients', $this->client);
     }
 
     public function showRff(): bool
     {
-        if (\strlen($this->first_name) === 0 || \strlen($this->last_name) === 0 || \strlen($this->email) === 0) {
-            return true;
-        }
+        // if (\strlen($this->first_name ?? '') === 0 || \strlen($this->last_name ?? '') === 0 || \strlen($this->email ?? '') === 0) {
+        //     return true;
+        // }
 
         return false;
     }

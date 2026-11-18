@@ -1,4 +1,5 @@
 <?php
+
 /**
  * Invoice Ninja (https://invoiceninja.com).
  *
@@ -15,19 +16,19 @@ use App\Http\ValidationRules\Account\EmailBlackListRule;
 use Tests\TestCase;
 
 /**
- * @test
- * @covers App\Http\ValidationRules\Account\EmailBlackListRule
+ *
+ *  App\Http\ValidationRules\Account\EmailBlackListRule
  */
 class EmailBlacklistValidationTest extends TestCase
 {
-    protected function setUp() :void
+    protected function setUp(): void
     {
         parent::setUp();
     }
 
     public function testValidEmailRule()
     {
-        $email_rule = new EmailBlackListRule;
+        $email_rule = new EmailBlackListRule();
         $email_rule->blacklist = ['gimmy@gmail.com'];
 
         $rules = [
@@ -45,7 +46,7 @@ class EmailBlacklistValidationTest extends TestCase
     public function testInValidEmailRule()
     {
         $rules = [
-            'email' => [new EmailBlackListRule],
+            'email' => [new EmailBlackListRule()],
         ];
 
         $data = [

@@ -1,10 +1,11 @@
 <?php
+
 /**
  * Invoice Ninja (https://invoiceninja.com).
  *
  * @link https://github.com/invoiceninja/invoiceninja source repository
  *
- * @copyright Copyright (c) 2024. Invoice Ninja LLC (https://invoiceninja.com)
+ * @copyright Copyright (c) 2026. Invoice Ninja LLC (https://invoiceninja.com)
  *
  * @license https://www.elastic.co/licensing/elastic-license
  */
@@ -30,7 +31,7 @@ class EntityPaidObject
 
     public $settings;
 
-    public function __construct(public Payment $payment, protected bool $use_react_url)
+    public function __construct(public Payment $payment)
     {
         $this->payment = $payment;
         $this->company = $payment->company;
@@ -80,16 +81,16 @@ class EntityPaidObject
         $invoice_texts = ctrans('texts.invoice_number_short');
 
         foreach ($this->payment->invoices as $invoice) {
-            $invoice_texts .= $invoice->number.',';
+            $invoice_texts .= $invoice->number . ',';
         }
 
         $invoice_texts = substr($invoice_texts, 0, -1);
         $content = ctrans(
             'texts.notification_payment_paid',
             ['amount' => $amount,
-                    'client' => $this->payment->client->present()->name(),
-                    'invoice' => $invoice_texts,
-                ]
+                'client' => $this->payment->client->present()->name(),
+                'invoice' => $invoice_texts,
+            ]
         );
 
         $data = [
@@ -98,12 +99,12 @@ class EntityPaidObject
                 ['client' => $this->payment->client->present()->name()]
             ),
             'content' => $content,
-            'url' => $this->payment->portalUrl($this->use_react_url),
+            'url' => $this->payment->portalUrl(),
             'button' => ctrans('texts.view_payment'),
             'signature' => $settings->email_signature,
             'logo' => $this->company->present()->logo(),
             'settings' => $settings,
-            'whitelabel' => $this->company->account->isPaid() ? true : false,
+            'whitelabel' => true,
             'text_body' => $content,
             'template' => $this->company->account->isPremium() ? 'email.template.admin_premium' : 'email.template.admin',
         ];

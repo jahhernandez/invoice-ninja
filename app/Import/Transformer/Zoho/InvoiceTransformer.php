@@ -1,4 +1,5 @@
 <?php
+
 /**
  * Invoice Ninja (https://invoiceninja.com).
  *
@@ -27,9 +28,14 @@ class InvoiceTransformer extends BaseTransformer
      */
     public function transform($line_items_data)
     {
-        $invoice_data = reset($line_items_data);
+        if (!empty($line_items_data) && is_array(reset($line_items_data))) {
+            $invoice_data = reset($line_items_data);
+        } else {
+            $invoice_data = $line_items_data;
+            $line_items_data = [$invoice_data];
+        }
 
-        if ($this->hasInvoice($invoice_data['Invoice Number'])) {
+        if (isset($invoice_data['Invoice Number']) && $this->hasInvoice($invoice_data['Invoice Number'])) {
             throw new ImportException('Invoice number already exists');
         }
 
@@ -42,16 +48,16 @@ class InvoiceTransformer extends BaseTransformer
             'company_id'   => $this->company->id,
             // 'client_id'    => $this->getClient($this->getString($invoice_data, 'Customer ID'), $this->getString($invoice_data, 'Primary Contact EmailID')),
             'client_id'    => $this->harvestClient($invoice_data),
-            'number'       => $this->getString($invoice_data, 'Invoice Number'),
+            'number'       => $this->getString($invoice_data, 'Invoice Number', null),
             'date'         => isset($invoice_data['Invoice Date']) ? $this->parseDate($invoice_data['Invoice Date']) : null,
             'due_date'     => isset($invoice_data['Due Date']) ? $this->parseDate($invoice_data['Due Date']) : null,
             'po_number'    => $this->getString($invoice_data, 'PurchaseOrder'),
             'public_notes' => $this->getString($invoice_data, 'Notes'),
-            'currency_id'  => $this->getCurrencyByCode($invoice_data, 'Currency'),
+            // 'currency_id'  => $this->getCurrencyByCode($invoice_data, 'Currency'),
             'amount'       => $this->getFloat($invoice_data, 'Total'),
             'balance'      => $this->getFloat($invoice_data, 'Balance'),
-            'status_id'    => $invoiceStatusMap[$status =
-                    strtolower($this->getString($invoice_data, 'Invoice Status'))] ?? Invoice::STATUS_SENT,
+            'status_id'    => $invoiceStatusMap[$status
+                    = strtolower($this->getString($invoice_data, 'Invoice Status'))] ?? Invoice::STATUS_SENT,
             'terms'        => $this->getString($invoice_data, 'Terms & Conditions'),
 
             // 'viewed'       => $status === 'viewed',
@@ -101,7 +107,7 @@ class InvoiceTransformer extends BaseTransformer
 
         $client_name = $this->getString($invoice_data, 'Customer Name');
 
-        if(strlen($client_name) >= 2) {
+        if (strlen($client_name) >= 2) {
             $client_name_search = \App\Models\Client::query()->where('company_id', $this->company->id)
                 ->where('is_deleted', false)
                 ->whereRaw("LOWER(REPLACE(`name`, ' ' ,''))  = ?", [

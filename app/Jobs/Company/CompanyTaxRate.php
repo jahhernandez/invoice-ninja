@@ -1,10 +1,11 @@
 <?php
+
 /**
  * Invoice Ninja (https://invoiceninja.com).
  *
  * @link https://github.com/invoiceninja/invoiceninja source repository
  *
- * @copyright Copyright (c) 2024. Invoice Ninja LLC (https://invoiceninja.com)
+ * @copyright Copyright (c) 2026. Invoice Ninja LLC (https://invoiceninja.com)
  *
  * @license https://www.elastic.co/licensing/elastic-license
  */
@@ -37,9 +38,7 @@ class CompanyTaxRate implements ShouldQueue
      *
      * @param Company $company
      */
-    public function __construct(public Company $company)
-    {
-    }
+    public function __construct(public Company $company) {}
 
     public function handle()
     {
@@ -49,26 +48,27 @@ class CompanyTaxRate implements ShouldQueue
         $tp = new TaxProvider($this->company);
         $tp->updateCompanyTaxData();
 
-        if(!$tp->updatedTaxStatus() && $this->company->settings->country_id == '840') {
+        if (!$tp->updatedTaxStatus() && $this->company->settings->country_id == '840') {
 
             $calculated_state = false;
 
             /** State must be calculated else default to the company state for taxes */
-            if(array_key_exists($this->company->settings->state, USStates::get())) {
+            if (array_key_exists($this->company->settings->state, USStates::get())) {
                 $calculated_state = $this->company->settings->state;
             } else {
 
                 try {
                     $calculated_state = USStates::getState($this->company->settings->postal_code);
-                } catch(\Exception $e) {
+                } catch (\Exception $e) {
+                    nlog("Exception:: CompanyTaxRate::" . $e->getMessage());
                     nlog("could not calculate state from postal code => {$this->company->settings->postal_code} or from state {$this->company->settings->state}");
                 }
 
-                if(!$calculated_state && $this->company->tax_data?->seller_subregion) {
-                    $calculated_state = $this->company->tax_data?->seller_subregion;
+                if (!$calculated_state && $this->company->tax_data?->seller_subregion) { //@phpstan-ignore-line
+                    $calculated_state = $this->company->tax_data->seller_subregion;
                 }
 
-                if(!$calculated_state) {
+                if (!$calculated_state) {
                     return;
                 }
 
@@ -93,7 +93,7 @@ class CompanyTaxRate implements ShouldQueue
 
     public function middleware()
     {
-        return [new WithoutOverlapping($this->company->id)];
+        return [(new WithoutOverlapping($this->company->company_key))->dontRelease()];
     }
 
     public function failed($e)

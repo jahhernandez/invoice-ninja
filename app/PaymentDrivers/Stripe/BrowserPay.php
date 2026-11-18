@@ -5,7 +5,7 @@
  *
  * @link https://github.com/invoiceninja/invoiceninja source repository
  *
- * @copyright Copyright (c) 2024. Invoice Ninja LLC (https://invoiceninja.com)
+ * @copyright Copyright (c) 2026. Invoice Ninja LLC (https://invoiceninja.com)
  *
  * @license https://www.elastic.co/licensing/elastic-license
  */
@@ -19,17 +19,17 @@ use App\Models\GatewayType;
 use App\Models\Payment;
 use App\Models\PaymentType;
 use App\Models\SystemLog;
+use App\PaymentDrivers\Common\LivewireMethodInterface;
 use App\PaymentDrivers\Common\MethodInterface;
 use App\PaymentDrivers\StripePaymentDriver;
 use App\Utils\Ninja;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\View\View;
-use Stripe\ApplePayDomain;
 use Stripe\Exception\ApiErrorException;
 use Stripe\PaymentIntent;
 
-class BrowserPay implements MethodInterface
+class BrowserPay implements MethodInterface, LivewireMethodInterface
 {
     protected StripePaymentDriver $stripe;
 
@@ -46,7 +46,7 @@ class BrowserPay implements MethodInterface
      * Authorization page for browser pay.
      *
      * @param array $data
-     * @return RedirectResponse
+     * @return \Illuminate\Http\RedirectResponse
      */
     public function authorizeView(array $data): RedirectResponse
     {
@@ -57,14 +57,15 @@ class BrowserPay implements MethodInterface
      * Handle the authorization for browser pay.
      *
      * @param Request $request
-     * @return RedirectResponse
+     * @return \Illuminate\Http\RedirectResponse
      */
     public function authorizeResponse(Request $request): RedirectResponse
     {
         return redirect()->route('client.payment_methods.index');
     }
 
-    public function paymentView(array $data): View
+
+    public function paymentData(array $data): array
     {
         $payment_intent_data = [
             'amount' => $this->stripe->convertToStripeAmount($data['total']['amount_with_fee'], $this->stripe->client->currency()->precision, $this->stripe->client->currency()),
@@ -75,6 +76,7 @@ class BrowserPay implements MethodInterface
                 'payment_hash' => $this->stripe->payment_hash->hash,
                 'gateway_type_id' => GatewayType::APPLE_PAY,
             ],
+            'payment_method_types' => ['card'],
         ];
 
         $data['gateway'] = $this->stripe;
@@ -91,7 +93,18 @@ class BrowserPay implements MethodInterface
             ],
             'requestPayerName' => true,
             'requestPayerEmail' => true,
+            'disableWallets' => [
+                'link',
+                'browserCard',
+            ],
         ];
+
+        return $data;
+    }
+
+    public function paymentView(array $data): View
+    {
+        $data = $this->paymentData($data);
 
         return render('gateways.stripe.browser_pay.pay', $data);
     }
@@ -100,7 +113,7 @@ class BrowserPay implements MethodInterface
      * Handle payment response for browser pay.
      *
      * @param PaymentResponseRequest $request
-     * @return RedirectResponse|App\PaymentDrivers\Stripe\never
+     * @return \Illuminate\Http\RedirectResponse
      */
     public function paymentResponse(PaymentResponseRequest $request)
     {
@@ -120,14 +133,14 @@ class BrowserPay implements MethodInterface
     /**
      * Handle successful payment for browser pay.
      *
-     * @return RedirectResponse
+     * @return \Illuminate\Http\RedirectResponse
      */
     protected function processSuccessfulPayment()
     {
         $gateway_response = $this->stripe->payment_hash->data->gateway_response;
         $payment_intent = $this->stripe->payment_hash->data->payment_intent;
 
-        $this->stripe->logSuccessfulGatewayResponse(['response' => $gateway_response, 'data' => $this->stripe->payment_hash], SystemLog::TYPE_STRIPE);
+        $this->stripe->logSuccessfulGatewayResponse(['response' => $gateway_response, 'data' => $this->stripe->payment_hash->data], SystemLog::TYPE_STRIPE);
 
         $payment_method = $this->stripe->getStripePaymentMethod($gateway_response->payment_method);
 
@@ -135,7 +148,7 @@ class BrowserPay implements MethodInterface
             'payment_method' => $gateway_response->payment_method,
             'payment_type' => PaymentType::parseCardType(strtolower($payment_method->card->brand)),
             'amount' => $this->stripe->convertFromStripeAmount($gateway_response->amount, $this->stripe->client->currency()->precision, $this->stripe->client->currency()),
-            'transaction_reference' => isset($payment_intent->latest_charge) ? $payment_intent->latest_charge : $payment_intent->charges->data[0]->id,
+            'transaction_reference' => $payment_intent->latest_charge ?? $payment_intent->charges->data[0]->id,
             'gateway_type_id' => GatewayType::APPLE_PAY,
         ];
 
@@ -192,27 +205,37 @@ class BrowserPay implements MethodInterface
      */
     protected function ensureApplePayDomainIsValidated()
     {
-        $config = $this->stripe->company_gateway->getConfig();
-
-        if (property_exists($config, 'apple_pay_domain_id')) {
-            return;
-        }
-
         $domain = $this->getAppleDomain();
 
         if (! $domain) {
             throw new PaymentFailed('Unable to register Domain with Apple Pay', 500);
         }
 
-        $response = ApplePayDomain::create([
-            'domain_name' => $domain,
-        ], $this->stripe->stripe_connect_auth);
+        $config = $this->stripe->company_gateway->getConfig();
 
-        $config->apple_pay_domain_id = $response->id;
+        if ($this->hasRegisteredPaymentMethodDomain($config, $domain)) {
+            return;
+        }
+
+        $payment_method_domain = $this->stripe->ensurePaymentMethodDomainRegistered($domain);
+
+        $config->apple_pay_domain_id = $payment_method_domain->id;
+        $config->apple_pay_domain_name = $domain;
 
         $this->stripe->company_gateway->setConfig($config);
 
         $this->stripe->company_gateway->save();
+    }
+
+    private function hasRegisteredPaymentMethodDomain(object $config, string $domain): bool
+    {
+        $stored_id = $config->apple_pay_domain_id ?? null;
+        $stored_domain = $config->apple_pay_domain_name ?? null;
+
+        return is_string($stored_id)
+            && str_starts_with($stored_id, 'pmd_')
+            && is_string($stored_domain)
+            && $stored_domain === $domain;
     }
 
     private function getAppleDomain()
@@ -223,12 +246,17 @@ class BrowserPay implements MethodInterface
             if ($this->stripe->company_gateway->company->portal_mode == 'domain') {
                 $domain = $this->stripe->company_gateway->company->portal_domain;
             } else {
-                $domain = $this->stripe->company_gateway->company->subdomain.'.'.config('ninja.app_domain');
+                $domain = $this->stripe->company_gateway->company->subdomain . '.' . config('ninja.app_domain');
             }
         } else {
             $domain = config('ninja.app_url');
         }
 
         return str_replace(['https://', '/public'], '', $domain);
+    }
+
+    public function livewirePaymentView(array $data): string
+    {
+        return 'gateways.stripe.browser_pay.pay_livewire';
     }
 }

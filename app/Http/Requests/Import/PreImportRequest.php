@@ -1,10 +1,11 @@
 <?php
+
 /**
  * Invoice Ninja (https://invoiceninja.com).
  *
  * @link https://github.com/invoiceninja/invoiceninja source repository
  *
- * @copyright Copyright (c) 2024. Invoice Ninja LLC (https://invoiceninja.com)
+ * @copyright Copyright (c) 2026. Invoice Ninja LLC (https://invoiceninja.com)
  *
  * @license https://www.elastic.co/licensing/elastic-license
  */
@@ -31,7 +32,7 @@ class PreImportRequest extends Request
     public function rules()
     {
         return [
-            'files.*' => 'file|mimetypes:text/csv,text/plain,application/octet-stream',
+            'files.*' => 'file|mimetypes:text/csv,text/plain,application/octet-stream|max:20000',
             'files' => 'required|array|min:1|max:6',
             'import_type' => 'required',
         ];

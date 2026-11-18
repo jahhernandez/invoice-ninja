@@ -1,5 +1,13 @@
 <?php
-
+/**
+ * Invoice Ninja (https://invoiceninja.com).
+ *
+ * @link https://github.com/invoiceninja/invoiceninja source repository
+ *
+ * @copyright Copyright (c) 2026. Invoice Ninja LLC (https://invoiceninja.com)
+ *
+ * @license https://www.elastic.co/licensing/elastic-license
+ */
 namespace App\Jobs\Invoice;
 
 use App\Models\PurchaseOrder;
@@ -24,9 +32,7 @@ class InjectSignature implements ShouldQueue
      * @param string $signature
      * @param string $ip
      */
-    public function __construct(public \App\Models\Invoice | \App\Models\Quote | \App\Models\Credit | \App\Models\PurchaseOrder $entity, private int $contact_id, private string $signature, private ?string $ip)
-    {
-    }
+    public function __construct(public \App\Models\Invoice|\App\Models\Quote|\App\Models\Credit|\App\Models\PurchaseOrder $entity, private int $contact_id, private string $signature, private ?string $ip) {}
 
     /**
      * Execute the job.
@@ -37,10 +43,10 @@ class InjectSignature implements ShouldQueue
     {
         $invitation = false;
 
-        if($this->entity instanceof PurchaseOrder) {
+        if ($this->entity instanceof PurchaseOrder) {
             $invitation = $this->entity->invitations()->where('vendor_contact_id', $this->contact_id)->first();
 
-            if(!$invitation) {
+            if (!$invitation) {
                 $invitation = $this->entity->invitations->first();
             }
 
@@ -48,7 +54,7 @@ class InjectSignature implements ShouldQueue
 
             $invitation = $this->entity->invitations()->where('client_contact_id', $this->contact_id)->first();
 
-            if(!$invitation) {
+            if (!$invitation) {
                 $invitation = $this->entity->invitations->first();
             }
         }

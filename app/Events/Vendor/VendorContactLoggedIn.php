@@ -1,10 +1,11 @@
 <?php
+
 /**
  * Invoice Ninja (https://invoiceninja.com).
  *
  * @link https://github.com/invoiceninja/invoiceninja source repository
  *
- * @copyright Copyright (c) 2024. Invoice Ninja LLC (https://invoiceninja.com)
+ * @copyright Copyright (c) 2026. Invoice Ninja LLC (https://invoiceninja.com)
  *
  * @license https://www.elastic.co/licensing/elastic-license
  */
@@ -31,9 +32,7 @@ class VendorContactLoggedIn
      * Create a new event instance.
      *
      */
-    public function __construct(public VendorContact $contact, public Company $company, public array $event_vars)
-    {
-    }
+    public function __construct(public VendorContact $contact, public Company $company, public array $event_vars) {}
 
     /**
      * Get the channels the event should broadcast on.

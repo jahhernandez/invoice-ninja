@@ -5,7 +5,7 @@
  *
  * @link https://github.com/invoiceninja/invoiceninja source repository
  *
- * @copyright Copyright (c) 2024. Invoice Ninja LLC (https://invoiceninja.com)
+ * @copyright Copyright (c) 2026. Invoice Ninja LLC (https://invoiceninja.com)
  *
  * @license https://www.elastic.co/licensing/elastic-license
  */
@@ -14,6 +14,7 @@ namespace App\Http\Controllers;
 
 use App\Factory\WebhookFactory;
 use App\Filters\WebhookFilters;
+use App\Http\Requests\Webhook\BulkWebhookRequest;
 use App\Http\Requests\Webhook\CreateWebhookRequest;
 use App\Http\Requests\Webhook\DestroyWebhookRequest;
 use App\Http\Requests\Webhook\EditWebhookRequest;
@@ -79,7 +80,7 @@ class WebhookController extends BaseController
      *       ),
      *     )
      * @param WebhookFilters $filters
-     * @return Response|mixed
+     * @return Response| \Illuminate\Http\JsonResponse|mixed
      */
     public function index(WebhookFilters $filters)
     {
@@ -93,7 +94,7 @@ class WebhookController extends BaseController
      *
      * @param ShowWebhookRequest $request
      * @param Webhook $webhook
-     * @return Response
+     * @return Response| \Illuminate\Http\JsonResponse
      *
      *
      * @OA\Get(
@@ -147,7 +148,7 @@ class WebhookController extends BaseController
      *
      * @param EditWebhookRequest $request
      * @param Webhook $webhook
-     * @return Response
+     * @return Response| \Illuminate\Http\JsonResponse
      *
      *
      * @OA\Get(
@@ -201,7 +202,7 @@ class WebhookController extends BaseController
      *
      * @param UpdateWebhookRequest $request
      * @param Webhook $webhook
-     * @return Response
+     * @return Response| \Illuminate\Http\JsonResponse
      *
      *
      *
@@ -262,7 +263,7 @@ class WebhookController extends BaseController
      * Show the form for creating a new resource.
      *
      * @param CreateWebhookRequest $request
-     * @return Response
+     * @return Response| \Illuminate\Http\JsonResponse
      *
      *
      *
@@ -303,7 +304,6 @@ class WebhookController extends BaseController
 
         $webhook = WebhookFactory::create($user->company()->id, $user->id);
         $webhook->fill($request->all());
-        $webhook->save();
 
         return $this->itemResponse($webhook);
     }
@@ -312,7 +312,7 @@ class WebhookController extends BaseController
      * Store a newly created resource in storage.
      *
      * @param StoreWebhookRequest $request
-     * @return Response
+     * @return Response| \Illuminate\Http\JsonResponse
      *
      *
      *
@@ -378,7 +378,7 @@ class WebhookController extends BaseController
      *
      * @param DestroyWebhookRequest $request
      * @param Webhook $webhook
-     * @return Response
+     * @return Response| \Illuminate\Http\JsonResponse
      *
      *
      * @throws \Exception
@@ -433,7 +433,7 @@ class WebhookController extends BaseController
     /**
      * Perform bulk actions on the list view.
      *
-     * @return Response
+     * @return Response| \Illuminate\Http\JsonResponse
      *
      *
      * @OA\Post(
@@ -480,13 +480,13 @@ class WebhookController extends BaseController
      *       ),
      *     )
      */
-    public function bulk()
+    public function bulk(BulkWebhookRequest $request)
     {
-        $action = request()->input('action');
+        $action = $request->input('action');
 
-        $ids = request()->input('ids');
+        $ids = $request->input('ids');
 
-        $webhooks = Webhook::withTrashed()->find($this->transformKeys($ids));
+        $webhooks = Webhook::withTrashed()->company()->find($ids);
 
         $webhooks->each(function ($webhook, $key) use ($action) {
             /** @var \App\Models\User $user */
@@ -497,7 +497,7 @@ class WebhookController extends BaseController
             }
         });
 
-        return $this->listResponse(Webhook::withTrashed()->whereIn('id', $this->transformKeys($ids)));
+        return $this->listResponse(Webhook::withTrashed()->company()->whereIn('id', $ids));
     }
 
     public function retry(RetryWebhookRequest $request, Webhook $webhook)
@@ -513,7 +513,7 @@ class WebhookController extends BaseController
             default => $includes = ''
         };
 
-        $class = 'App\Models\\'.ucfirst(Str::camel($request->entity));
+        $class = 'App\Models\\' . ucfirst(Str::camel($request->entity));
 
         $entity = $class::query()->withTrashed()->where('id', $this->decodePrimaryKey($request->entity_id))->company()->first();
 

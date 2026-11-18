@@ -1,27 +1,28 @@
 <?php
+
 /**
  * Invoice Ninja (https://invoiceninja.com).
  *
  * @link https://github.com/invoiceninja/invoiceninja source repository
  *
- * @copyright Copyright (c) 2024. Invoice Ninja LLC (https://invoiceninja.com)
+ * @copyright Copyright (c) 2026. Invoice Ninja LLC (https://invoiceninja.com)
  *
  * @license https://www.elastic.co/licensing/elastic-license
  */
 
 namespace App\Providers;
 
-use App\Http\Middleware\ThrottleRequestsWithPredis;
-use App\Models\Scheduler;
 use App\Utils\Ninja;
+use App\Models\Scheduler;
+use Illuminate\Http\Request;
 use App\Utils\Traits\MakesHash;
+use Illuminate\Support\Facades\Route;
 use Illuminate\Cache\RateLimiting\Limit;
+use Illuminate\Support\Facades\RateLimiter;
+use App\Http\Middleware\ThrottleRequestsWithPredis;
+use Illuminate\Routing\Middleware\ThrottleRequests;
 use Illuminate\Database\Eloquent\ModelNotFoundException as ModelNotFoundException;
 use Illuminate\Foundation\Support\Providers\RouteServiceProvider as ServiceProvider;
-use Illuminate\Http\Request;
-use Illuminate\Routing\Middleware\ThrottleRequests;
-use Illuminate\Support\Facades\RateLimiter;
-use Illuminate\Support\Facades\Route;
 
 class RouteServiceProvider extends ServiceProvider
 {
@@ -57,7 +58,21 @@ class RouteServiceProvider extends ServiceProvider
             if (Ninja::isSelfHost()) {
                 return Limit::none();
             } else {
-                return Limit::perMinute(30)->by($request->ip());
+                return [
+                    Limit::perMinute(4)->by($request->ip()),
+                    Limit::perMinute(10)->by($request->email ?? '')
+                ];
+            }
+        });
+
+        RateLimiter::for('precheck', function (Request $request) {
+            if (Ninja::isSelfHost()) {
+                return Limit::none();
+            } else {
+                return [
+                    Limit::perMinute(4)->by($request->ip()),
+                    Limit::perMinute(10)->by($request->email ?? '')
+                ];
             }
         });
 
@@ -65,7 +80,17 @@ class RouteServiceProvider extends ServiceProvider
             if (Ninja::isSelfHost()) {
                 return Limit::none();
             } else {
-                return Limit::perMinute(300)->by($request->ip());
+
+                $limits = [
+                    Limit::perMinute(1000)->by($request->ip()),
+                ];
+
+                if ($token = $request->header('X-API-TOKEN')) {
+                    $limits[] = Limit::perMinute(1000)->by(sha1($token));
+                }
+
+                return $limits;
+
             }
         });
 
@@ -73,7 +98,17 @@ class RouteServiceProvider extends ServiceProvider
             if (Ninja::isSelfHost()) {
                 return Limit::none();
             } else {
-                return Limit::perMinute(200)->by($request->ip());
+                
+                $limits = [
+                    Limit::perMinute(200)->by($request->ip()),
+                ];
+
+                if ($token = $request->header('X-API-TOKEN')) {
+                    $limits[] = Limit::perMinute(200)->by(sha1($token));
+                }
+                
+                return $limits;
+
             }
         });
 
@@ -81,10 +116,36 @@ class RouteServiceProvider extends ServiceProvider
             if (Ninja::isSelfHost()) {
                 return Limit::none();
             } else {
-                return Limit::perMinute(25)->by($request->ip());
+                return Limit::perMinute(10)->by($request->ip());
             }
         });
 
+        RateLimiter::for('daily-verify', function (Request $request) {
+            if (Ninja::isSelfHost()) {
+                return Limit::none();
+            }
+
+            $identity = $request->user()?->email
+                ?? $request->input('email')
+                ?? $request->ip();
+
+            return [
+                Limit::perDay(12)->by($request->ip()),
+                Limit::perDay(12)->by($identity),
+            ];
+        });
+
+        RateLimiter::for('support-messages', function (Request $request) {
+            $identity = $request->user()?->email
+                ?? $request->input('email')
+                ?? $request->ip();
+
+            return [
+                Limit::perMinute(1)->by($identity),
+                Limit::perDay(10)->by($identity),
+            ];
+        });
+        
         RateLimiter::for('honeypot', function (Request $request) {
             return Limit::perMinute(2)->by($request->ip());
         });
@@ -93,6 +154,76 @@ class RouteServiceProvider extends ServiceProvider
             return Limit::perMinute(15)->by($request->ip());
         });
 
+        RateLimiter::for('portal-login', function (Request $request) {
+            if (Ninja::isSelfHost()) {
+                return Limit::none();
+            }
+
+            return [
+                Limit::perMinute(4)->by($request->ip()),
+                Limit::perMinute(10)->by($request->input('email') ?? ''),
+            ];
+        });
+
+        RateLimiter::for('portal-auth', function (Request $request) {
+            if (Ninja::isSelfHost()) {
+                return Limit::none();
+            }
+
+            $limits = [
+                Limit::perMinute(15)->by($request->ip()),
+            ];
+
+            if ($email = $request->input('email')) {
+                $limits[] = Limit::perMinute(6)->by($email);
+            }
+
+            return $limits;
+        });
+
+        RateLimiter::for('contact-login', function (Request $request) {
+            if (Ninja::isSelfHost()) {
+                return Limit::none();
+            }
+
+            return [
+                Limit::perMinute(4)->by($request->ip()),
+                Limit::perMinute(10)->by($request->input('email') ?? ''),
+            ];
+        });
+
+        RateLimiter::for('password-reset', function (Request $request) {
+            if (Ninja::isSelfHost()) {
+                return Limit::none();
+            }
+
+            return [
+                Limit::perMinute(4)->by($request->ip()),
+                Limit::perMinute(6)->by($request->input('email') ?? ''),
+            ];
+        });
+
+        RateLimiter::for('signup', function (Request $request) {
+            if (Ninja::isSelfHost()) {
+                return Limit::none();
+            }
+
+            return [
+                Limit::perMinute(3)->by($request->ip()),
+                Limit::perHour(10)->by($request->ip()),
+            ];
+        });
+
+        RateLimiter::for('contact-register', function (Request $request) {
+            if (Ninja::isSelfHost()) {
+                return Limit::none();
+            }
+
+            return [
+                Limit::perMinute(5)->by($request->ip()),
+                Limit::perMinute(5)->by($request->input('email') ?? ''),
+            ];
+        });
 
     }
 
@@ -113,7 +244,6 @@ class RouteServiceProvider extends ServiceProvider
 
         $this->mapClientApiRoutes();
 
-        $this->mapShopApiRoutes();
     }
 
     /**
@@ -169,13 +299,6 @@ class RouteServiceProvider extends ServiceProvider
         Route::prefix('')
              ->middleware('client')
              ->group(base_path('routes/client.php'));
-    }
-
-    protected function mapShopApiRoutes()
-    {
-        Route::prefix('')
-             ->middleware('shop')
-             ->group(base_path('routes/shop.php'));
     }
 
     protected function mapVendorsApiRoutes()

@@ -1,10 +1,11 @@
 <?php
+
 /**
  * Invoice Ninja (https://invoiceninja.com).
  *
  * @link https://github.com/invoiceninja/invoiceninja source repository
  *
- * @copyright Copyright (c) 2024. Invoice Ninja LLC (https://invoiceninja.com)
+ * @copyright Copyright (c) 2026. Invoice Ninja LLC (https://invoiceninja.com)
  *
  * @license https://www.elastic.co/licensing/elastic-license
  */
@@ -22,18 +23,13 @@ class DocumentRepository extends BaseRepository
     {
         $document->deleteFile();
         $document->forceDelete();
+
+        if ($document->documentable) {
+            $document->documentable->touch();
+        }
     }
 
-    public function restore($document)
-    {
-        // if (! $document->trashed()) {
-        //     return;
-        // }
+    public function restore($document) {}
 
-        // $document->restore();
-    }
-
-    public function archive($document)
-    {
-    }
+    public function archive($document) {}
 }

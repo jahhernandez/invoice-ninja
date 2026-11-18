@@ -1,10 +1,11 @@
 <?php
+
 /**
  * Invoice Ninja (https://invoiceninja.com).
  *
  * @link https://github.com/invoiceninja/invoiceninja source repository
  *
- * @copyright Copyright (c) 2024. Invoice Ninja LLC (https://invoiceninja.com)
+ * @copyright Copyright (c) 2026. Invoice Ninja LLC (https://invoiceninja.com)
  *
  * @license https://www.elastic.co/licensing/elastic-license
  */
@@ -15,7 +16,6 @@ use App\DataMapper\InvoiceItem;
 
 class PayPalBalanceAffecting
 {
-
     private array $key_map = [
         'Date' => 'date',
         'Time' => 'time',
@@ -105,22 +105,22 @@ class PayPalBalanceAffecting
     public $discount;
     public $creditTransactionalFee;
     public $originalInvoiceId;
-    
-    public function __construct(private array $import_row){}
+
+    public function __construct(private array $import_row) {}
 
     public function run(): self
     {
         $this->cleanUp();
 
-        foreach($this->import_row as $key => $value) {
+        foreach ($this->import_row as $key => $value) {
 
             $prop = $this->key_map[$key] ?? false;
 
-            if($prop){
+            if ($prop) {
 
-                echo "Setting {$prop} to {$value}".PHP_EOL;
+                echo "Setting {$prop} to {$value}" . PHP_EOL;
                 $this->{$prop} = $value;
-                
+
             }
         }
 
@@ -130,8 +130,8 @@ class PayPalBalanceAffecting
     private function cleanUp(): self
     {
 
-        foreach($this->key_map as $value){
-            echo "Setting {$value} to null".PHP_EOL;
+        foreach ($this->key_map as $value) {
+            echo "Setting {$value} to null" . PHP_EOL;
             $this->{$value} = null;
         }
 
@@ -154,7 +154,7 @@ class PayPalBalanceAffecting
 
     public function getInvoice(): array
     {
-        $item = new InvoiceItem;
+        $item = new InvoiceItem();
         $item->cost = $this->gross ?? 0;
         $item->product_key = $this->itemId ?? '';
         $item->notes = $this->subject ?? $this->itemDetails;
@@ -162,7 +162,7 @@ class PayPalBalanceAffecting
 
         return [
             'number' => trim($this->invoiceNumber ?? $this->transactionId),
-            'date' => str_replace('/','-', $this->date ?? ''),
+            'date' => str_replace('/', '-', $this->date ?? ''),
             'line_items' => [$item],
             'name' => $this->name ?? '',
             'email' => $this->fromEmailAddress ?? '',
@@ -174,12 +174,10 @@ class PayPalBalanceAffecting
     {
         $name_parts = explode(" ", $this->name ?? '');
 
-        if(count($name_parts) == 2)
-        {
+        if (count($name_parts) == 2) {
             $contact['first_name'] = $name_parts[0];
             $contact['last_name'] = $name_parts[1];
-        }
-        else {
+        } else {
             $contact['first_name'] = $this->name ?? '';
         }
 
@@ -188,7 +186,7 @@ class PayPalBalanceAffecting
 
         return $contact;
     }
-    
+
     private function returnAddress(): array
     {
         return [
@@ -203,13 +201,15 @@ class PayPalBalanceAffecting
 
     private function returnShippingAddress(): array
     {
-        if(strlen($this->shippingAddress ?? '') <3)
+        if (strlen($this->shippingAddress ?? '') < 3) {
             return [];
+        }
 
         $ship_parts = explode(",", $this->shippingAddress);
 
-        if(count($ship_parts) != 7)
+        if (count($ship_parts) != 7) {
             return [];
+        }
 
         return [
             'shipping_address1' => $ship_parts[2],
@@ -234,7 +234,7 @@ class PayPalBalanceAffecting
 
 
 
-// $csv = Reader::createFromString($csvFile);
+// $csv = Reader::fromString($csvFile);
 // // $csvdelimiter = self::detectDelimiter($csvfile);
 // $csv->setDelimiter(",");
 // $stmt = new Statement();

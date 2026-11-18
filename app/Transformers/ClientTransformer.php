@@ -1,26 +1,28 @@
 <?php
+
 /**
  * Invoice Ninja (https://invoiceninja.com).
  *
  * @link https://github.com/invoiceninja/invoiceninja source repository
  *
- * @copyright Copyright (c) 2024. Invoice Ninja LLC (https://invoiceninja.com)
+ * @copyright Copyright (c) 2026. Invoice Ninja LLC (https://invoiceninja.com)
  *
  * @license https://www.elastic.co/licensing/elastic-license
  */
 
 namespace App\Transformers;
 
-use App\Models\Activity;
-use App\Models\Client;
-use App\Models\ClientContact;
-use App\Models\ClientGatewayToken;
-use App\Models\CompanyLedger;
-use App\Models\Document;
-use App\Models\GroupSetting;
-use App\Models\SystemLog;
-use App\Utils\Traits\MakesHash;
 use stdClass;
+use App\Models\Client;
+use App\Models\Activity;
+use App\Models\Document;
+use App\Models\Location;
+use App\Models\SystemLog;
+use App\Models\GroupSetting;
+use App\Models\ClientContact;
+use App\Models\CompanyLedger;
+use App\Utils\Traits\MakesHash;
+use App\Models\ClientGatewayToken;
 
 /**
  * class ClientTransformer.
@@ -33,6 +35,7 @@ class ClientTransformer extends EntityTransformer
         'contacts',
         'documents',
         'gateway_tokens',
+        'locations',
     ];
 
     /**
@@ -48,7 +51,7 @@ class ClientTransformer extends EntityTransformer
     /**
      * @param Client $client
      *
-     * @return \Illuminate\Support\Collection
+     * @return \Illuminate\Http\Response|\Illuminate\Http\JsonResponse
      */
     public function includeActivities(Client $client)
     {
@@ -67,13 +70,25 @@ class ClientTransformer extends EntityTransformer
     /**
      * @param Client $client
      *
-     * @return \Illuminate\Support\Collection
+     * @return \Illuminate\Http\Response|\Illuminate\Http\JsonResponse
      */
     public function includeContacts(Client $client)
     {
         $transformer = new ClientContactTransformer($this->serializer);
 
         return $this->includeCollection($client->contacts, $transformer, ClientContact::class);
+    }
+
+    /**
+     * @param Client $client
+     *
+     * @return \Illuminate\Http\Response|\Illuminate\Http\JsonResponse
+     */
+    public function includeLocations(Client $client)
+    {
+        $transformer = new LocationTransformer($this->serializer);
+
+        return $this->includeCollection($client->locations, $transformer, Location::class);
     }
 
     public function includeGatewayTokens(Client $client)
@@ -128,7 +143,7 @@ class ClientTransformer extends EntityTransformer
             'paid_to_date' => (float) $client->paid_to_date,
             'payment_balance' => (float) $client->payment_balance,
             'credit_balance' => (float) $client->credit_balance,
-            'last_login' => (int) $client->last_login,
+            'last_login' => (int) max(0, (int)$client->last_login),
             'size_id' => (string) $client->size_id,
             'public_notes' => $client->public_notes ?: '',
             'client_hash' => (string) $client->client_hash,
@@ -165,6 +180,7 @@ class ClientTransformer extends EntityTransformer
             'tax_info' => $client->tax_data ?: new \stdClass(),
             'classification' => $client->classification ?: '',
             'e_invoice' => $client->e_invoice ?: new \stdClass(),
+            'tags' => $this->transformTags($client),
         ];
     }
 }

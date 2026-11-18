@@ -1,10 +1,11 @@
 <?php
+
 /**
  * Invoice Ninja (https://invoiceninja.com).
  *
  * @link https://github.com/invoiceninja/invoiceninja source repository
  *
- * @copyright Copyright (c) 2024. Invoice Ninja LLC (https://invoiceninja.com)
+ * @copyright Copyright (c) 2026. Invoice Ninja LLC (https://invoiceninja.com)
  *
  * @license https://www.elastic.co/licensing/elastic-license
  */
@@ -16,7 +17,7 @@ use App\Models\Credit;
 
 class CreditFactory
 {
-    public static function create(int $company_id, int $user_id, object $settings = null, Client $client = null): Credit
+    public static function create(int $company_id, int $user_id): Credit
     {
         $credit = new Credit();
         $credit->status_id = Credit::STATUS_DRAFT;
@@ -32,7 +33,7 @@ class CreditFactory
         $credit->due_date = null;
         $credit->partial_due_date = null;
         $credit->is_deleted = false;
-        $credit->line_items = json_encode([]);
+        $credit->line_items = [];
         $credit->tax_name1 = '';
         $credit->tax_rate1 = 0;
         $credit->tax_name2 = '';

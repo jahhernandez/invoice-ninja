@@ -5,7 +5,7 @@
  *
  * @link https://github.com/invoiceninja/invoiceninja source repository
  *
- * @copyright Copyright (c) 2024. Invoice Ninja LLC (https://invoiceninja.com)
+ * @copyright Copyright (c) 2026. Invoice Ninja LLC (https://invoiceninja.com)
  *
  * @license https://www.elastic.co/licensing/elastic-license
  */
@@ -70,7 +70,7 @@ class ImportCustomers
         } while ($customers->has_more);
     }
 
-    private function addCustomer(Customer $customer)
+    public function addCustomer(Customer $customer)
     {
         $account = $this->stripe->company_gateway->company->account;
 
@@ -125,6 +125,13 @@ class ImportCustomers
                 $settings->currency_id = (string) $currency->id;
                 $client->settings = $settings;
             }
+
+        } else {
+
+            $settings = $client->settings;
+            $settings->currency_id = (string) $this->stripe->company_gateway->company->settings->currency_id;
+            $client->settings = $settings;
+
         }
 
         $client->name = $customer->name ? $customer->name : $customer->email;
@@ -206,9 +213,9 @@ class ImportCustomers
                 $cgt = ClientGatewayToken::query()->where('gateway_customer_reference', $searchResults->data[0]->id)->where('company_id', $this->stripe->company_gateway->company->id)->exists();
 
                 if (! $cgt) {
-                    nlog('customer '.$searchResults->data[0]->id.' does not exist.');
+                    nlog('customer ' . $searchResults->data[0]->id . ' does not exist.');
 
-                    $this->update_payment_methods->updateMethods($searchResults->data[0], $client);
+                    $this->update_payment_methods->updateMethods($searchResults->data[0], $client); //@phpstan-ignore-line
                 }
             }
         }

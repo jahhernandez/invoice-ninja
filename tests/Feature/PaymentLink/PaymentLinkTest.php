@@ -1,4 +1,5 @@
 <?php
+
 /**
  * Invoice Ninja (https://invoiceninja.com).
  *
@@ -22,7 +23,7 @@ use App\Factory\InvoiceItemFactory;
 use App\Helpers\Subscription\SubscriptionCalculator;
 
 /**
- * @test
+ *
  */
 class PaymentLinkTest extends TestCase
 {
@@ -110,7 +111,7 @@ class PaymentLinkTest extends TestCase
 
         $price = $target->link_service()->calculateUpgradePriceV2($recurring_invoice, $target);
 
-        $refund = round($invoice->paid_to_date*$ratio,2);
+        $refund = round($invoice->paid_to_date * $ratio, 2);
 
         $this->assertEquals(($target->price - $refund), $price);
 

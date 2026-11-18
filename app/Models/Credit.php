@@ -1,29 +1,37 @@
 <?php
+
 /**
  * Invoice Ninja (https://invoiceninja.com).
  *
  * @link https://github.com/invoiceninja/invoiceninja source repository
  *
- * @copyright Copyright (c) 2024. Invoice Ninja LLC (https://invoiceninja.com)
+ * @copyright Copyright (c) 2026. Invoice Ninja LLC (https://invoiceninja.com)
  *
  * @license https://www.elastic.co/licensing/elastic-license
  */
 
 namespace App\Models;
 
+use App\DataMapper\InvoiceBackup;
+use App\DataMapper\InvoiceSync;
+use App\Utils\Ninja;
+use App\Utils\Number;
+use Elastic\ScoutDriverPlus\Searchable;
+use Illuminate\Support\Carbon;
+use App\Utils\Traits\MakesHash;
 use App\Helpers\Invoice\InvoiceSum;
-use App\Helpers\Invoice\InvoiceSumInclusive;
-use App\Models\Presenters\CreditPresenter;
+use Illuminate\Support\Facades\App;
+use App\Utils\Traits\MakesReminders;
 use App\Services\Credit\CreditService;
 use App\Services\Ledger\LedgerService;
-use App\Utils\Traits\MakesDates;
-use App\Utils\Traits\MakesHash;
+use App\Events\Credit\CreditWasEmailed;
 use App\Utils\Traits\MakesInvoiceValues;
-use App\Utils\Traits\MakesReminders;
-use Illuminate\Database\Eloquent\SoftDeletes;
-use Illuminate\Support\Carbon;
 use Laracasts\Presenter\PresentableTrait;
-
+use App\Models\Presenters\CreditPresenter;
+use App\Helpers\Invoice\InvoiceSumInclusive;
+use Illuminate\Database\Eloquent\SoftDeletes;
+use App\Models\Traits\HasTags;
+use App\Models\Traits\IndexableItems;
 /**
  * App\Models\Credit
  *
@@ -42,13 +50,14 @@ use Laracasts\Presenter\PresentableTrait;
  * @property string|null $number
  * @property float $discount
  * @property bool $is_amount_discount
+ * @property bool $auto_bill_enabled
  * @property string|null $po_number
  * @property string|null $date
  * @property string|null $last_sent_date
  * @property string|null $due_date
- * @property int $is_deleted
- * @property array|null $line_items
- * @property object|null $backup
+ * @property bool $is_deleted
+ * @property object|array|string $line_items
+ * @property InvoiceBackup $backup
  * @property string|null $footer
  * @property string|null $public_notes
  * @property string|null $private_notes
@@ -60,7 +69,7 @@ use Laracasts\Presenter\PresentableTrait;
  * @property string|null $tax_name3
  * @property float $tax_rate3
  * @property string $total_taxes
- * @property int $uses_inclusive_taxes
+ * @property bool $uses_inclusive_taxes
  * @property string|null $custom_value1
  * @property string|null $custom_value2
  * @property string|null $custom_value3
@@ -75,6 +84,9 @@ use Laracasts\Presenter\PresentableTrait;
  * @property int $custom_surcharge_tax3
  * @property int $custom_surcharge_tax4
  * @property float $exchange_rate
+ * @property int|null $location_id
+ * @property object|null $tax_data
+ * @property InvoiceSync|null $sync
  * @property float $amount
  * @property float $balance
  * @property float|null $partial
@@ -87,7 +99,13 @@ use Laracasts\Presenter\PresentableTrait;
  * @property string|null $reminder2_sent
  * @property string|null $reminder3_sent
  * @property string|null $reminder_last_sent
+ * @property object|null $tax_data
+ * @property object|null $e_invoice
+ * @property int|null $location_id
  * @property float $paid_to_date
+ * @property int|null $location_id
+ * @property object|null $e_invoice
+ * @property object|null $tax_data
  * @property int|null $subscription_id
  * @property \Illuminate\Database\Eloquent\Collection<int, \App\Models\Activity> $activities
  * @property int|null $activities_count
@@ -113,7 +131,9 @@ use Laracasts\Presenter\PresentableTrait;
  * @property \App\Models\User $user
  * @property \App\Models\Client $client
  * @property \App\Models\Vendor|null $vendor
+ * @property-read \App\Models\Location|null $location
  * @property-read mixed $pivot
+ * @property-read \App\Models\Location|null $location
  * @property-read \Illuminate\Database\Eloquent\Collection<int, \App\Models\Activity> $activities
  * @property-read \Illuminate\Database\Eloquent\Collection<int, \App\Models\CompanyLedger> $company_ledger
  * @property-read \Illuminate\Database\Eloquent\Collection<int, \App\Models\Document> $documents
@@ -121,6 +141,7 @@ use Laracasts\Presenter\PresentableTrait;
  * @property-read \Illuminate\Database\Eloquent\Collection<int, \App\Models\CreditInvitation> $invitations
  * @property-read \Illuminate\Database\Eloquent\Collection<int, \App\Models\Invoice> $invoices
  * @property-read \Illuminate\Database\Eloquent\Collection<int, \App\Models\Payment> $payments
+ * @property-read \Illuminate\Database\Eloquent\Collection<int, \App\Models\Tag> $tags
  *
  * @mixin \Eloquent
  */
@@ -128,11 +149,22 @@ class Credit extends BaseModel
 {
     use MakesHash;
     use Filterable;
-    use MakesDates;
     use SoftDeletes;
     use PresentableTrait;
     use MakesInvoiceValues;
     use MakesReminders;
+    use Searchable;
+    use HasTags;
+    Use IndexableItems;
+    /**
+     * Get the index name for the model.
+     *
+     * @return string
+     */
+    public function searchableAs(): string
+    {
+        return 'credits';
+    }
 
     protected $presenter = CreditPresenter::class;
 
@@ -171,16 +203,20 @@ class Credit extends BaseModel
         'exchange_rate',
         'subscription_id',
         'vendor_id',
+        'location_id',
+        'e_invoice',
+        'uses_inclusive_taxes',
     ];
 
     protected $casts = [
         'line_items' => 'object',
-        'backup' => 'object',
+        'backup' => InvoiceBackup::class,
         'updated_at' => 'timestamp',
         'created_at' => 'timestamp',
         'deleted_at' => 'timestamp',
         'is_amount_discount' => 'bool',
         'e_invoice' => 'object',
+        'sync' => InvoiceSync::class,
 
     ];
 
@@ -193,6 +229,40 @@ class Credit extends BaseModel
     public const STATUS_PARTIAL = 3;
 
     public const STATUS_APPLIED = 4;
+
+    public function toSearchableArray(): array
+    {
+        
+        $locale = $this->company->locale();
+        App::setLocale($locale);
+
+        return [
+            'id' => $this->company->db . ":" . $this->id,
+            'name' => ctrans('texts.credit') . " " . $this->number . " | " . $this->client->present()->name() . ' | ' . Number::formatMoney($this->amount, $this->client) . ' | ' . $this->translateDate($this->date, $this->company->date_format(), $locale),
+            'hashed_id' => $this->hashed_id,
+            'user_id' => (string) $this->user_id,
+            'assigned_user_id' => (string) $this->assigned_user_id,
+            'number' => (string) $this->number,
+            'is_deleted' => (bool) $this->is_deleted,
+            'amount' => (float) $this->amount,
+            'balance' => (float) $this->balance,
+            'due_date' => $this->due_date,
+            'date' => $this->date,
+            'custom_value1' => (string) $this->custom_value1,
+            'custom_value2' => (string) $this->custom_value2,
+            'custom_value3' => (string) $this->custom_value3,
+            'custom_value4' => (string) $this->custom_value4,
+            'company_key' => $this->company->company_key,
+            'po_number' => (string) $this->po_number,
+            'tags' => $this->tags->pluck('name')->values()->all(),
+            'line_items' => $this->indexLineItems(),
+        ];
+    }
+
+    public function getScoutKey()
+    {
+        return $this->company->db . ":" . $this->id;
+    }
 
     public function getEntityType()
     {
@@ -219,6 +289,11 @@ class Credit extends BaseModel
         return $this->belongsTo(User::class, 'assigned_user_id', 'id')->withTrashed();
     }
 
+    public function location(): \Illuminate\Database\Eloquent\Relations\BelongsTo
+    {
+        return $this->belongsTo(Location::class)->withTrashed();
+    }
+
     public function vendor(): \Illuminate\Database\Eloquent\Relations\BelongsTo
     {
         return $this->belongsTo(Vendor::class);
@@ -231,7 +306,7 @@ class Credit extends BaseModel
 
     public function activities(): \Illuminate\Database\Eloquent\Relations\HasMany
     {
-        return $this->hasMany(Activity::class)->orderBy('id', 'DESC')->take(50);
+        return $this->hasMany(Activity::class)->where('company_id', $this->company_id)->where('client_id', $this->client_id)->orderBy('id', 'DESC')->take(50);
     }
 
     public function company(): \Illuminate\Database\Eloquent\Relations\BelongsTo
@@ -264,13 +339,13 @@ class Credit extends BaseModel
      */
     public function invoice(): \Illuminate\Database\Eloquent\Relations\BelongsTo
     {
-        return $this->belongsTo(Invoice::class);
+        return $this->belongsTo(Invoice::class)->withTrashed();
     }
 
     /**
-     * @return \Illuminate\Database\Eloquent\Relations\MorphMany<CompanyLedger>
+     * @return \Illuminate\Database\Eloquent\Relations\MorphMany
      */
-    public function company_ledger(): \Illuminate\Database\Eloquent\Relations\MorphMany
+    public function company_ledger()
     {
         return $this->morphMany(CompanyLedger::class, 'company_ledgerable');
     }
@@ -290,17 +365,17 @@ class Credit extends BaseModel
     }
 
     /**
-     * @return \Illuminate\Database\Eloquent\Relations\MorphToMany<Payment>
+     * @return \Illuminate\Database\Eloquent\Relations\MorphToMany
      */
-    public function payments(): \Illuminate\Database\Eloquent\Relations\MorphToMany
+    public function payments()
     {
         return $this->morphToMany(Payment::class, 'paymentable');
     }
 
     /**
-     * @return \Illuminate\Database\Eloquent\Relations\MorphMany<Document>
+     * @return \Illuminate\Database\Eloquent\Relations\MorphMany
      */
-    public function documents(): \Illuminate\Database\Eloquent\Relations\MorphMany
+    public function documents()
     {
         return $this->morphMany(Document::class, 'documentable');
     }
@@ -310,7 +385,7 @@ class Credit extends BaseModel
      *
      * @return InvoiceSumInclusive | InvoiceSum The invoice calculator object getters
      */
-    public function calc(): InvoiceSumInclusive | InvoiceSum
+    public function calc(): InvoiceSumInclusive|InvoiceSum
     {
         $credit_calc = null;
 
@@ -367,18 +442,6 @@ class Credit extends BaseModel
         });
     }
 
-    public function transaction_event()
-    {
-        $credit = $this->fresh();
-
-        return [
-            'credit_id' => $credit->id,
-            'credit_amount' => $credit->amount ?: 0,
-            'credit_balance' => $credit->balance ?: 0,
-            'credit_status' => $credit->status_id ?: 1,
-        ];
-    }
-
     public function translate_entity(): string
     {
         return ctrans('texts.credit');
@@ -397,6 +460,26 @@ class Credit extends BaseModel
                 return ctrans('texts.applied');
             default:
                 return ctrans('texts.sent');
+        }
+    }
+
+    /**
+     * entityEmailEvent
+     *
+     * Translates the email type into an activity + notification
+     * that matches.
+     */
+    public function entityEmailEvent($invitation, $reminder_template)
+    {
+
+        switch ($reminder_template) {
+            case 'credit':
+                event(new CreditWasEmailed($invitation, $invitation->company, Ninja::eventVars(auth()->user() ? auth()->user()->id : null), $reminder_template));
+                break;
+
+            default:
+                // code...
+                break;
         }
     }
 }

@@ -5,7 +5,7 @@
  *
  * @link https://github.com/invoiceninja/invoiceninja source repository
  *
- * @copyright Copyright (c) 2024. Invoice Ninja LLC (https://invoiceninja.com)
+ * @copyright Copyright (c) 2026. Invoice Ninja LLC (https://invoiceninja.com)
  *
  * @license https://www.elastic.co/licensing/elastic-license
  */
@@ -30,6 +30,9 @@ class Webhook
      */
     public function getEventTypes()
     {
+        if ($this->checkout->gateway === null) {
+            return null;
+        }
         try {
             $response = $this->checkout->gateway->getWorkflowsClient()->getEventTypes();
 
@@ -40,7 +43,7 @@ class Webhook
             $error_details = $e->error_details;
             nlog($error_details);
 
-            $http_status_code = isset($e->http_metadata) ? $e->http_metadata->getStatusCode() : null;
+            $http_status_code = isset($e->http_metadata) ? $e->http_metadata->getStatusCode() : null; //@phpstan-ignore-line
         } catch (CheckoutAuthorizationException $e) {
             // Bad Invalid authorization
         }
@@ -48,25 +51,27 @@ class Webhook
     }
 
     /**
-     * Lists the workflows in Checkout
+     * Lists the workflows in Checkout.
+     *
+     * @return array<string, mixed>|null
      */
-    public function getWorkFlows()
+    public function getWorkFlows(): ?array
     {
-
-        try {
-
-            $response = $this->checkout->gateway->getWorkflowsClient()->getWorkflows();
-
-            return $response;
-
-        } catch (CheckoutApiException $e) {
-            // API error
-            $error_details = $e->error_details;
-            $http_status_code = isset($e->http_metadata) ? $e->http_metadata->getStatusCode() : null;
-        } catch (CheckoutAuthorizationException $e) {
-            // Bad Invalid authorization
+        if ($this->checkout->gateway === null) {
+            return ['data' => []];
         }
 
+        try {
+            return $this->checkout->gateway->getWorkflowsClient()->getWorkflows();
+        } catch (CheckoutApiException $e) {
+            nlog($e->error_details);
+
+            return null;
+        } catch (CheckoutAuthorizationException $e) {
+            nlog('Checkout getWorkFlows: authorization failed');
+
+            return null;
+        }
     }
 
 }

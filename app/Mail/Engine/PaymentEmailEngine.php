@@ -1,10 +1,11 @@
 <?php
+
 /**
  * Invoice Ninja (https://invoiceninja.com).
  *
  * @link https://github.com/invoiceninja/invoiceninja source repository
  *
- * @copyright Copyright (c) 2024. Invoice Ninja LLC (https://invoiceninja.com)
+ * @copyright Copyright (c) 2026. Invoice Ninja LLC (https://invoiceninja.com)
  *
  * @license https://www.elastic.co/licensing/elastic-license
  */
@@ -30,7 +31,7 @@ class PaymentEmailEngine extends BaseEmailEngine
 {
     use MakesDates;
     use MakesHash;
-    
+
     public $client;
 
     /** @var \App\Models\Payment $payment */
@@ -68,7 +69,7 @@ class PaymentEmailEngine extends BaseEmailEngine
     {
         App::forgetInstance('translator');
         $t = app('translator');
-        App::setLocale($this->contact->preferredLocale());
+        App::setLocale($this->client->locale());
         $t->replace(Ninja::transformTranslations($this->client->getMergedSettings()));
 
         $this->resolvePaymentTemplate();
@@ -102,8 +103,8 @@ class PaymentEmailEngine extends BaseEmailEngine
         if ($this->client->getSetting('pdf_email_attachment') !== false && $this->company->account->hasFeature(Account::FEATURE_PDF_ATTACHMENT)) {
 
             $template_in_use = false;
-            
-            if($this->is_refund && \App\Models\Design::where('id', $this->decodePrimaryKey($this->payment->client->getSetting('payment_refund_design_id')))->where('is_template', true)->exists()) {
+
+            if ($this->is_refund && \App\Models\Design::where('id', $this->decodePrimaryKey($this->payment->client->getSetting('payment_refund_design_id')))->where('is_template', true)->exists()) {
                 $pdf = (new TemplateAction(
                     [$this->payment->hashed_id],
                     $this->payment->client->getSetting('payment_refund_design_id'),
@@ -120,7 +121,7 @@ class PaymentEmailEngine extends BaseEmailEngine
                 $this->setAttachments([['file' => base64_encode($pdf), 'name' => $file_name]]);
                 $template_in_use = true;
 
-            } elseif(!$this->is_refund && \App\Models\Design::where('id', $this->decodePrimaryKey($this->payment->client->getSetting('payment_receipt_design_id')))->where('is_template', true)->exists()) {
+            } elseif (!$this->is_refund && \App\Models\Design::where('id', $this->decodePrimaryKey($this->payment->client->getSetting('payment_receipt_design_id')))->where('is_template', true)->exists()) {
                 $pdf = (new TemplateAction(
                     [$this->payment->hashed_id],
                     $this->payment->client->getSetting('payment_receipt_design_id'),
@@ -141,9 +142,9 @@ class PaymentEmailEngine extends BaseEmailEngine
 
             $this->payment->invoices->each(function ($invoice) use ($template_in_use) {
 
-                if(!$template_in_use) {
+                if (!$template_in_use) {
                     $pdf = ((new CreateRawPdf($invoice->invitations->first()))->handle());
-                    $file_name = $invoice->numberFormatter().'.pdf';
+                    $file_name = $invoice->numberFormatter() . '.pdf';
                     $this->setAttachments([['file' => base64_encode($pdf), 'name' => $file_name]]);
                 }
 
@@ -155,7 +156,7 @@ class PaymentEmailEngine extends BaseEmailEngine
                             $hash = Str::random(64);
                             Cache::put($hash, ['db' => $this->payment->company->db, 'doc_hash' => $document->hash], now()->addDays(7));
 
-                            $this->setAttachmentLinks(["<a class='doc_links' href='" . URL::signedRoute('documents.hashed_download', ['hash' => $hash]) ."'>". $document->name ."</a>"]);
+                            $this->setAttachmentLinks(["<a class='doc_links' href='" . URL::signedRoute('documents.hashed_download', ['hash' => $hash]) . "'>" . $document->name . "</a>"]);
                         } else {
                             $this->setAttachments([['path' => $document->filePath(), 'name' => $document->name, 'mime' => null, ]]);
                         }
@@ -233,7 +234,7 @@ class PaymentEmailEngine extends BaseEmailEngine
         $data['$vat_number'] = ['value' => $this->client->vat_number ?: '&nbsp;', 'label' => ctrans('texts.vat_number')];
         $data['$website'] = ['value' => $this->client->present()->website() ?: '&nbsp;', 'label' => ctrans('texts.website')];
         $data['$phone'] = ['value' => $this->client->present()->phone() ?: '&nbsp;', 'label' => ctrans('texts.phone')];
-        $data['$country'] = ['value' => isset($this->client->country->name) ? $this->client->country->name : '', 'label' => ctrans('texts.country')];
+        $data['$country'] = ['value' => $this->client->country->name ?? '', 'label' => ctrans('texts.country')];
         $data['$email'] = ['value' => isset($this->contact) ? $this->contact->email : 'no contact email on record', 'label' => ctrans('texts.email')];
         $data['$client_name'] = ['value' => $this->client->present()->name() ?: '&nbsp;', 'label' => ctrans('texts.client_name')];
         $data['$client.name'] = &$data['$client_name'];
@@ -262,6 +263,7 @@ class PaymentEmailEngine extends BaseEmailEngine
         $data['$client.email'] = &$data['$email'];
 
         $data['$client.balance'] = ['value' => Number::formatMoney($this->client->balance, $this->client), 'label' => ctrans('texts.account_balance')];
+        $data['$client.payment_balance'] = ['value' => Number::formatMoney($this->client->payment_balance, $this->client), 'label' => ctrans('texts.payment_balance_on_file')];
         $data['$outstanding'] = ['value' => Number::formatMoney($this->client->balance, $this->client), 'label' => ctrans('texts.account_balance')];
         $data['$client_balance'] = ['value' => Number::formatMoney($this->client->balance, $this->client), 'label' => ctrans('texts.account_balance')];
         $data['$paid_to_date'] = ['value' => Number::formatMoney($this->client->paid_to_date, $this->client), 'label' => ctrans('texts.paid_to_date')];
@@ -329,9 +331,10 @@ class PaymentEmailEngine extends BaseEmailEngine
         $data['$invoices.due_date'] = ['value' => $this->formatInvoiceField('due_date'), 'label' => ctrans('texts.invoices')];
         $data['$invoices.po_number'] = ['value' => $this->formatInvoiceField('po_number'), 'label' => ctrans('texts.invoices')];
         $data['$invoice_numbers'] = ['value' => $this->formatInvoiceNumbersRaw(), 'label' => ctrans('texts.invoices')];
+        $data['$invoice_raw'] = ['value' => $this->formatInvoiceNumberRaw(), 'label' => ctrans('texts.invoice_number')];
 
         if ($this->payment->status_id == 4) {
-            $data['$status_logo'] = ['value' => '<div class="stamp is-paid"> ' . ctrans('texts.paid') .'</div>', 'label' => ''];
+            $data['$status_logo'] = ['value' => '<div class="stamp is-paid"> ' . ctrans('texts.paid') . '</div>', 'label' => ''];
         } else {
             $data['$status_logo'] = ['value' => '', 'label' => ''];
         }
@@ -369,7 +372,7 @@ class PaymentEmailEngine extends BaseEmailEngine
         $invoice = '';
 
         if ($this->payment->invoices()->exists()) {
-            $invoice = ctrans('texts.invoice_number_short').implode(',', $this->payment->invoices->pluck('number')->toArray());
+            $invoice = ctrans('texts.invoice_number_short') . implode(',', $this->payment->invoices->pluck('number')->toArray());
         }
 
         return $invoice;
@@ -380,7 +383,7 @@ class PaymentEmailEngine extends BaseEmailEngine
         $invoice = '';
 
         if ($this->payment->invoices()->exists()) {
-            $invoice = ctrans('texts.po_number_short').implode(',', $this->payment->invoices->pluck('po_number')->toArray());
+            $invoice = ctrans('texts.po_number_short') . implode(',', $this->payment->invoices->pluck('po_number')->toArray());
         }
 
         return $invoice;
@@ -391,7 +394,7 @@ class PaymentEmailEngine extends BaseEmailEngine
         $invoice_list = '<br><br>';
 
         foreach ($this->payment->invoices as $invoice) {
-            $invoice_list .= ctrans('texts.invoice_number_short')." {$invoice->number} ".Number::formatMoney($invoice->pivot->amount, $this->client).'\n';
+            $invoice_list .= ctrans('texts.invoice_number_short') . " {$invoice->number} " . Number::formatMoney($invoice->pivot->amount, $this->client) . '<br>';
         }
 
         return $invoice_list;
@@ -402,15 +405,15 @@ class PaymentEmailEngine extends BaseEmailEngine
         $invoice_list = '';
 
         foreach ($this->payment->invoices as $invoice) {
-            if (strlen($invoice->po_number) > 1) {
-                $invoice_list .= ctrans('texts.po_number')." {$invoice->po_number} <br>";
+            if (strlen($invoice->po_number ?? '') > 1) {
+                $invoice_list .= ctrans('texts.po_number') . " {$invoice->po_number} <br>";
             }
 
-            $invoice_list .= ctrans('texts.invoice_number_short')." {$invoice->number} " . Number::formatMoney($invoice->pivot->amount, $this->client).', ';
+            $invoice_list .= ctrans('texts.invoice_number_short') . " {$invoice->number} " . Number::formatMoney($invoice->pivot->amount, $this->client) . ', ';
 
         }
 
-        if(strlen($invoice_list) < 4) {
+        if (strlen($invoice_list) < 4) {
             $invoice_list = Number::formatMoney($this->payment->amount, $this->client) ?: '&nbsp;';
         }
 
@@ -426,18 +429,26 @@ class PaymentEmailEngine extends BaseEmailEngine
 
     }
 
+
+    private function formatInvoiceNumberRaw()
+    {
+
+        return $this->payment->invoices->first()->number ?? '&nbsp;';
+
+    }
+
     private function formatInvoiceReferences()
     {
         $invoice_list = '<br><br>';
 
         foreach ($this->payment->invoices as $invoice) {
-            if (strlen($invoice->po_number) > 1) {
-                $invoice_list .= ctrans('texts.po_number')." {$invoice->po_number} <br>";
+            if (strlen($invoice->po_number ?? '') > 1) {
+                $invoice_list .= ctrans('texts.po_number') . " {$invoice->po_number} <br>";
             }
 
-            $invoice_list .= ctrans('texts.invoice_number_short')." {$invoice->number} <br>";
-            $invoice_list .= ctrans('texts.invoice_amount').' '.Number::formatMoney($invoice->pivot->amount, $this->client).'<br>';
-            $invoice_list .= ctrans('texts.invoice_balance').' '.Number::formatMoney($invoice->fresh()->balance, $this->client).'<br>';
+            $invoice_list .= ctrans('texts.invoice_number_short') . " {$invoice->number} <br>";
+            $invoice_list .= ctrans('texts.invoice_amount') . ' ' . Number::formatMoney($invoice->pivot->amount, $this->client) . '<br>';
+            $invoice_list .= ctrans('texts.invoice_balance') . ' ' . Number::formatMoney($invoice->fresh()->balance, $this->client) . '<br>';
             $invoice_list .= '-----<br>';
         }
 
@@ -470,7 +481,7 @@ class PaymentEmailEngine extends BaseEmailEngine
 
         foreach ($values as $key => $value) {
             $data['values'][$key] = $value['value'];
-            $data['labels'][$key.'_label'] = $value['label'];
+            $data['labels'][$key . '_label'] = $value['label'];
         }
 
         return $data;
@@ -486,7 +497,7 @@ class PaymentEmailEngine extends BaseEmailEngine
     private function buildViewButton(string $link, string $text): string
     {
         if ($this->settings->email_style == 'plain') {
-            return '<a href="'. $link .'" target="_blank">'. $text .'</a>';
+            return '<a href="' . $link . '" target="_blank">' . $text . '</a>';
         }
 
 
@@ -499,9 +510,9 @@ class PaymentEmailEngine extends BaseEmailEngine
         <![endif]-->        
         <table align="center" border="0" cellpadding="0" cellspacing="0" role="presentation" >
         <tbody><tr>
-        <td align="center" class="new_button" style="border-radius: 2px; background-color: '.$this->settings->primary_color.'">
-            <a href="'. $link . '" target="_blank" class="new_button" style="text-decoration: none; border: 1px solid '.$this->settings->primary_color.'; display: inline-block; border-radius: 2px; padding-top: 15px; padding-bottom: 15px; padding-left: 25px; padding-right: 25px; font-size: 20px; color: #fff">
-            <singleline label="cta button">'. $text .'</singleline>
+        <td align="center" class="new_button" style="border-radius: 2px; background-color: ' . $this->settings->primary_color . '">
+            <a href="' . $link . '" target="_blank" class="new_button" style="text-decoration: none; border: 1px solid ' . $this->settings->primary_color . '; display: inline-block; border-radius: 2px; padding-top: 15px; padding-bottom: 15px; padding-left: 25px; padding-right: 25px; font-size: 20px; color: #fff">
+            <singleline label="cta button">' . $text . '</singleline>
             </a>
         </td>
         </tr>
@@ -516,14 +527,5 @@ class PaymentEmailEngine extends BaseEmailEngine
         ';
 
 
-        return '
-            <table border="0" cellspacing="0" cellpadding="0" align="center">
-                <tr style="border: 0 !important; ">
-                    <td class="new_button" style="padding: 12px 18px 12px 18px; border-radius:5px;" align="center"> 
-                    <a href="'. $link .'" target="_blank" style="border: 0 !important;font-size: 18px; font-family: Helvetica, Arial, sans-serif; color: #ffffff; text-decoration: none; display: inline-block;">'. $text .'</a>
-                    </td>
-                </tr>
-            </table>
-        ';
     }
 }

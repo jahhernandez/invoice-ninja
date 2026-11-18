@@ -1,10 +1,11 @@
 <?php
+
 /**
  * Invoice Ninja (https://invoiceninja.com).
  *
  * @link https://github.com/invoiceninja/invoiceninja source repository
  *
- * @copyright Copyright (c) 2024. Invoice Ninja LLC (https://invoiceninja.com)
+ * @copyright Copyright (c) 2026. Invoice Ninja LLC (https://invoiceninja.com)
  *
  * @license https://www.elastic.co/licensing/elastic-license
  */
@@ -28,7 +29,8 @@ use Illuminate\Database\Eloquent\SoftDeletes;
  * @property bool $update_details
  * @property bool $is_deleted
  * @property string $config
- * @property mixed $fees_and_limits
+ * @property object $settings
+ * @property array|object|mixed $fees_and_limits
  * @property string|null $custom_value1
  * @property string|null $custom_value2
  * @property string|null $custom_value3
@@ -38,6 +40,7 @@ use Illuminate\Database\Eloquent\SoftDeletes;
  * @property int|null $deleted_at
  * @property string $token_billing
  * @property string|null $label
+ * @property string|null $gateway_account_id
  * @property bool $require_client_name
  * @property bool $require_postal_code
  * @property bool $require_client_phone
@@ -53,7 +56,6 @@ use Illuminate\Database\Eloquent\SoftDeletes;
  * @property-read \App\Models\Gateway $gateway
  * @property-read mixed $hashed_id
  * @method getConfigField(string $field)
- * @method static \Illuminate\Database\Eloquent\Builder|BaseModel company()
  * @method static \Illuminate\Database\Eloquent\Builder|CompanyGateway filter(\App\Filters\QueryFilters $filters)
  * @method static \Illuminate\Database\Eloquent\Builder|CompanyGateway newModelQuery()
  * @method static \Illuminate\Database\Eloquent\Builder|CompanyGateway newQuery()
@@ -75,6 +77,7 @@ class CompanyGateway extends BaseModel
 
     protected $casts = [
         'fees_and_limits' => 'object',
+        'settings' => 'object',
         'updated_at' => 'timestamp',
         'created_at' => 'timestamp',
         'deleted_at' => 'timestamp',
@@ -113,12 +116,12 @@ class CompanyGateway extends BaseModel
     ];
 
     public static $credit_cards = [
-            1 => ['card' => 'images/credit_cards/Test-Visa-Icon.png', 'text' => 'Visa'],
-            2 => ['card' => 'images/credit_cards/Test-MasterCard-Icon.png', 'text' => 'Master Card'],
-            4 => ['card' => 'images/credit_cards/Test-AmericanExpress-Icon.png', 'text' => 'American Express'],
-            8 => ['card' => 'images/credit_cards/Test-Diners-Icon.png', 'text' => 'Diners'],
-            16 => ['card' => 'images/credit_cards/Test-Discover-Icon.png', 'text' => 'Discover'],
-        ];
+        1 => ['card' => 'images/credit_cards/Test-Visa-Icon.png', 'text' => 'Visa'],
+        2 => ['card' => 'images/credit_cards/Test-MasterCard-Icon.png', 'text' => 'Master Card'],
+        4 => ['card' => 'images/credit_cards/Test-AmericanExpress-Icon.png', 'text' => 'American Express'],
+        8 => ['card' => 'images/credit_cards/Test-Diners-Icon.png', 'text' => 'Diners'],
+        16 => ['card' => 'images/credit_cards/Test-Discover-Icon.png', 'text' => 'Discover'],
+    ];
 
     // const TYPE_PAYPAL = 300;
     // const TYPE_STRIPE = 301;
@@ -128,7 +131,6 @@ class CompanyGateway extends BaseModel
     // const TYPE_AUTHORIZE = 305;
     // const TYPE_CUSTOM = 306;
     // const TYPE_BRAINTREE = 307;
-    // const TYPE_WEPAY = 309;
     // const TYPE_PAYFAST = 310;
     // const TYPE_PAYTRACE = 311;
     // const TYPE_MOLLIE = 312;
@@ -155,10 +157,21 @@ class CompanyGateway extends BaseModel
         'b9886f9257f0c6ee7c302f1c74475f6c' => 321, //GoCardless
         'hxd6gwg3ekb9tb3v9lptgx1mqyg69zu9' => 322,
         '80af24a6a691230bbec33e930ab40666' => 323,
-        'vpyfbmdrkqcicpkjqdusgjfluebftuva' => 324, //BTPay
+        'vpyfbmdrkqcicpkjqdusgjfluebftuva' => 324, //BTCPay
+        '91be24c7b792230bced33e930ac61676' => 325, //Rotessa
+        'wbhf02us6owgo7p4nfjd0ymssdshks4d' => 326, //Blockonomics
+        'b67581d804dbad1743b61c57285142ad' => 327, //Powerboard
+        'f4lafbnygsmkflagbqp7zqnfpgeoekdn' => 328, //LawPay
+        'c7a8e2f1b4d90635a3f8e1c9b2d4a6e0' => 330, //CHIP
+        'ca3b3f7e4be811c96a8a1f4cafe2a97f' => 331, //Helcim
     ];
 
     protected $touches = [];
+
+    public function isPayPal()
+    {
+        return in_array($this->gateway_key, ['80af24a6a691230bbec33e930ab40666','80af24a6a691230bbec33e930ab40665']);
+    }
 
     public function getEntityType()
     {
@@ -194,7 +207,7 @@ class CompanyGateway extends BaseModel
     }
 
     /* This is the public entry point into the payment superclass */
-    public function driver(Client $client = null)
+    public function driver(?Client $client = null)
     {
         // $class = static::driver_class();
         $class = self::driver_class();
@@ -208,7 +221,7 @@ class CompanyGateway extends BaseModel
 
     private function driver_class()
     {
-        $class = 'App\\PaymentDrivers\\'.$this->gateway->provider.'PaymentDriver';
+        $class = 'App\\PaymentDrivers\\' . $this->gateway->provider . 'PaymentDriver';
         $class = str_replace('_', '', $class);
 
         if (class_exists($class)) {
@@ -389,11 +402,11 @@ class CompanyGateway extends BaseModel
         if ($fee > 0) {
             $fees_and_limits = $this->fees_and_limits->{$gateway_type_id};
 
-            if (strlen($fees_and_limits->fee_percent) >= 1) {
+            if (isset($fees_and_limits->fee_percent) && $fees_and_limits->fee_percent > 0) {
                 $label .= $fees_and_limits->fee_percent . '%';
             }
 
-            if (strlen($fees_and_limits->fee_amount) >= 1 && $fees_and_limits->fee_amount > 0) {
+            if (isset($fees_and_limits->fee_amount) && $fees_and_limits->fee_amount > 0) {
                 if (strlen($label) > 1) {
                     $label .= ' + ' . Number::formatMoney($fees_and_limits->fee_amount, $client);
                 } else {
@@ -415,7 +428,6 @@ class CompanyGateway extends BaseModel
         }
 
         $fee = 0;
-
 
         if ($fees_and_limits->adjust_fee_percent ?? false) {
             $adjusted_fee = 0;
@@ -443,11 +455,7 @@ class CompanyGateway extends BaseModel
                 } else {
                     $fee += round(($amount * $fees_and_limits->fee_percent / 100), 2);
                 }
-                //elseif ($fees_and_limits->adjust_fee_percent) {
-                //   $fee += round(($amount / (1 - $fees_and_limits->fee_percent / 100) - $amount), 2);
-                //} else {
 
-                //}
             }
         }
         /* Cap fee if we have to here. */
@@ -461,21 +469,29 @@ class CompanyGateway extends BaseModel
         if ($include_taxes) {
             if ($fees_and_limits->fee_tax_rate1) {
                 $fee += round(($pre_tax_fee * $fees_and_limits->fee_tax_rate1 / 100), 2);
-                // info("fee after adding fee tax 1 = {$fee}");
             }
 
             if ($fees_and_limits->fee_tax_rate2) {
                 $fee += round(($pre_tax_fee * $fees_and_limits->fee_tax_rate2 / 100), 2);
-                // info("fee after adding fee tax 2 = {$fee}");
             }
 
             if ($fees_and_limits->fee_tax_rate3) {
                 $fee += round(($pre_tax_fee * $fees_and_limits->fee_tax_rate3 / 100), 2);
-                // info("fee after adding fee tax 3 = {$fee}");
             }
         }
 
         return $fee;
+    }
+
+    public function getSettings()
+    {
+        return $this->settings ?? new \stdClass();
+    }
+
+    public function setSettings($settings)
+    {
+        $this->settings = $settings;
+        $this->save();
     }
 
     public function webhookUrl()

@@ -1,10 +1,11 @@
 <?php
+
 /**
  * Invoice Ninja (https://invoiceninja.com).
  *
  * @link https://github.com/invoiceninja/invoiceninja source repository
  *
- * @copyright Copyright (c) 2024. Invoice Ninja LLC (https://invoiceninja.com)
+ * @copyright Copyright (c) 2026. Invoice Ninja LLC (https://invoiceninja.com)
  *
  * @license https://www.elastic.co/licensing/elastic-license
  */
@@ -32,7 +33,7 @@ class TaskStatusFilters extends QueryFilters
         }
 
         return  $this->builder->where(function ($query) use ($filter) {
-            $query->where('name', 'like', '%'.$filter.'%');
+            $query->where('name', 'like', '%' . $filter . '%');
         });
     }
 
@@ -46,11 +47,12 @@ class TaskStatusFilters extends QueryFilters
     {
         $sort_col = explode('|', $sort);
 
-        if (!is_array($sort_col) || count($sort_col) != 2) {
-            return $this->builder;
+        if (!is_array($sort_col) || count($sort_col) != 2 || !in_array($sort_col[0], \Illuminate\Support\Facades\Schema::getColumnListing('task_statuses'))) {
+            return $this->builder->orderBy('status_order', 'asc');
         }
 
-        $dir = ($sort_col[1] == 'asc') ? 'asc' : 'desc';
+
+        $dir = ($sort_col[1] == 'desc') ? 'desc' : 'asc';
 
         return $this->builder->orderBy($sort_col[0], $dir);
     }

@@ -1,10 +1,11 @@
 <?php
+
 /**
  * Invoice Ninja (https://invoiceninja.com).
  *
  * @link https://github.com/invoiceninja/invoiceninja source repository
  *
- * @copyright Copyright (c) 2024. Invoice Ninja LLC (https://invoiceninja.com)
+ * @copyright Copyright (c) 2026. Invoice Ninja LLC (https://invoiceninja.com)
  *
  * @license https://www.elastic.co/licensing/elastic-license
  */
@@ -85,7 +86,7 @@ class BankTransactionRuleController extends BaseController
      *       ),
      *     )
      * @param BankTransactionRuleFilters $filters
-     * @return Response|mixed
+     * @return Response| \Illuminate\Http\JsonResponse|mixed
      */
     public function index(BankTransactionRuleFilters $filters)
     {
@@ -99,7 +100,7 @@ class BankTransactionRuleController extends BaseController
      *
      * @param ShowBankTransactionRuleRequest $request
      * @param BankTransactionRule $bank_transaction_rule
-     * @return \Illuminate\Http\JsonResponse
+     * @return \Illuminate\Http\JsonResponse|\Illuminate\Http\Response|\Illuminate\Http\Response
      *
      *
      * @OA\Get(
@@ -154,7 +155,7 @@ class BankTransactionRuleController extends BaseController
      *
      * @param EditBankTransactionRuleRequest $request
      * @param BankTransactionRule $bank_transaction_rule
-     * @return \Illuminate\Http\JsonResponse
+     * @return \Illuminate\Http\JsonResponse|\Illuminate\Http\Response
      *
      *
      * @OA\Get(
@@ -208,7 +209,7 @@ class BankTransactionRuleController extends BaseController
      *
      * @param UpdateBankTransactionRuleRequest $request
      * @param BankTransactionRule $bank_transaction_rule
-     * @return \Illuminate\Http\JsonResponse
+     * @return \Illuminate\Http\JsonResponse|\Illuminate\Http\Response
      *
      *
      *
@@ -269,7 +270,7 @@ class BankTransactionRuleController extends BaseController
      * Show the form for creating a new resource.
      *
      * @param CreateBankTransactionRuleRequest $request
-     * @return \Illuminate\Http\JsonResponse
+     * @return \Illuminate\Http\JsonResponse|\Illuminate\Http\Response
      *
      *
      *
@@ -317,7 +318,7 @@ class BankTransactionRuleController extends BaseController
      * Store a newly created resource in storage.
      *
      * @param StoreBankTransactionRuleRequest $request
-     * @return \Illuminate\Http\JsonResponse
+     * @return \Illuminate\Http\JsonResponse|\Illuminate\Http\Response
      *
      *
      *
@@ -369,7 +370,7 @@ class BankTransactionRuleController extends BaseController
      *
      * @param DestroyBankTransactionRuleRequest $request
      * @param BankTransactionRule $bank_transaction_rule
-     * @return \Illuminate\Http\JsonResponse
+     * @return \Illuminate\Http\JsonResponse|\Illuminate\Http\Response
      *
      *
      * @throws \Exception
@@ -424,7 +425,7 @@ class BankTransactionRuleController extends BaseController
     /**
      * Perform bulk actions on the list view.
      *
-     * @return \Illuminate\Support\Collection
+     * @return \Illuminate\Http\Response|\Illuminate\Http\JsonResponse
      *
      * @OA\Post(
      *      path="/api/v1/bank_transation_rules/bulk",

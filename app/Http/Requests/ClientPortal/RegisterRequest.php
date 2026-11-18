@@ -1,22 +1,25 @@
 <?php
+
 /**
  * Invoice Ninja (https://invoiceninja.com).
  *
  * @link https://github.com/invoiceninja/invoiceninja source repository
  *
- * @copyright Copyright (c) 2024. Invoice Ninja LLC (https://invoiceninja.com)
+ * @copyright Copyright (c) 2026. Invoice Ninja LLC (https://invoiceninja.com)
  *
  * @license https://www.elastic.co/licensing/elastic-license
  */
 
 namespace App\Http\Requests\ClientPortal;
 
-use App\Libraries\MultiDB;
+use App\Services\ClientPortal\CustomFieldService;
+use App\Utils\Ninja;
 use App\Models\Account;
 use App\Models\Company;
-use App\Utils\Ninja;
-use Illuminate\Foundation\Http\FormRequest;
+use App\Libraries\MultiDB;
 use Illuminate\Validation\Rule;
+use Illuminate\Foundation\Http\FormRequest;
+use App\Http\ValidationRules\Turnstile\Turnstile;
 
 class RegisterRequest extends FormRequest
 {
@@ -38,16 +41,27 @@ class RegisterRequest extends FormRequest
     public function rules(): array
     {
         $rules = [];
+        $company = $this->company();
 
-        foreach ($this->company()->client_registration_fields as $field) {
+        $service = app(CustomFieldService::class);
+        $customRules = $service->buildRules($service->buildFields($company));
+
+        $customKeys = ['custom_value1', 'custom_value2', 'custom_value3', 'custom_value4'];
+
+        foreach ($company->client_registration_fields as $field) {
             if ($field['visible'] ?? true) {
-                $rules[$field['key']] = $field['required'] ? ['bail','required'] : ['sometimes'];
+                if (in_array($field['key'], $customKeys)) {
+                    $rules[$field['key']] = $customRules[$field['key']]
+                        ?? ($field['required'] ? ['bail', 'required'] : ['sometimes']);
+                } else {
+                    $rules[$field['key']] = $field['required'] ? ['bail', 'required'] : ['sometimes'];
+                }
             }
         }
 
-        foreach ($rules as $field => $properties) {
+        foreach (array_keys($rules) as $field) {
             if ($field === 'email') {
-                $rules[$field] = array_merge($rules[$field], ['email:rfc,dns', 'max:191', Rule::unique('client_contacts')->where('company_id', $this->company()->id)]);
+                $rules[$field] = array_merge($rules[$field], ['email:rfc,dns', 'max:191', Rule::unique('client_contacts')->where('company_id', $company->id)]);
             }
 
             if ($field === 'current_password') {
@@ -55,9 +69,11 @@ class RegisterRequest extends FormRequest
             }
         }
 
-        if ($this->company()->settings->client_portal_terms || $this->company()->settings->client_portal_privacy_policy) {
+        if ($company->settings->client_portal_terms || $company->settings->client_portal_privacy_policy) {
             $rules['terms'] = ['required'];
         }
+
+        $rules['cf-turnstile-response'] = ['sometimes', new Turnstile()];
 
         return $rules;
     }

@@ -1,5 +1,13 @@
 <?php
-
+/**
+ * Invoice Ninja (https://invoiceninja.com).
+ *
+ * @link https://github.com/invoiceninja/invoiceninja source repository
+ *
+ * @copyright Copyright (c) 2026. Invoice Ninja LLC (https://invoiceninja.com)
+ *
+ * @license https://www.elastic.co/licensing/elastic-license
+ */
 namespace App\Livewire;
 
 use App\Libraries\MultiDB;
@@ -17,10 +25,6 @@ class PaymentMethodsTable extends Component
 
     public $per_page = 10;
 
-    public Client $client;
-
-    public Company $company;
-
     public int $client_id;
 
     public string $db;
@@ -28,18 +32,14 @@ class PaymentMethodsTable extends Component
     public function mount()
     {
         MultiDB::setDb($this->db);
-
-        $this->client = Client::withTrashed()->with('company')->find($this->client_id);
-
-        $this->company = $this->client->company;
     }
 
     public function render()
     {
         $query = ClientGatewayToken::query()
             ->with('gateway_type')
-            ->where('company_id', $this->company->id)
-            ->where('client_id', $this->client->id)
+            ->where('company_id', auth()->guard('contact')->user()->company_id)
+            ->where('client_id', auth()->guard('contact')->user()->client_id)
             ->whereHas('gateway', function ($query) {
                 $query->where('is_deleted', 0)
                        ->where('deleted_at', null);

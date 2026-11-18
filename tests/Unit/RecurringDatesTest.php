@@ -1,4 +1,5 @@
 <?php
+
 /**
  * Invoice Ninja (https://invoiceninja.com).
  *
@@ -27,22 +28,105 @@ use Tests\MockAccountData;
 use Tests\TestCase;
 
 /**
- * @test
- * @covers \App\Models\RecurringInvoice
+ *
+ *  \App\Models\RecurringInvoice
  */
 class RecurringDatesTest extends TestCase
 {
     use MakesHash;
     use MockAccountData;
     use DatabaseTransactions;
-
-    protected function setUp() :void
+    protected function setUp(): void
     {
         parent::setUp();
 
         $this->makeTestData();
     }
 
+    public function testDueDateDaysCalculationsTZ2()
+    {
+
+        $settings = CompanySettings::defaults();
+        $settings->timezone_id = '15'; // New York
+
+        $company = Company::factory()->create([
+            'account_id' => $this->account->id,
+            'settings' => $settings,
+        ]);
+
+        $client = Client::factory()->create([
+            'company_id' => $company->id,
+            'user_id' => $this->user->id,
+        ]);
+
+        $this->travelTo(\Carbon\Carbon::create(2024, 12, 1, 17, 0, 0));
+
+        $this->assertEquals('2024-12-01', now()->format('Y-m-d'));
+
+        $recurring_invoice = RecurringInvoiceFactory::create($company->id, $this->user->id);
+        $recurring_invoice->line_items = $this->buildLineItems();
+        $recurring_invoice->client_id = $client->id;
+        $recurring_invoice->status_id = RecurringInvoice::STATUS_DRAFT;
+        $recurring_invoice->frequency_id = RecurringInvoice::FREQUENCY_MONTHLY;
+        $recurring_invoice->remaining_cycles = 5;
+        $recurring_invoice->due_date_days = '1';
+        $recurring_invoice->next_send_date = now();
+        $recurring_invoice->save();
+        $recurring_invoice = $recurring_invoice->calc()->getInvoice();
+        $recurring_invoice->service()->sendNow();
+        $invoice = $recurring_invoice->invoices()->latest()->first();
+
+        $this->assertGreaterThan(0, $recurring_invoice->invoices()->count());
+        $this->assertEquals('2025-01-01', $invoice->due_date);
+
+    }
+
+    public function testDueDateDaysCalculationsTZ()
+    {
+        $this->travelTo(\Carbon\Carbon::create(2024, 11, 15, 17, 0, 0));
+
+        $recurring_invoice = RecurringInvoiceFactory::create($this->company->id, $this->user->id);
+        $recurring_invoice->line_items = $this->buildLineItems();
+        $recurring_invoice->client_id = $this->client->id;
+        $recurring_invoice->status_id = RecurringInvoice::STATUS_DRAFT;
+        $recurring_invoice->frequency_id = RecurringInvoice::FREQUENCY_MONTHLY;
+        $recurring_invoice->remaining_cycles = 5;
+        $recurring_invoice->due_date_days = '1';
+        $recurring_invoice->next_send_date = now();
+        $recurring_invoice->save();
+        $recurring_invoice = $recurring_invoice->calc()->getInvoice();
+        $recurring_invoice->service()->sendNow();
+        $invoice = $recurring_invoice->invoices()->latest()->first();
+
+        $this->assertGreaterThan(0, $recurring_invoice->invoices()->count());
+        $this->assertEquals('2024-12-01', $invoice->due_date);
+
+    }
+
+
+    public function testDueDateDaysCalculations()
+    {
+
+        $recurring_invoice = RecurringInvoiceFactory::create($this->company->id, $this->user->id);
+        $recurring_invoice->line_items = $this->buildLineItems();
+        $recurring_invoice->client_id = $this->client->id;
+        $recurring_invoice->status_id = RecurringInvoice::STATUS_DRAFT;
+        $recurring_invoice->frequency_id = RecurringInvoice::FREQUENCY_MONTHLY;
+        $recurring_invoice->remaining_cycles = 5;
+        $recurring_invoice->due_date_days = '1';
+        $recurring_invoice->next_send_date = now()->setTimezone($this->client->timezone()->name)->format('Y-m-d');
+        $recurring_invoice->save();
+        $recurring_invoice = $recurring_invoice->calc()->getInvoice();
+        $recurring_invoice->service()->sendNow();
+
+        $r = $recurring_invoice->fresh();
+        $invoice = $recurring_invoice->invoices()->latest()->first();
+        $this->assertGreaterThan(0, $recurring_invoice->invoices()->count());
+        $expected_due_date = now()->setTimezone($this->client->timezone()->name)->startOfDay()->addMonthWithoutOverflow()->startOfMonth()->format('Y-m-d');
+
+        $this->assertEquals($expected_due_date, $invoice->due_date);
+
+    }
 
     public function testDailyFrequencyCalc6()
     {
@@ -122,14 +206,20 @@ class RecurringDatesTest extends TestCase
         $recurring_invoice->next_send_date_client = $recurring_invoice->nextSendDateClient();
         $recurring_invoice->save();
 
-        $this->assertEquals(now()->startOfDay()->addDay()->addSeconds($client->timezone_offset()), Carbon::parse($recurring_invoice->next_send_date));
+        $this->assertEquals(
+            $client->scheduledDateTimeUtc(now()->addDay()->toDateString()),
+            Carbon::parse($recurring_invoice->next_send_date)
+        );
         $this->assertEquals(now()->addDay()->format('Y-m-d'), Carbon::parse($recurring_invoice->next_send_date_client)->format('Y-m-d'));
 
         $recurring_invoice->next_send_date = $recurring_invoice->nextSendDate();
         $recurring_invoice->next_send_date_client = $recurring_invoice->nextSendDateClient();
         $recurring_invoice->save();
 
-        $this->assertEquals(now()->startOfDay()->addDays(2)->addSeconds($client->timezone_offset()), Carbon::parse($recurring_invoice->next_send_date));
+        $this->assertEquals(
+            $client->scheduledDateTimeUtc(now()->addDays(2)->toDateString()),
+            Carbon::parse($recurring_invoice->next_send_date)
+        );
         $this->assertEquals(now()->addDays(2)->format('Y-m-d'), Carbon::parse($recurring_invoice->next_send_date_client)->format('Y-m-d'));
 
         $this->travelBack();
@@ -141,7 +231,7 @@ class RecurringDatesTest extends TestCase
 
     public function testDailyFrequencyCalc5()
     {
-        
+
         $account = Account::factory()->create();
 
         $settings = CompanySettings::defaults();
@@ -218,7 +308,10 @@ class RecurringDatesTest extends TestCase
         $recurring_invoice->next_send_date_client = $recurring_invoice->nextSendDateClient();
         $recurring_invoice->save();
 
-        $this->assertEquals(now()->startOfDay()->addDay()->addSeconds($client->timezone_offset()), Carbon::parse($recurring_invoice->next_send_date));
+        $this->assertEquals(
+            $client->scheduledDateTimeUtc(now()->addDay()->toDateString()),
+            Carbon::parse($recurring_invoice->next_send_date)
+        );
         $this->assertEquals(now()->addDay()->format('Y-m-d'), Carbon::parse($recurring_invoice->next_send_date_client)->format('Y-m-d'));
 
     }
@@ -226,7 +319,7 @@ class RecurringDatesTest extends TestCase
 
     public function testDailyFrequencyCalc4()
     {
-        
+
         $account = Account::factory()->create();
 
         $settings = CompanySettings::defaults();
@@ -303,14 +396,17 @@ class RecurringDatesTest extends TestCase
         $recurring_invoice->next_send_date_client = $recurring_invoice->nextSendDateClient();
         $recurring_invoice->save();
 
-        $this->assertEquals(now()->startOfDay()->addDay()->addSeconds($client->timezone_offset()), Carbon::parse($recurring_invoice->next_send_date));
+        $this->assertEquals(
+            $client->scheduledDateTimeUtc(now()->addDay()->toDateString()),
+            Carbon::parse($recurring_invoice->next_send_date)
+        );
         $this->assertEquals(now()->addDay()->format('Y-m-d'), Carbon::parse($recurring_invoice->next_send_date_client)->format('Y-m-d'));
 
     }
 
     public function testDailyFrequencyCalc3()
     {
-        
+
         $account = Account::factory()->create();
 
         $settings = CompanySettings::defaults();
@@ -385,7 +481,10 @@ class RecurringDatesTest extends TestCase
         $recurring_invoice->next_send_date_client = $recurring_invoice->nextSendDateClient();
         $recurring_invoice->save();
 
-        $this->assertEquals(now()->startOfDay()->addDay()->addSeconds($client->timezone_offset()), Carbon::parse($recurring_invoice->next_send_date));
+        $this->assertEquals(
+            $client->scheduledDateTimeUtc(now()->addDay()->toDateString()),
+            Carbon::parse($recurring_invoice->next_send_date)
+        );
         $this->assertEquals(now()->addDay()->format('Y-m-d'), Carbon::parse($recurring_invoice->next_send_date_client)->format('Y-m-d'));
 
 
@@ -467,7 +566,10 @@ class RecurringDatesTest extends TestCase
         $recurring_invoice->next_send_date_client = $recurring_invoice->nextSendDateClient();
         $recurring_invoice->save();
 
-        $this->assertEquals(now()->startOfDay()->addDay()->addSeconds($client->timezone_offset()), Carbon::parse($recurring_invoice->next_send_date));
+        $this->assertEquals(
+            $client->scheduledDateTimeUtc(now()->addDay()->toDateString()),
+            Carbon::parse($recurring_invoice->next_send_date)
+        );
         $this->assertEquals(now()->addDay()->format('Y-m-d'), Carbon::parse($recurring_invoice->next_send_date_client)->format('Y-m-d'));
 
     }
@@ -548,7 +650,10 @@ class RecurringDatesTest extends TestCase
         $recurring_invoice->next_send_date_client = $recurring_invoice->nextSendDateClient();
         $recurring_invoice->save();
 
-        $this->assertEquals(now()->startOfDay()->addDay()->addSeconds($client->timezone_offset()), Carbon::parse($recurring_invoice->next_send_date));
+        $this->assertEquals(
+            $client->scheduledDateTimeUtc(now()->addDay()->toDateString()),
+            Carbon::parse($recurring_invoice->next_send_date)
+        );
         $this->assertEquals(now()->addDay()->format('Y-m-d'), Carbon::parse($recurring_invoice->next_send_date_client)->format('Y-m-d'));
 
 

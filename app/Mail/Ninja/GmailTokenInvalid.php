@@ -1,10 +1,11 @@
 <?php
+
 /**
  * Invoice Ninja (https://invoiceninja.com).
  *
  * @link https://github.com/invoiceninja/invoiceninja source repository
  *
- * @copyright Copyright (c) 2024. Invoice Ninja LLC (https://invoiceninja.com)
+ * @copyright Copyright (c) 2026. Invoice Ninja LLC (https://invoiceninja.com)
  *
  * @license https://www.elastic.co/licensing/elastic-license
  */
@@ -51,7 +52,7 @@ class GmailTokenInvalid extends Mailable
         $this->logo = $this->company->present()->logo();
         $this->title = ctrans('texts.gmail_credentials_invalid_subject');
         $this->body = ctrans('texts.gmail_credentials_invalid_body');
-        $this->whitelabel = $this->company->account->isPaid();
+        $this->whitelabel = true;
         $this->replyTo('contact@invoiceninja.com', 'Contact');
 
         return $this->from(config('mail.from.address'), config('mail.from.name'))

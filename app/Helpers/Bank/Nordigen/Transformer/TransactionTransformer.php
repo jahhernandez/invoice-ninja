@@ -1,10 +1,11 @@
 <?php
+
 /**
  * Invoice Ninja (https://invoiceninja.com).
  *
  * @link https://github.com/invoiceninja/invoiceninja source repository
  *
- * @copyright Copyright (c) 2024. Invoice Ninja LLC (https://invoiceninja.com)
+ * @copyright Copyright (c) 2026. Invoice Ninja LLC (https://invoiceninja.com)
  *
  * @license https://www.elastic.co/licensing/elastic-license
  */
@@ -71,7 +72,7 @@ class TransactionTransformer implements BankRevenueInterface
 
     private Company $company;
 
-    function __construct(Company $company)
+    public function __construct(Company $company)
     {
         $this->company = $company;
     }
@@ -99,24 +100,30 @@ class TransactionTransformer implements BankRevenueInterface
         } elseif (array_key_exists('internalTransactionId', $transaction)) {
             $transactionId = $transaction["internalTransactionId"];
         } else {
-            nlog(`Invalid Input for nordigen transaction transformer: ` . $transaction);
+            nlog('Invalid Input for nordigen transaction transformer: ' . $transaction);
             throw new \Exception('invalid dataset: missing transactionId - Please report this error to the developer');
         }
 
         $amount = (float) $transaction["transactionAmount"]["amount"];
+        $base_type = $amount < 0 ? 'DEBIT' : 'CREDIT';
 
-        // description could be in varios places
+        // description could be in various places
         $description = '';
         if (array_key_exists('remittanceInformationStructured', $transaction)) {
             $description = $transaction["remittanceInformationStructured"];
         } elseif (array_key_exists('remittanceInformationStructuredArray', $transaction)) {
-            $description = implode('\n', $transaction["remittanceInformationStructuredArray"]);
+            $remittanceInformationStructuredArray = $transaction["remittanceInformationStructuredArray"];
+            if (array_key_exists('rawTransactionDescription', $remittanceInformationStructuredArray)) {
+                $description = $remittanceInformationStructuredArray["rawTransactionDescription"];
+            } else {
+                $description = implode('\n', $transaction["remittanceInformationStructuredArray"]);
+            }
         } elseif (array_key_exists('remittanceInformationUnstructured', $transaction)) {
             $description = $transaction["remittanceInformationUnstructured"];
         } elseif (array_key_exists('remittanceInformationUnstructuredArray', $transaction)) {
             $description = implode('\n', $transaction["remittanceInformationUnstructuredArray"]);
         } else {
-            Log::warning("Missing description for the following transaction: " . json_encode($transaction));
+            nlog('Missing description for the following transaction: ' . json_encode($transaction));
         }
 
         // enrich description with currencyExchange informations
@@ -127,20 +134,18 @@ class TransactionTransformer implements BankRevenueInterface
             }
         }
 
-        // participant data
-        $participant = array_key_exists('debtorAccount', $transaction) && array_key_exists('iban', $transaction["debtorAccount"]) ?
-            $transaction['debtorAccount']['iban'] :
-            (array_key_exists('creditorAccount', $transaction) && array_key_exists('iban', $transaction["creditorAccount"]) ?
-                $transaction['creditorAccount']['iban'] : null);
-        $participant_name = array_key_exists('debtorName', $transaction) ?
-            $transaction['debtorName'] :
-            (array_key_exists('creditorName', $transaction) ?
-                $transaction['creditorName'] : null);
+        // CREDIT: counterparty is the debtor (payer). DEBIT: counterparty is the creditor (payee).
+        // Banks often include both sides; never prefer debtor on outgoing payments.
+        $prefer_debtor = $base_type === 'CREDIT';
+        $participant = $this->ibanFromAccount($transaction, $prefer_debtor ? 'debtorAccount' : 'creditorAccount')
+            ?? $this->ibanFromAccount($transaction, $prefer_debtor ? 'creditorAccount' : 'debtorAccount');
+        $participant_name = $this->nameFromTransaction($transaction, $prefer_debtor ? 'debtorName' : 'creditorName')
+            ?? $this->nameFromTransaction($transaction, $prefer_debtor ? 'creditorName' : 'debtorName');
 
-        return [
+        $data = [
             'transaction_id' => 0,
             'nordigen_transaction_id' => $transactionId,
-            'amount' => $amount,
+            'amount' => abs($amount),
             'currency_id' => $this->convertCurrency($transaction["transactionAmount"]["currency"]),
             'category_id' => null,
             'category_type' => array_key_exists('additionalInformation', $transaction) ? $transaction["additionalInformation"] : '',
@@ -148,36 +153,56 @@ class TransactionTransformer implements BankRevenueInterface
             'description' => $description,
             'participant' => $participant,
             'participant_name' => $participant_name,
-            'base_type' => $amount < 0 ? 'DEBIT' : 'CREDIT',
+            'base_type' => $base_type,
         ];
 
+        // $data['currency_code'] = $this->makeHash($data);
+
+        return $data;
+    }
+
+    // private function makeHash($data)
+    // {
+    //     return hash('sha1', $data['amount'].$data['date'].$data['description'].$data['participant'].$data['participant_name'].$data['base_type']);
+    // }
+
+    private function ibanFromAccount(array $transaction, string $account_key): ?string
+    {
+        if (! array_key_exists($account_key, $transaction) || ! is_array($transaction[$account_key]) || ! array_key_exists('iban', $transaction[$account_key])) {
+            return null;
+        }
+
+        return $transaction[$account_key]['iban'];
+    }
+
+    private function nameFromTransaction(array $transaction, string $name_key): ?string
+    {
+        if (! array_key_exists($name_key, $transaction)) {
+            return null;
+        }
+
+        return $transaction[$name_key];
     }
 
     private function convertCurrency(string $code)
     {
 
-        $currencies = Cache::get('currencies');
+        $currencies = app('currencies');
 
-        if (!$currencies) {
-            $this->buildCache(true);
-        }
-
-        $currency = $currencies->filter(function ($item) use ($code) {
+        $currency = $currencies->first(function ($item) use ($code) {
+            /** @var \App\Models\Currency $item */
             return $item->code == $code;
-        })->first();
+        });
 
-        if ($currency) {
-            return $currency->id;
-        }
-
-        return 1;
+        /** @var \App\Models\Currency $currency */
+        return $currency ? $currency->id : 1; //@phpstan-ignore-line
 
     }
 
     private function formatDate(string $input)
     {
         $timezone = Timezone::find($this->company->settings->timezone_id);
-        $timezone_name = 'US/Eastern';
+        $timezone_name = 'America/New_York';
 
         if ($timezone) {
             $timezone_name = $timezone->name;
@@ -192,7 +217,7 @@ class TransactionTransformer implements BankRevenueInterface
         }
 
         try {
-           return Carbon::createFromFormat("d-m-Y", $input)->setTimezone($timezone_name)->format($date_format_default) ?? $input;
+            return Carbon::createFromFormat("d-m-Y", $input)->setTimezone($timezone_name)->format($date_format_default);
         } catch (\Exception $e) {
             return $input;
         }

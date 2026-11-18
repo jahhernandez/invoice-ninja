@@ -1,10 +1,11 @@
 <?php
+
 /**
  * Invoice Ninja (https://invoiceninja.com).
  *
  * @link https://github.com/invoiceninja/invoiceninja source repository
  *
- * @copyright Copyright (c) 2024. Invoice Ninja LLC (https://invoiceninja.com)
+ * @copyright Copyright (c) 2026. Invoice Ninja LLC (https://invoiceninja.com)
  *
  * @license https://www.elastic.co/licensing/elastic-license
  */
@@ -22,11 +23,10 @@ use Illuminate\Contracts\Queue\ShouldQueue;
 class QuoteEmailedNotification implements ShouldQueue
 {
     use UserNotifies;
+
     public $delay = 5;
 
-    public function __construct()
-    {
-    }
+    public function __construct() {}
 
     /**
      * Handle the event.
@@ -37,8 +37,6 @@ class QuoteEmailedNotification implements ShouldQueue
     public function handle($event)
     {
         MultiDB::setDb($event->company->db);
-
-        // $first_notification_sent = true;
 
         $quote = $event->invitation->quote->fresh();
         $quote->last_sent_date = now();
@@ -53,7 +51,7 @@ class QuoteEmailedNotification implements ShouldQueue
                 unset($methods[$key]);
 
                 $nmo = new NinjaMailerObject();
-                $nmo->mailable = new NinjaMailer((new EntitySentObject($event->invitation, 'quote', $event->template, $company_user->portalType()))->build());
+                $nmo->mailable = new NinjaMailer((new EntitySentObject($event->invitation, 'quote', $event->template))->build());
                 $nmo->company = $quote->company;
                 $nmo->settings = $quote->company->settings;
                 $nmo->to_user = $user;

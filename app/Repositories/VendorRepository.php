@@ -1,10 +1,11 @@
 <?php
+
 /**
  * Invoice Ninja (https://invoiceninja.com).
  *
  * @link https://github.com/invoiceninja/invoiceninja source repository
  *
- * @copyright Copyright (c) 2024. Invoice Ninja LLC (https://invoiceninja.com)
+ * @copyright Copyright (c) 2026. Invoice Ninja LLC (https://invoiceninja.com)
  *
  * @license https://www.elastic.co/licensing/elastic-license
  */
@@ -43,21 +44,23 @@ class VendorRepository extends BaseRepository
      */
     public function save(array $data, Vendor $vendor): ?Vendor
     {
+        $tag_ids = $this->resolveTagIdsForSync($data, $vendor);
+
         $saveable_vendor = $data;
 
-        if(array_key_exists('contacts', $data)) {
+        if (array_key_exists('contacts', $data)) {
             unset($saveable_vendor['contacts']);
         }
 
         $vendor->fill($saveable_vendor);
 
-        $vendor->saveQuietly();
-
-        if ($vendor->number == '' || ! $vendor->number) {
-            $vendor->number = $this->getNextVendorNumber($vendor);
+        if (!$vendor->country_id) {
+            $vendor->country_id = auth()->user()->company()->country()->id ?? 840;
         }
 
         $vendor->saveQuietly();
+
+        $vendor->service()->applyNumber();
 
         if (isset($data['contacts']) || $vendor->contacts()->count() == 0) {
             $this->contact_repo->save($data, $vendor);
@@ -66,6 +69,8 @@ class VendorRepository extends BaseRepository
         if (array_key_exists('documents', $data) && count($data['documents']) >= 1) {
             $this->saveDocuments($data['documents'], $vendor);
         }
+
+        $this->syncResolvedTags($vendor, $tag_ids);
 
         return $vendor;
     }

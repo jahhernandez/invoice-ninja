@@ -1,10 +1,11 @@
 <?php
+
 /**
  * Invoice Ninja (https://invoiceninja.com).
  *
  * @link https://github.com/invoiceninja/invoiceninja source repository
  *
- * @copyright Copyright (c) 2024. Invoice Ninja LLC (https://invoiceninja.com)
+ * @copyright Copyright (c) 2026. Invoice Ninja LLC (https://invoiceninja.com)
  *
  * @license https://www.elastic.co/licensing/elastic-license
  */
@@ -53,7 +54,9 @@ class ChartServiceLegacy
         /* Merge and filter by unique */
         $currencies = $currencies->merge($expense_currencies)->unique();
 
-        $cache_currencies = Cache::get('currencies');
+
+        /** @var \Illuminate\Support\Collection<\App\Models\Currency> */
+        $cache_currencies = app('currencies');
 
         $filtered_currencies = $cache_currencies->whereIn('id', $currencies)->all();
 
@@ -135,7 +138,9 @@ class ChartServiceLegacy
 
     private function addCurrencyCodes($data_set): array
     {
-        $currencies = Cache::get('currencies');
+
+        /** @var \Illuminate\Support\Collection<\App\Models\Currency> */
+        $currencies = app('currencies');
 
         foreach ($data_set as $key => $value) {
             $data_set[$key]->currency_id = str_replace('"', '', $value->currency_id);

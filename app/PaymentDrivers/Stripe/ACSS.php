@@ -5,15 +5,18 @@
  *
  * @link https://github.com/invoiceninja/invoiceninja source repository
  *
- * @copyright Copyright (c) 2024. Invoice Ninja LLC (https://invoiceninja.com)
+ * @copyright Copyright (c) 2026. Invoice Ninja LLC (https://invoiceninja.com)
  *
  * @license https://www.elastic.co/licensing/elastic-license
  */
 
 namespace App\PaymentDrivers\Stripe;
 
+use App\Http\Controllers\ClientPortal\InvoiceController;
+use App\Http\Requests\ClientPortal\Invoices\ProcessInvoicesInBulkRequest;
 use App\Models\Payment;
 use App\Models\SystemLog;
+use Stripe\PaymentIntent;
 use App\Models\GatewayType;
 use App\Models\PaymentHash;
 use App\Models\PaymentType;
@@ -24,12 +27,12 @@ use App\Utils\Traits\MakesHash;
 use App\Exceptions\PaymentFailed;
 use App\Models\ClientGatewayToken;
 use Illuminate\Support\Facades\Cache;
-use App\Jobs\Mail\PaymentFailureMailer;
-use App\PaymentDrivers\StripePaymentDriver;
-use App\Http\Requests\ClientPortal\Payments\PaymentResponseRequest;
-use Stripe\PaymentIntent;
 
-class ACSS
+use App\PaymentDrivers\StripePaymentDriver;
+use App\PaymentDrivers\Common\LivewireMethodInterface;
+use App\Http\Requests\ClientPortal\Payments\PaymentResponseRequest;
+
+class ACSS implements LivewireMethodInterface
 {
     use MakesHash;
 
@@ -57,20 +60,20 @@ class ACSS
         $data['post_auth_response'] = false;
 
         $intent = \Stripe\SetupIntent::create([
-        'usage' => 'off_session',
-        'payment_method_types' => ['acss_debit'],
-        'customer' => $data['customer'],
-        'payment_method_options' => [
-            'acss_debit' => [
-            'currency' => 'cad',
-            'mandate_options' => [
-                'payment_schedule' => 'combined',
-                'interval_description' => 'On any invoice due date',
-                'transaction_type' => 'personal',
+            'usage' => 'off_session',
+            'payment_method_types' => ['acss_debit'],
+            'customer' => $data['customer'],
+            'payment_method_options' => [
+                'acss_debit' => [
+                    'currency' => strtolower($this->stripe->client->currency()->code),
+                    'mandate_options' => [
+                        'payment_schedule' => 'combined',
+                        'interval_description' => 'On any invoice due date',
+                        'transaction_type' => 'personal',
+                    ],
+                    'verification_method' => 'instant',
+                ],
             ],
-            'verification_method' => 'instant',
-            ],
-        ],
         ], $this->stripe->stripe_connect_auth);
 
         $data['pi_client_secret'] = $intent->client_secret;
@@ -84,7 +87,7 @@ class ACSS
      * @param  Request $request
      * @return void
      */
-    public function authorizeResponse(Request $request)
+    public function authorizeResponse($request)
     {
         $setup_intent = json_decode($request->input('gateway_response'));
 
@@ -92,12 +95,12 @@ class ACSS
 
             $error = "There was a problem setting up this payment method for future use";
 
-            if(in_array($setup_intent->type, ["validation_error", "invalid_request_error"])) {
+            if (in_array($setup_intent->type, ["validation_error", "invalid_request_error"])) {
                 $error = "Please provide complete payment details.";
             }
 
             SystemLogger::dispatch(
-                ['response' => (array)$setup_intent, 'data' => $request->all()],
+                ['response' => (array) $setup_intent, 'data' => $request->all()],
                 SystemLog::CATEGORY_GATEWAY_RESPONSE,
                 SystemLog::EVENT_GATEWAY_FAILURE,
                 SystemLog::TYPE_STRIPE,
@@ -112,22 +115,24 @@ class ACSS
 
         $client_gateway_token = $this->storePaymentMethod($setup_intent->payment_method, $stripe_setup_intent->mandate, $setup_intent->status == 'succeeded' ? 'authorized' : 'unauthorized');
 
-        if($request->has('post_auth_response') && boolval($request->post_auth_response)) {
+        if ($request->has('post_auth_response') && boolval($request->post_auth_response)) {
             /** @var array $data */
             $data = Cache::pull($request->post_auth_response);
 
-            if(!$data) {
+            if (!$data) {
                 throw new PaymentFailed("There was a problem storing this payment method", 500);
             }
 
             $hash = PaymentHash::with('fee_invoice')->where('hash', $data['payment_hash'])->first();
+
             $data['tokens'] = [$client_gateway_token];
+            $data['one_page_checkout'] = (bool) $request->one_page_checkout;
 
             $this->stripe->setPaymentHash($hash);
             $this->stripe->setClient($hash->fee_invoice->client);
             $this->stripe->setPaymentMethod(GatewayType::ACSS);
 
-            return $this->continuePayment($data);
+            return $this->paymentView($data);
         }
 
         return redirect()->route('client.payment_methods.show', $client_gateway_token->hashed_id);
@@ -147,7 +152,7 @@ class ACSS
             'amount' => $this->stripe->convertToStripeAmount($this->stripe->payment_hash->amount_with_fee(), $this->stripe->client->currency()->precision, $this->stripe->client->currency()),
             'currency' => $this->stripe->client->currency()->code,
             'payment_method_types' => ['acss_debit'],
-            'customer' => $this->stripe->findOrCreateCustomer(),
+            'customer' => $token->gateway_customer_reference,
             'description' => $this->stripe->getDescription(false),
             'metadata' => [
                 'payment_hash' => $this->stripe->payment_hash->hash,
@@ -161,72 +166,42 @@ class ACSS
         return $intent;
     }
 
-    /**
-     * Payment view for ACSS
-     *
-     * Determines if any payment tokens are available and if not, generates a mandate
-     *
-     * @param  array $data
-
-     */
-    public function paymentView(array $data)
+    public function paymentData(array $data): array
     {
-
-        if(count($data['tokens']) == 0) {
+        if (count($data['tokens']) == 0) {
             $hash = Str::random(32);
+
             Cache::put($hash, $data, 3600);
+
             $data['post_auth_response'] = $hash;
+            $data['needs_mandate_generate'] = true;
 
-            return $this->generateMandate($data);
+            $data['gateway'] = $this->stripe;
+            $data['company_gateway'] = $this->stripe->company_gateway;
+            $data['customer'] = $this->stripe->findOrCreateCustomer()->id;
+            $data['country'] = $this->stripe->client->country->iso_3166_2;
+
+            $intent = \Stripe\SetupIntent::create([
+                'usage' => 'off_session',
+                'payment_method_types' => ['acss_debit'],
+                'customer' => $data['customer'],
+                'payment_method_options' => [
+                    'acss_debit' => [
+                        'currency' => strtolower($this->stripe->client->currency()->code),
+                        'mandate_options' => [
+                            'payment_schedule' => 'combined',
+                            'interval_description' => 'On any invoice due date',
+                            'transaction_type' => 'personal',
+                        ],
+                        'verification_method' => 'instant',
+                    ],
+                ],
+            ], $this->stripe->stripe_connect_auth);
+
+            $data['pi_client_secret'] = $intent->client_secret;
+
+            return $data;
         }
-
-        return $this->continuePayment($data);
-    }
-
-    /**
-     * Generate a payment Mandate for ACSS
-     *
-     * @param  array $data
-
-     */
-    private function generateMandate(array $data)
-    {
-
-        $data['gateway'] = $this->stripe;
-        $data['company_gateway'] = $this->stripe->company_gateway;
-        $data['customer'] = $this->stripe->findOrCreateCustomer()->id;
-        $data['country'] = $this->stripe->client->country->iso_3166_2;
-
-        $intent = \Stripe\SetupIntent::create([
-            'usage' => 'off_session',
-            'payment_method_types' => ['acss_debit'],
-            'customer' => $data['customer'],
-            'payment_method_options' => [
-                'acss_debit' => [
-                'currency' => 'cad',
-                'mandate_options' => [
-                    'payment_schedule' => 'combined',
-                    'interval_description' => 'On any invoice due date',
-                    'transaction_type' => 'personal',
-                ],
-                'verification_method' => 'instant',
-                ],
-            ],
-        ], $this->stripe->stripe_connect_auth);
-
-        $data['pi_client_secret'] = $intent->client_secret;
-
-        return render('gateways.stripe.acss.authorize', array_merge($data));
-
-    }
-
-    /**
-     * Continues the payment flow after a Mandate has been successfully generated
-     *
-     * @param  array $data
-     */
-    private function continuePayment(array $data)
-    {
 
         $this->stripe->init();
 
@@ -239,6 +214,39 @@ class ACSS
 
         $this->stripe->payment_hash->data = array_merge((array) $this->stripe->payment_hash->data, ['stripe_amount' => $data['stripe_amount']]);
         $this->stripe->payment_hash->save();
+
+        return $data;
+    }
+
+    /**
+     * Payment view for ACSS
+     *
+     * Determines if any payment tokens are available and if not, generates a mandate
+     *
+     * @param  array $data
+
+     */
+    public function paymentView(array $data)
+    {
+        $data = $this->paymentData($data);
+
+        if (isset($data['one_page_checkout']) && $data['one_page_checkout']) {
+            $data = [
+                'invoices' => collect($data['invoices'])->map(fn($invoice) => $invoice['invoice_id'])->toArray(),
+                'action' => 'payment',
+            ];
+
+            $request = new ProcessInvoicesInBulkRequest();
+            $request->replace($data);
+
+            session()->flash('message', ctrans('texts.payment_method_added'));
+
+            return app(InvoiceController::class)->bulk($request);
+        }
+
+        if (array_key_exists('needs_mandate_generate', $data)) {
+            return render('gateways.stripe.acss.authorize', array_merge($data));
+        }
 
         return render('gateways.stripe.acss.pay', $data);
     }
@@ -267,7 +275,10 @@ class ACSS
 
         $gateway_response = json_decode($request->gateway_response);
 
-        $cgt = ClientGatewayToken::find($this->decodePrimaryKey($request->token));
+        $cgt = ClientGatewayToken::query()
+            ->where('id', $this->decodePrimaryKey($request->token))
+            ->where('client_id', $this->stripe->client->id)
+            ->firstOrFail();
 
         /** @var \Stripe\PaymentIntent $intent */
         $intent = $this->tokenIntent($cgt);
@@ -280,7 +291,10 @@ class ACSS
             return $this->processSuccessfulPayment($intent->id);
         }
 
-        return $this->processUnsuccessfulPayment();
+        //@phpstan-ignore-next-line
+        $error = $intent->last_payment_error?->message ?? $intent->cancellation_reason ?? "ACSS payment failed with status: {$intent->status}";
+
+        return $this->processUnsuccessfulPayment($error);
     }
 
     /**
@@ -340,16 +354,11 @@ class ACSS
         return redirect()->route('client.payments.show', $payment->hashed_id);
     }
 
-    public function processUnsuccessfulPayment()
+    public function processUnsuccessfulPayment(string $error = '')
     {
         $server_response = $this->stripe->payment_hash->data;
 
-        PaymentFailureMailer::dispatch(
-            $this->stripe->client,
-            $server_response,
-            $this->stripe->client->company,
-            $this->stripe->convertFromStripeAmount($this->stripe->payment_hash->data->stripe_amount, $this->stripe->client->currency()->precision, $this->stripe->client->currency())
-        );
+        $this->stripe->sendFailureMail($error ?: 'ACSS payment was not successful');
 
         $message = [
             'server_response' => $server_response,
@@ -396,7 +405,19 @@ class ACSS
 
             return $this->stripe->storeGatewayToken($data, ['gateway_customer_reference' => $method->customer]);
         } catch (\Exception $e) {
+
+            nlog("ACSS::Error: " . $e->getMessage());
+            $e = new \Exception("There was a problem processing this payment method", 500);
             return $this->stripe->processInternallyFailedPayment($this->stripe, $e);
         }
+    }
+
+    public function livewirePaymentView(array $data): string
+    {
+        if (array_key_exists('needs_mandate_generate', $data)) {
+            return 'gateways.stripe.acss.authorize_livewire';
+        }
+
+        return 'gateways.stripe.acss.pay_livewire';
     }
 }

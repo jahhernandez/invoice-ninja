@@ -44,11 +44,13 @@ return [
             'timeout' => null,
             'local_domain' => env('MAIL_EHLO_DOMAIN'),
             'verify_peer' => env('MAIL_VERIFY_PEER', true),
+            'scheme' => env('MAIL_SCHEME', 'smtp'), // smtp or smtps
         ],
 
         'ses' => [
             'transport' => 'ses',
         ],
+
 
         'mailgun' => [
             'transport' => 'mailgun',

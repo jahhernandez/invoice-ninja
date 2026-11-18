@@ -1,10 +1,11 @@
 <?php
+
 /**
  * Invoice Ninja (https://invoiceninja.com).
  *
  * @link https://github.com/invoiceninja/invoiceninja source repository
  *
- * @copyright Copyright (c) 2024. Invoice Ninja LLC (https://invoiceninja.com)
+ * @copyright Copyright (c) 2026. Invoice Ninja LLC (https://invoiceninja.com)
  *
  * @license https://www.elastic.co/licensing/elastic-license
  */
@@ -49,8 +50,10 @@ class ProductExport extends BaseExport
             return ['identifier' => $key, 'display_value' => $headerdisplay[$value]];
         })->toArray();
 
-        $report = $query->cursor()
+        $report = $this->streamQuery($query)
                 ->map(function ($resource) {
+
+                    /** @var \App\Models\Product $resource */
                     $row = $this->buildRow($resource);
                     return $this->processMetaData($row, $resource);
                 })->toArray();
@@ -58,7 +61,7 @@ class ProductExport extends BaseExport
         return array_merge(['columns' => $header], $report);
     }
 
-    private function init(): Builder
+    public function init(): Builder
     {
 
         MultiDB::setDb($this->company->db);
@@ -72,17 +75,19 @@ class ProductExport extends BaseExport
         }
 
         $query = Product::query()
+                        ->with('tags')
                         ->withTrashed()
                         ->where('company_id', $this->company->id);
-                        
-                        
-        if(!$this->input['include_deleted'] ?? false){
+
+        if (!$this->input['include_deleted'] ?? false) { //@phpstan-ignore-line
             $query->where('is_deleted', 0);
         }
 
-        $query = $this->addDateRange($query);
+        $query = $this->addDateRange($query, 'products');
+        $query = $this->addTagFilter($query);
+        $query = $this->filterByUserPermissions($query);
 
-        if($this->input['document_email_attachment'] ?? false) {
+        if ($this->input['document_email_attachment'] ?? false) {
             $this->queueDocuments($query);
         }
 
@@ -96,21 +101,23 @@ class ProductExport extends BaseExport
         $query = $this->init();
 
         //load the CSV document from a string
-        $this->csv = Writer::createFromString();
+        $this->csv = Writer::fromString();
         \League\Csv\CharsetConverter::addTo($this->csv, 'UTF-8', 'UTF-8');
 
         //insert the header
         $this->csv->insertOne($this->buildHeader());
 
-        $query->cursor()
+        $this->streamQuery($query)
               ->each(function ($entity) {
+
+                  /** @var \App\Models\Product $entity */
                   $this->csv->insertOne($this->buildRow($entity));
               });
 
         return $this->csv->toString();
     }
 
-    private function buildRow(Product $product): array
+    protected function buildRow(Product $product): array
     {
         $transformed_entity = $this->entity_transformer->transform($product);
 
@@ -122,27 +129,11 @@ class ProductExport extends BaseExport
             if (array_key_exists($key, $transformed_entity)) {
                 $entity[$keyval] = $transformed_entity[$key];
             } else {
-                // nlog($key);
                 $entity[$key] = $this->decorator->transform($key, $product);
-                // $entity[$key] = '';
-
             }
         }
 
-        return $entity;
-        // return $this->decorateAdvancedFields($product, $entity);
+        return $this->convertFloats($entity);
     }
 
-    private function decorateAdvancedFields(Product $product, array $entity): array
-    {
-        if (in_array('vendor_id', $this->input['report_keys'])) {
-            $entity['vendor'] = $product->vendor()->exists() ? $product->vendor->name : '';
-        }
-
-        // if (array_key_exists('project_id', $this->input['report_keys'])) {
-        //     $entity['project'] = $product->project()->exists() ? $product->project->name : '';
-        // }
-
-        return $entity;
-    }
 }

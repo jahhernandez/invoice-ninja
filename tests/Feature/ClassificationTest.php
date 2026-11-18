@@ -1,4 +1,5 @@
 <?php
+
 /**
  * Invoice Ninja (https://invoiceninja.com).
  *
@@ -17,7 +18,7 @@ use Tests\MockUnitData;
 use Tests\TestCase;
 
 /**
- * @test
+ *
  */
 class ClassificationTest extends TestCase
 {
@@ -25,14 +26,10 @@ class ClassificationTest extends TestCase
     use DatabaseTransactions;
     use MockUnitData;
 
-    protected function setUp() :void
+    protected function setUp(): void
     {
         parent::setUp();
-
-        $this->faker = \Faker\Factory::create();
-
         $this->makeTestData();
-
 
     }
 
@@ -75,6 +72,7 @@ class ClassificationTest extends TestCase
     {
         $this->client->classification = 'business';
 
+        nlog($this->client->toArray());
         $response = $this->withHeaders([
             'X-API-SECRET' => config('ninja.api_secret'),
             'X-API-TOKEN' => $this->token,

@@ -1,10 +1,11 @@
 <?php
+
 /**
  * Invoice Ninja (https://invoiceninja.com).
  *
  * @link https://github.com/invoiceninja/invoiceninja source repository
  *
- * @copyright Copyright (c) 2024. Invoice Ninja LLC (https://invoiceninja.com)
+ * @copyright Copyright (c) 2026. Invoice Ninja LLC (https://invoiceninja.com)
  *
  * @license https://www.elastic.co/licensing/elastic-license
  */
@@ -39,18 +40,40 @@ class EntityFailedSendObject
 
     private $message_content;
 
-    protected $use_react_url;
-
-    public function __construct($invitation, $entity_type, $template, $message_content, $use_react_url)
+    public function __construct($invitation, $entity_type, $template, $message_content)
     {
         $this->invitation = $invitation;
         $this->entity_type = $entity_type;
+
+        // Load relationships if they're not already loaded (e.g., when withoutRelations() was called)
+        if (!$invitation->relationLoaded('contact')) {
+            $invitation->load('contact');
+        }
+        if (!$invitation->relationLoaded('company')) {
+            $invitation->load('company.account');
+        } else {
+            // If company is loaded, ensure account is also loaded
+            if ($invitation->company && !$invitation->company->relationLoaded('account')) {
+                $invitation->company->load('account');
+            }
+        }
+        if (!$invitation->relationLoaded($entity_type)) {
+            $invitation->load([$entity_type => function ($query) {
+                $query->with('client');
+            }]);
+        } else {
+            // If entity is loaded, ensure client is also loaded
+            $entity = $invitation->{$entity_type};
+            if ($entity && !$entity->relationLoaded('client')) {
+                $entity->load('client');
+            }
+        }
+
         $this->entity = $invitation->{$entity_type};
         $this->contact = $invitation->contact;
         $this->company = $invitation->company;
         $this->template = $template;
         $this->message_content = $message_content;
-        $this->use_react_url = $use_react_url;
     }
 
     public function build()
@@ -134,23 +157,23 @@ class EntityFailedSendObject
         $content = ctrans(
             $this->template_body,
             [
-                    'amount' => $this->getAmount(),
-                    'client' => $this->contact->present()->name(),
-                    'invoice' => $this->entity->number,
-                    'error' => $this->message_content ?? '',
-                    'contact' => $this->contact->present()->name(),
-                ]
+                'amount' => $this->getAmount(),
+                'client' => $this->contact->present()->name(),
+                'invoice' => $this->entity->number,
+                'error' => $this->message_content ?? '',
+                'contact' => $this->contact->present()->name(),
+            ]
         );
 
         $data = [
             "title" => $this->getSubject(),
             "content" => $content,
-            "url" => $this->invitation->getAdminLink($this->use_react_url),
+            "url" => $this->invitation->getAdminLink(),
             "button" => ctrans("texts.view_{$this->entity_type}"),
             "signature" => $signature,
             "logo" => $this->company->present()->logo(),
             "settings" => $settings,
-            "whitelabel" => $this->company->account->isPaid() ? true : false,
+            "whitelabel" => true,
             "text_body" => str_replace("<br>", "\n", $content),
             'template' => $this->company->account->isPremium() ? 'email.template.admin_premium' : 'email.template.admin',
         ];

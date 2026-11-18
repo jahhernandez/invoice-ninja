@@ -1,27 +1,27 @@
 <?php
+
 /**
  * Invoice Ninja (https://invoiceninja.com).
  *
  * @link https://github.com/invoiceninja/invoiceninja source repository
  *
- * @copyright Copyright (c) 2024. Invoice Ninja LLC (https://invoiceninja.com)
+ * @copyright Copyright (c) 2026. Invoice Ninja LLC (https://invoiceninja.com)
  *
  * @license https://www.elastic.co/licensing/elastic-license
  */
 
 namespace App\Repositories;
 
+use App\Services\ClientPortal\PortalHtmlSanitizer;
 use App\Models\Company;
-use App\Utils\Ninja;
+use App\Repositories\BaseRepository;
 
 /**
  * CompanyRepository.
  */
 class CompanyRepository extends BaseRepository
 {
-    public function __construct()
-    {
-    }
+    public function __construct() {}
 
     /**
      * Saves the client and its contacts.
@@ -37,24 +37,30 @@ class CompanyRepository extends BaseRepository
             $data['custom_fields'] = $this->parseCustomFields($data['custom_fields']);
         }
 
-        $company->fill($data);
-
-        // nlog($data);
-        /** Only required to handle v4 migration workloads */
-        if(Ninja::isHosted() && $company->isDirty('is_disabled') && !$company->is_disabled) {
-            Ninja::triggerForwarding($company->company_key, $company->owner()->email);
+        if (isset($data['settings'])) {
+            $data['settings'] = (new PortalHtmlSanitizer())->cleanSettings((array) $data['settings']);
         }
+
+        $company->fill($data);
 
         if (array_key_exists('settings', $data)) {
             $company->saveSettings($data['settings'], $company);
         }
 
-        if(isset($data['smtp_username'])) {
+        if (isset($data['smtp_username'])) {
             $company->smtp_username = $data['smtp_username'];
         }
 
-        if(isset($data['smtp_password'])) {
+        if (isset($data['smtp_password'])) {
             $company->smtp_password = $data['smtp_password'];
+        }
+
+        if (isset($data['e_invoice'])) {
+            $company->e_invoice = $data['e_invoice'];
+        }
+
+        if (isset($data['quickbooks']) && array_key_exists('settings', $data['quickbooks'])) {
+            $company->quickbooks = $company->quickbooks->with($data['quickbooks']['settings']);
         }
 
         $company->save();

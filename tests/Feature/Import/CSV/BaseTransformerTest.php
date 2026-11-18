@@ -1,4 +1,5 @@
 <?php
+
 /**
  * Invoice Ninja (https://invoiceninja.com).
  *
@@ -24,15 +25,15 @@ use Tests\MockAccountData;
 use Tests\TestCase;
 
 /**
- * @test
- * @covers App\Import\Transformer\BaseTransformer
+ *
+ *  App\Import\Transformer\BaseTransformer
  */
 class BaseTransformerTest extends TestCase
 {
     use MakesHash;
     use MockAccountData;
 
-    protected function setUp() :void
+    protected function setUp(): void
     {
         parent::setUp();
 
@@ -180,7 +181,11 @@ class BaseTransformerTest extends TestCase
 
         $this->assertEquals(840, $base_transformer->getCountryId('us'));
         $this->assertEquals(840, $base_transformer->getCountryId('US'));
+        $this->assertEquals(840, $base_transformer->getCountryId('USA'));
+        $this->assertEquals(840, $base_transformer->getCountryId('840'));
         $this->assertEquals(840, $base_transformer->getCountryId('United States'));
+        $this->assertEquals(840, $base_transformer->getCountryId('United States of America'));
+        $this->assertNull($base_transformer->getCountryId('1'));
     }
 
     public function testGetTaxRate()

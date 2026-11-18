@@ -3,9 +3,7 @@
 
 @push('head')
 <meta name="show-invoice-terms" content="{{ $settings->show_accept_invoice_terms ? true : false }}">
-<meta name="require-invoice-signature" content="{{ $client->user->account->hasFeature(\App\Models\Account::FEATURE_INVOICE_SETTINGS) && $settings->require_invoice_signature }}">
-<meta name="show-required-fields-form" content="{{ auth()->guard('contact')->user()->showRff() }}" />
-<script src="{{ asset('vendor/signature_pad@2.3.2/signature_pad.min.js') }}"></script>
+<meta name="require-invoice-signature" content="{{ $requires_signature }}">
 @endpush
 
 @section('body')
@@ -22,12 +20,16 @@
     <input type="hidden" name="contact_last_name" value="{{ auth()->guard('contact')->user()->last_name }}">
     <input type="hidden" name="contact_email" value="{{ auth()->guard('contact')->user()->email }}">
 
+    <input type="hidden" name="client_city" value="{{ auth()->guard('contact')->user()->client->city }}">
+    <input type="hidden" name="client_postal_code" value="{{ auth()->guard('contact')->user()->client->postal_code }}">
+    <input type="hidden" name="docuninja_active" value="{{ $docuninja_active ? 'true' : 'false' }}">
+
     <div class="container mx-auto">
         <div class="grid grid-cols-6 gap-4">
             <div class="col-span-6 md:col-start-2 md:col-span-4">
                 <div class="flex justify-end">
                     <div class="flex justify-end mb-2">
-                        @livewire('pay-now-dropdown', ['total' => $total, 'company' => $company])
+                        @livewire('pay-now-dropdown', ['total' => $total, 'company_id' => $company->id, 'db' => $company->db])
                     </div>
                 </div>
 
@@ -68,7 +70,7 @@
                                     {{ ctrans('texts.public_notes') }}
                                 </dt>
                                 <dd class="mt-1 text-sm leading-5 text-gray-900 sm:mt-0 sm:col-span-2">
-                                    {!! html_entity_decode($invoice->public_notes) !!}
+                                    {!! \App\Services\Pdf\Purify::clean(html_entity_decode($invoice->public_notes), true) !!}
                                 </dd>
                                 @else
                                 <dt class="text-sm font-medium leading-5 text-gray-500">
@@ -100,6 +102,12 @@
                                     {{ $invoice->client->currency()->code }} ({{ $invoice->client->currency()->symbol }})
                                     {{ $invoice->partial > 0 ? $invoice->partial : $invoice->balance }}
                                 </dd>
+
+                                @if($settings->client_portal_allow_over_payment)
+                                    <div class="mt-1">
+                                        <span class="mt-1 text-sm text-gray-800">{{ ctrans('texts.over_payment_helper') }}</span>
+                                    </div>
+                                @endif
                             </div>
                             @endif
 

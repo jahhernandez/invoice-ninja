@@ -1,10 +1,11 @@
 <?php
+
 /**
  * Invoice Ninja (https://invoiceninja.com).
  *
  * @link https://github.com/invoiceninja/invoiceninja source repository
  *
- * @copyright Copyright (c) 2024. Invoice Ninja LLC (https://invoiceninja.com)
+ * @copyright Copyright (c) 2026. Invoice Ninja LLC (https://invoiceninja.com)
  *
  * @license https://www.elastic.co/licensing/elastic-license
  */
@@ -21,9 +22,7 @@ use stdClass;
 
 class PurchaseOrderAcceptedObject
 {
-    public function __construct(public PurchaseOrder $purchase_order, public Company $company, protected bool $use_react_url)
-    {
-    }
+    public function __construct(public PurchaseOrder $purchase_order, public Company $company) {}
 
     public function build()
     {
@@ -76,21 +75,21 @@ class PurchaseOrderAcceptedObject
         $content = ctrans(
             'texts.notification_purchase_order_accepted',
             [
-                    'amount' => $this->getAmount(),
-                    'vendor' => $this->purchase_order->vendor->present()->name(),
-                    'purchase_order' => $this->purchase_order->number,
-                ]
+                'amount' => $this->getAmount(),
+                'vendor' => $this->purchase_order->vendor->present()->name(),
+                'purchase_order' => $this->purchase_order->number,
+            ]
         );
 
         $data = [
             'title' => $this->getSubject(),
             'content' => $content,
-            'url' => $this->purchase_order->invitations->first()->getAdminLink($this->use_react_url),
+            'url' => $this->purchase_order->invitations->first()->getAdminLink(),
             'button' => ctrans('texts.view_purchase_order'),
             'signature' => $settings->email_signature,
             'logo' => $this->company->present()->logo(),
             'settings' => $settings,
-            'whitelabel' => $this->company->account->isPaid() ? true : false,
+            'whitelabel' => true,
             'text_body' => $content,
             'template' => $this->company->account->isPremium() ? 'email.template.admin_premium' : 'email.template.admin',
         ];

@@ -1,10 +1,11 @@
 <?php
+
 /**
  * Invoice Ninja (https://invoiceninja.com).
  *
  * @link https://github.com/invoiceninja/invoiceninja source repository
  *
- * @copyright Copyright (c) 2024. Invoice Ninja LLC (https://invoiceninja.com)
+ * @copyright Copyright (c) 2026. Invoice Ninja LLC (https://invoiceninja.com)
  *
  * @license https://www.elastic.co/licensing/elastic-license
  */
@@ -36,12 +37,11 @@ class ApplyNumber extends AbstractService
     /* Recurring numbers are set when saved */
     public function run()
     {
-        if ($this->recurring_entity->number != '') {
+        if (trim((string)$this->recurring_entity->number) !== '') {
             return $this->recurring_entity;
         }
 
         $this->trySaving();
-        //$this->recurring_entity->number = $this->getNextRecurringInvoiceNumber($this->client, $this->recurring_entity);
 
         return $this->recurring_entity;
     }

@@ -1,10 +1,11 @@
 <?php
+
 /**
  * Invoice Ninja (https://invoiceninja.com).
  *
  * @link https://github.com/invoiceninja/invoiceninja source repository
  *
- * @copyright Copyright (c) 2024. Invoice Ninja LLC (https://invoiceninja.com)
+ * @copyright Copyright (c) 2026. Invoice Ninja LLC (https://invoiceninja.com)
  *
  * @license https://www.elastic.co/licensing/elastic-license
  */
@@ -55,8 +56,6 @@ class EmailRefundPayment implements ShouldQueue
     /**
      * Execute the job.
      *
-     *
-     * @return void
      */
     public function handle()
     {
@@ -75,7 +74,7 @@ class EmailRefundPayment implements ShouldQueue
             App::setLocale($this->contact->preferredLocale());
             $t->replace(Ninja::transformTranslations($this->settings));
 
-            $template_data['body'] = ctrans('texts.refunded_payment').' $payment.refunded <br><br>$invoices';
+            $template_data['body'] = ctrans('texts.refunded_payment') . ' $payment.refunded <br><br>$invoices';
             $template_data['subject'] = ctrans('texts.refunded_payment');
 
             $email_builder = new PaymentEmailEngine($this->payment, $this->contact, $template_data);
@@ -86,15 +85,15 @@ class EmailRefundPayment implements ShouldQueue
 
             $nmo = new NinjaMailerObject();
 
-            if ($this->payment->invoices && $this->payment->invoices->count() >= 1) {
+            if ($this->payment->invoices->isNotEmpty()) {
 
-                if($this->contact) {
+                if ($this->contact) {
                     $invitation = $this->payment->invoices->first()->invitations()->where('client_contact_id', $this->contact->id)->first();
                 } else {
                     $invitation = $this->payment->invoices->first()->invitations()->first();
                 }
 
-                if($invitation) {
+                if ($invitation) {
                     $nmo->invitation = $invitation;
                 }
             }

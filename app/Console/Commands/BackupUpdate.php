@@ -1,10 +1,11 @@
 <?php
+
 /**
  * Invoice Ninja (https://invoiceninja.com).
  *
  * @link https://github.com/invoiceninja/invoiceninja source repository
  *
- * @copyright Copyright (c) 2024. Invoice Ninja LLC (https://invoiceninja.com)
+ * @copyright Copyright (c) 2026. Invoice Ninja LLC (https://invoiceninja.com)
  *
  * @license https://www.elastic.co/licensing/elastic-license
  */
@@ -19,6 +20,7 @@ use App\Models\Document;
 use App\Models\GroupSetting;
 use App\Utils\Ninja;
 use Illuminate\Console\Command;
+use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Storage;
 
 class BackupUpdate extends Command
@@ -56,7 +58,7 @@ class BackupUpdate extends Command
     {
         //always return state to first DB
 
-        if(Ninja::isSelfHost()) {
+        if (Ninja::isSelfHost()) {
             return;
         }
 
@@ -89,7 +91,15 @@ class BackupUpdate extends Command
                        return;
                    }
 
-                   $logo = @file_get_contents($company_logo_path);
+                   $response = Http::withOptions([
+                       'allow_redirects' => false,
+                   ])->timeout(5)
+                   ->get($company_logo_path);
+                   if ($response->successful()) {
+                       $logo = $response->body();
+                   } else {
+                       return;
+                   }
                    $extension = @pathinfo($company->settings->company_logo, PATHINFO_EXTENSION);
 
                    if ($logo && $extension) {
@@ -115,7 +125,16 @@ class BackupUpdate extends Command
               ->each(function ($client) {
                   $company_logo_path = $client->settings->company_logo;
 
-                  $logo = @file_get_contents($company_logo_path);
+                  $response = Http::withOptions([
+                        'allow_redirects' => false,
+                    ])->timeout(5)
+                    ->get($company_logo_path);
+                  if ($response->successful()) {
+                      $logo = $response->body();
+                  } else {
+                      return;
+                  }
+
                   $extension = @pathinfo($company_logo_path, PATHINFO_EXTENSION);
 
                   if ($logo && $extension) {
@@ -130,7 +149,7 @@ class BackupUpdate extends Command
                       $settings = $client->settings;
                       $settings->company_logo = $url;
                       $client->settings = $settings;
-                      ;
+                      
                       $client->saveQuietly();
                   }
               });
@@ -146,7 +165,16 @@ class BackupUpdate extends Command
                       return;
                   }
 
-                  $logo = @file_get_contents($company_logo_path);
+                  $response = Http::withOptions([
+                      'allow_redirects' => false,
+                  ])
+                  ->timeout(5)
+                  ->get($company_logo_path);
+                  if ($response->successful()) {
+                      $logo = $response->body();
+                  } else {
+                      return;
+                  }
                   $extension = @pathinfo($company_logo_path, PATHINFO_EXTENSION);
 
                   if ($logo && $extension) {
@@ -175,8 +203,8 @@ class BackupUpdate extends Command
 
                     try {
                         $doc_bin = $document->getFile();
-                    } catch(\Exception $e) {
-                        nlog($e->getMessage());
+                    } catch (\Exception $e) {
+                        nlog("Exception:: BackupUpdate::" . $e->getMessage());
                     }
 
                     if ($doc_bin) {
@@ -184,8 +212,6 @@ class BackupUpdate extends Command
 
                         $document->disk = $this->option('disk');
                         $document->saveQuietly();
-
-                        nlog("Documents - Moving {$document->url} to {$this->option('disk')}");
                     }
                 });
 
@@ -199,8 +225,6 @@ class BackupUpdate extends Command
 
                     if ($backup_bin) {
                         Storage::disk($this->option('disk'))->put($backup->filename, $backup_bin);
-
-                        nlog("Backups - Moving {$backup->filename} to {$this->option('disk')}");
                     }
                 });
     }

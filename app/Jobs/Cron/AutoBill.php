@@ -1,25 +1,28 @@
 <?php
+
 /**
  * Invoice Ninja (https://invoiceninja.com).
  *
  * @link https://github.com/invoiceninja/invoiceninja source repository
  *
- * @copyright Copyright (c) 2024. Invoice Ninja LLC (https://invoiceninja.com)
+ * @copyright Copyright (c) 2026. Invoice Ninja LLC (https://invoiceninja.com)
  *
  * @license https://www.elastic.co/licensing/elastic-license
  */
 
 namespace App\Jobs\Cron;
 
+use App\Jobs\Entity\EmailEntity;
+use App\Libraries\MultiDB;
 use App\Models\Invoice;
 use App\Models\Webhook;
-use App\Libraries\MultiDB;
+use App\Utils\Ninja;
 use Illuminate\Bus\Queueable;
-use App\Jobs\Entity\EmailEntity;
-use Illuminate\Queue\SerializesModels;
-use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
+use Illuminate\Queue\InteractsWithQueue;
+use Illuminate\Queue\SerializesModels;
+use Illuminate\Support\Facades\App;
 
 class AutoBill implements ShouldQueue
 {
@@ -35,9 +38,7 @@ class AutoBill implements ShouldQueue
      *
      * @return void
      */
-    public function __construct(public int $invoice_id, public ?string $db, public bool $send_email_on_failure = false)
-    {
-    }
+    public function __construct(public int $invoice_id, public ?string $db, public bool $send_email_on_failure = false) {}
 
     /**
      * Execute the job.
@@ -52,24 +53,29 @@ class AutoBill implements ShouldQueue
             MultiDB::setDb($this->db);
         }
 
-        $invoice = false;
+        $invoice = Invoice::withTrashed()->findorFail($this->invoice_id);
 
         try {
+
             nlog("autobill {$this->invoice_id}");
 
-            $invoice = Invoice::withTrashed()->find($this->invoice_id);
 
-            $invoice->service()->autoBill();
+                App::setLocale($invoice->client->locale());
+                $t = app('translator');
+                $t->replace(Ninja::transformTranslations($invoice->client->getMergedSettings()));
+                $invoice->service()->autoBill();
 
         } catch (\Exception $e) {
-            nlog("Failed to capture payment for {$this->invoice_id} ->".$e->getMessage());
+            nlog("Failed to capture payment for {$this->invoice_id} ->" . $e->getMessage());
 
-            if($this->send_email_on_failure && $invoice) {
+            if ($this->send_email_on_failure) {
 
                 $invoice->invitations->each(function ($invitation) use ($invoice) {
-                    if ($invitation->contact && ! $invitation->contact->trashed() && strlen($invitation->contact->email) >= 1 && $invoice->client->getSetting('auto_email_invoice')) {
+
+                    //2025-04-06 additional conditional check to prevent duplicate emails from being sent.
+                    if (!$invitation->contact->trashed() && strlen($invitation->contact->email) >= 1 && $invoice->client->getSetting('auto_email_invoice') && !$invitation->contact->is_locked && $invoice->client->getSetting('client_online_payment_notification')) {
                         try {
-                            EmailEntity::dispatch($invitation, $invoice->company)->delay(rand(1, 2));
+                            EmailEntity::dispatch($invitation->withoutRelations(), $invoice->company->db)->delay(rand(1, 2));
 
                             $invoice->entityEmailEvent($invitation, 'invoice', 'email_template_invoice');
 
@@ -77,7 +83,7 @@ class AutoBill implements ShouldQueue
                             nlog($e->getMessage());
                         }
 
-                        nlog("Firing email for invoice {$invoice->number}");
+                        nlog("Firing email for invoice {$invoice->number} which failed to capture payment");
                     }
                 });
 

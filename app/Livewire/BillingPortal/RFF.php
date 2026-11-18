@@ -13,12 +13,16 @@
 namespace App\Livewire\BillingPortal;
 
 use App\Models\CompanyGateway;
+use App\Models\Subscription;
+use App\Utils\Traits\MakesHash;
 use Illuminate\Support\Facades\Cache;
 use Livewire\Attributes\On;
 use Livewire\Component;
 
 class RFF extends Component
 {
+    use MakesHash;
+
     public array $context;
 
     public string $contact_first_name;
@@ -45,6 +49,7 @@ class RFF extends Component
 
         $contact = auth()->guard('contact');
 
+        /** @var \App\Models\ClientContact $contact */
         $contact->user()->update([
             'first_name' => $data['contact_first_name'],
             'last_name' => $data['contact_last_name'],
@@ -65,17 +70,24 @@ class RFF extends Component
 
     public function render()
     {
+        /** @var \App\Models\CompanyGateway $gateway */
         $gateway = CompanyGateway::find($this->context['form']['company_gateway_id']);
-        $countries = Cache::get('countries');
+        $countries = app('countries');
 
         if ($gateway === null) {
             return view('billing-portal.v3.rff-basic');
         }
 
+        $driver = $gateway->driver(
+            auth()->guard('contact')->user()->client
+        );
+
+        if(isset($this->context['form']['payment_method_id'])){
+            $driver->setPaymentMethod($this->context['form']['payment_method_id']);
+        }
+
         return view('billing-portal.v3.rff', [
-            'gateway' => $gateway->driver(
-                auth()->guard('contact')->user()->client
-            ),
+            'gateway' => $driver,
             'countries' => $countries,
             'company' => $gateway->company,
         ]);

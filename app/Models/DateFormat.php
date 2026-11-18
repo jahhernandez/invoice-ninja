@@ -1,5 +1,13 @@
 <?php
-
+/**
+ * Invoice Ninja (https://invoiceninja.com).
+ *
+ * @link https://github.com/invoiceninja/invoiceninja source repository
+ *
+ * @copyright Copyright (c) 2026. Invoice Ninja LLC (https://invoiceninja.com)
+ *
+ * @license https://www.elastic.co/licensing/elastic-license
+ */
 namespace App\Models;
 
 /**
@@ -20,6 +28,7 @@ namespace App\Models;
  * @method static \Illuminate\Database\Eloquent\Builder|DateFormat whereId($value)
  * @mixin \Eloquent
  */
+#[\AllowDynamicProperties]
 class DateFormat extends StaticModel
 {
     protected $fillable = ['translated_format'];
@@ -59,7 +68,7 @@ class DateFormat extends StaticModel
      */
     public function __toString()
     {
-        $date = mktime(0, 0, 0, 12, 31, date('Y'));
+        $date = mktime(0, 0, 0, 12, 31, date('Y')); //@phpstan-ignore-line
 
         return date($this->format, $date);
     }

@@ -1,10 +1,11 @@
 <?php
+
 /**
  * Invoice Ninja (https://invoiceninja.com).
  *
  * @link https://github.com/invoiceninja/invoiceninja source repository
  *
- * @copyright Copyright (c) 2024. Invoice Ninja LLC (https://invoiceninja.com)
+ * @copyright Copyright (c) 2026. Invoice Ninja LLC (https://invoiceninja.com)
  *
  * @license https://www.elastic.co/licensing/elastic-license
  */
@@ -258,9 +259,68 @@ class Activity extends StaticModel
     public const PAYMENT_EMAILED = 138;
 
     public const VENDOR_NOTIFICATION_EMAIL = 139;
-    
+
     public const EMAIL_STATEMENT = 140;
 
+    public const USER_NOTE = 141;
+
+    public const QUOTE_REMINDER1_SENT = 142;
+
+    public const AUTOBILL_SUCCESS = 143;
+
+    public const AUTOBILL_FAILURE = 144;
+
+    public const EINVOICE_SENT = 145;
+
+    public const EINVOICE_DELIVERY_SUCCESS = 146;
+
+    public const EINVOICE_DELIVERY_FAILURE = 147;
+
+    public const E_EXPENSE_CREATED = 148;
+
+    public const EMAIL_CREDIT = 149;
+
+    public const ACCOUNT_DELETED = 150;
+
+    public const MERGE_CLIENT = 151;
+
+    public const MERGE_VENDOR = 152;
+
+    public const PURGE_CLIENT = 153;
+
+    public const VERIFACTU_INVOICE_SENT = 154;
+
+    public const VERIFACTU_INVOICE_SENT_FAILURE = 155;
+
+    public const VERIFACTU_CANCELLATION_SENT = 156;
+
+    public const VERIFACTU_CANCELLATION_SENT_FAILURE = 157;
+
+    public const QUOTE_REJECTED = 158;
+
+    public const INVOICE_DOCUMENT_SIGNED = 159;
+
+    public const QUOTE_DOCUMENT_SIGNED = 160;
+
+    public const CREDIT_DOCUMENT_SIGNED = 161;
+
+    public const PURCHASE_ORDER_DOCUMENT_SIGNED = 162;
+
+    public const CUSTOM_DOCUMENT_SIGNED = 163;
+
+    public const QUICKBOOKS_PUSH_FAILURE = 164;
+
+    public const QUICKBOOKS_PUSH_SUCCESS = 165;
+
+    public const PURGE_USER = 166;
+
+    public const EINVOICE_STATUS_UPDATED = 167;
+
+    public const PAYMENT_METHOD_UPDATED = 168;
+
+    public const PAYMENT_METHOD_REMOVED = 169;
+
+    public const CANCELLED_QUOTE = 170;
 
     protected $casts = [
         'is_system' => 'boolean',
@@ -277,12 +337,10 @@ class Activity extends StaticModel
         'backup',
     ];
 
-
     public function getHashedIdAttribute(): string
     {
         return $this->encodePrimaryKey($this->id);
     }
-
 
     public function getEntityType()
     {
@@ -408,34 +466,34 @@ class Activity extends StaticModel
             ':number',
             ':payment_amount',
             ':gateway',
-            ':adjustment'
+            ':adjustment',
         ];
 
         $found_variables = array_intersect(explode(" ", trans("texts.activity_{$this->activity_type_id}")), $intersect);
 
-        if($this->activity_type_id == 10 && $this->client_contact_id && !$this->token_id) {
+        if ($this->activity_type_id == 10 && $this->client_contact_id && !$this->token_id) {
             $found_variables = array_intersect(explode(" ", trans("texts.activity_10_online")), $intersect);
         }
 
-        if($this->activity_type_id == 54 && !$this->token_id) {
+        if ($this->activity_type_id == 54 && !$this->token_id) {
             array_push($found_variables, ':contact');
         }
 
         $replacements = [];
 
-        foreach($found_variables as $var) {
+        foreach ($found_variables as $var) {
             $replacements = array_merge($replacements, $this->matchVar($var));
         }
 
-        if($this->client) {
-            $replacements['client'] = ['label' => $this?->client?->present()->name() ?? '', 'hashed_id' => $this->client->hashed_id ?? ''];
+        if ($this->client) {
+            $replacements['client'] = ['label' => $this->client?->present()->name() ?? '', 'hashed_id' => $this->client->hashed_id ?? ''];
         }
 
-        if($this->vendor) {
-            $replacements['vendor'] = ['label' => $this?->vendor?->present()->name() ?? '', 'hashed_id' => $this->vendor->hashed_id ?? ''];
+        if ($this->vendor) {
+            $replacements['vendor'] = ['label' => $this->vendor?->present()->name() ?? '', 'hashed_id' => $this->vendor->hashed_id ?? ''];
         }
 
-        if($this->activity_type_id == 4 && $this->recurring_invoice) {
+        if ($this->activity_type_id == 4 && $this->recurring_invoice) {
             $replacements['recurring_invoice'] = ['label' => $this?->recurring_invoice?->number ?? '', 'hashed_id' => $this->recurring_invoice->hashed_id ?? ''];
         }
 
@@ -446,8 +504,40 @@ class Activity extends StaticModel
         $replacements['created_at'] = $this->created_at ?? '';
         $replacements['ip'] = $this->ip ?? '';
 
+        if ($this->activity_type_id == 141) {
+            $replacements = $this->harvestNoteEntities($replacements);
+        }
+
         return $replacements;
 
+    }
+
+    private function harvestNoteEntities(array $replacements): array
+    {
+        $entities = [
+            ':invoice',
+            ':quote',
+            ':credit',
+            ':payment',
+            ':task',
+            ':expense',
+            ':purchase_order',
+            ':recurring_invoice',
+            ':recurring_expense',
+            ':client',
+
+        ];
+
+        foreach ($entities as $entity) {
+            $entity_key = substr($entity, 1);
+
+            if ($this?->{$entity_key}) {
+                $replacements = array_merge($replacements, $this->matchVar($entity));
+            }
+
+        }
+
+        return $replacements;
     }
 
     private function matchVar(string $variable)
@@ -456,7 +546,7 @@ class Activity extends StaticModel
 
         $translation = '';
 
-        match($variable) {
+        match ($variable) {
             ':invoice' => $translation = [substr($variable, 1) => [ 'label' => $this?->invoice?->number ?? '', 'hashed_id' => $this->invoice?->hashed_id ?? '']],
             ':user' => $translation =  [substr($variable, 1) => [ 'label' => $this?->user?->present()->name() ?? $system, 'hashed_id' => $this->user->hashed_id ?? '']],
             ':quote' => $translation =  [substr($variable, 1) => [ 'label' => $this?->quote?->number ?? '', 'hashed_id' => $this->quote->hashed_id ?? '']],
@@ -469,15 +559,28 @@ class Activity extends StaticModel
             ':recurring_invoice' => $translation =  [substr($variable, 1) => [ 'label' =>  $this?->recurring_invoice?->number ?? '', 'hashed_id' => $this->recurring_invoice->hashed_id ?? '']],
             ':recurring_expense' => $translation =  [substr($variable, 1) => [ 'label' => $this?->recurring_expense?->number ?? '', 'hashed_id' => $this->recurring_expense->hashed_id ?? '']],
             ':payment_amount' => $translation =  [substr($variable, 1) => [ 'label' =>  Number::formatMoney($this?->payment?->amount, $this?->payment?->client ?? $this->company) ?? '', 'hashed_id' => '']],
-            ':adjustment' => $translation =  [substr($variable, 1) => [ 'label' =>  Number::formatMoney($this?->payment?->refunded, $this?->payment?->client ?? $this->company) ?? '', 'hashed_id' => '']],
+            ':adjustment' => $translation = [substr($variable, 1) => [ 'label' =>  $this->getPaymentAdjustment($this?->payment), 'hashed_id' => '']],
             ':ip' => $translation = [ 'ip' => $this->ip ?? ''],
             ':contact' => $translation = $this->resolveContact(),
             ':notes' => $translation = [ 'notes' => $this->notes ?? ''],
-            
+
             default => $translation = [],
         };
 
         return $translation;
+    }
+
+    public function getPaymentAdjustment(?\App\Models\Payment $payment): string
+    {
+        if (!$payment) {
+            return '';
+        }
+
+        preg_match('/:\s*(\d+)\s*-/', $this->notes ?? '', $matches);
+        $amount = $matches[1] ?? null;
+
+        return Number::formatMoney($amount ?? $payment->refunded, $payment?->client ?? $this->company);
+
     }
 
     private function resolveContact(): array
@@ -488,7 +591,7 @@ class Activity extends StaticModel
 
         $contact_entity = $this->contact ? 'clients' : 'vendors';
 
-        if(!$contact) {
+        if (!$contact) {
             return [];
         }
 

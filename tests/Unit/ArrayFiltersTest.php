@@ -1,4 +1,5 @@
 <?php
+
 /**
  * Invoice Ninja (https://invoiceninja.com).
  *
@@ -17,14 +18,14 @@ use App\Models\User;
 use Tests\TestCase;
 
 /**
- * @test
+ *
  */
 class ArrayFiltersTest extends TestCase
 {
     private string $import_version = '';
-     
+
     private array $version_keys = [
-        'baseline' =>[],
+        'baseline' => [],
         '5.7.34' => [
             Payment::class => [
                 'is_deleted',
@@ -59,9 +60,41 @@ class ArrayFiltersTest extends TestCase
         ],
     ];
 
-    protected function setUp() :void
+    protected function setUp(): void
     {
         parent::setUp();
+    }
+
+    public function testPayPalHurtsMySoul()
+    {
+
+        $payload = [
+            "id" => "WH-x-67976317FL4543714",
+            "create_time" => "2016-08-01T21:41:28Z",
+            "resource_type" => "merchant-onboarding",
+            "event_type" => "MERCHANT.ONBOARDING.COMPLETED",
+            "resource" => [
+                "partner_client_id" => "hurts_my_soul",
+                "links" => [
+                    [
+                        "href" => "https://uri.paypal.com/v1/customer/partners/QX4A9KG89BHLN/merchant-integrations/Y7MGFXVS8VHYU",
+                        "rel" => "self",
+                        "method" => "GET",
+                        "description" => "Get the merchant status information of merchants onboarded by this partner"
+                    ]
+                ],
+                "merchant_id" => "ELAMYJUN78D6G"
+            ],
+            "links" => []
+        ];
+
+
+
+        $href = $payload['resource']['links'][0]['href'];
+
+        $this->assertEquals("Y7MGFXVS8VHYU", basename($href));
+        $this->assertEquals("Y7MGFXVS8VHYU", last(explode('/', $href)));
+
     }
 
     public function testPaymentFilterFactory()
@@ -83,11 +116,11 @@ class ArrayFiltersTest extends TestCase
         $index = 0;
         $version_index = 0;
 
-        foreach($this->version_keys as $key => $value) {
-            if($version == $key) {
+        foreach ($this->version_keys as $key => $value) {
+            if ($version == $key) {
                 $version_index = $index;
             }
-        
+
             $index++;
         }
 
@@ -114,25 +147,25 @@ class ArrayFiltersTest extends TestCase
         $index = 0;
         $version_index = 0;
 
-        foreach($this->version_keys as $key => $value) {
-            if($version == $key) {
+        foreach ($this->version_keys as $key => $value) {
+            if ($version == $key) {
                 $version_index = $index;
             }
-        
+
             $index++;
         }
 
         $this->assertEquals(2, $version_index);
-        
+
         $index = 0;
         $version_index = 0;
 
         $filters = collect($this->version_keys)
         ->map(function ($value, $key) use ($version, &$version_index, &$index) {
-            if($version == $key) {
+            if ($version == $key) {
                 $version_index = $index;
             }
-                    
+
             $index++;
             return $value;
 
@@ -156,10 +189,10 @@ class ArrayFiltersTest extends TestCase
 
         $filters = collect($this->version_keys)
         ->map(function ($value, $key) use ($version, &$version_index, &$index) {
-            if($version == $key) {
+            if ($version == $key) {
                 $version_index = $index;
             }
-                                
+
             $index++;
             return $value;
 
@@ -179,9 +212,9 @@ class ArrayFiltersTest extends TestCase
 
         $filters = collect($this->version_keys)
         ->map(function ($value, $key) use ($version, &$version_index, &$index) {
-            if($version == $key) {
+            if ($version == $key) {
                 $version_index = $index;
-                nlog("version = {$version_index}");
+                // nlog("version = {$version_index}");
             }
             $index++;
             return $value;
@@ -189,7 +222,7 @@ class ArrayFiltersTest extends TestCase
         })
         ->slice($version_index ?? 0)
         ->pluck(Payment::class);
-        
+
         $x = collect($p)->diffKeys($filters->filter()->flatten()->flip());
 
         $this->assertEquals(5, $filters->count());
@@ -203,10 +236,10 @@ class ArrayFiltersTest extends TestCase
 
         $filters = collect($this->version_keys)
              ->map(function ($value, $key) use (&$version_index, &$index) {
-                 if($this->import_version == $key) {
+                 if ($this->import_version == $key) {
                      $version_index = $index;
                  }
-                                                    
+
                  $index++;
                  return $value;
 
@@ -217,11 +250,11 @@ class ArrayFiltersTest extends TestCase
              ->when($version_index > 0, function ($collection) use (&$version_index, $class) {
                  return $collection->slice($version_index)->pluck($class)->filter();
              });
-        
+
         return collect($obj_array)->diffKeys($filters->flatten()->flip())->toArray();
 
         // return $filters->count() > 0 ?  collect($obj_array)->diffKeys($filters->flatten()->flip())->toArray() : $obj_array;
- 
+
     }
 
     public function testFilterArrayOne()

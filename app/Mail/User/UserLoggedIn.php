@@ -5,7 +5,7 @@
  *
  * @link https://github.com/invoiceninja/invoiceninja source repository
  *
- * @copyright Copyright (c) 2024. Invoice Ninja LLC (https://invoiceninja.com)
+ * @copyright Copyright (c) 2026. Invoice Ninja LLC (https://invoiceninja.com)
  *
  * @license https://www.elastic.co/licensing/elastic-license
  */
@@ -24,9 +24,7 @@ class UserLoggedIn extends Mailable
      *
      * @return void
      */
-    public function __construct(public User $user, public Company $company, public string $ip)
-    {
-    }
+    public function __construct(public User $user, public Company $company, public string $ip) {}
 
     /**
      * Build the message.
@@ -51,7 +49,7 @@ class UserLoggedIn extends Mailable
                 'logo' => $this->company->present()->logo(),
                 'title' => ctrans('texts.new_login_detected'),
                 'body' => ctrans('texts.new_login_description', ['email' => $this->user->email, 'ip' => $this->ip, 'time' => now()]),
-                'whitelabel' => $this->company->account->isPaid(),
+                'whitelabel' => true,
             ]);
     }
 }

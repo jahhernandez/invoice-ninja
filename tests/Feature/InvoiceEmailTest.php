@@ -1,4 +1,5 @@
 <?php
+
 /**
  * Invoice Ninja (https://invoiceninja.com).
  *
@@ -11,52 +12,128 @@
 
 namespace Tests\Feature;
 
+use App\Factory\CompanyUserFactory;
+use App\Http\Requests\Email\SendEmailRequest;
 use App\Jobs\Entity\EmailEntity;
+use App\Models\CompanyToken;
+use App\Models\Quote;
 use App\Models\SystemLog;
+use App\Models\User;
+use App\Services\Email\Email;
 use App\Utils\Traits\GeneratesCounter;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Foundation\Testing\DatabaseTransactions;
 use Illuminate\Support\Facades\Bus;
 use Illuminate\Support\Facades\Session;
-use Illuminate\Validation\ValidationException;
+use Illuminate\Support\Facades\Validator;
+use Illuminate\Support\Str;
+use ReflectionMethod;
 use Tests\MockAccountData;
 use Tests\TestCase;
 
 /**
- * @test
- * @covers App\Jobs\Invoice\EmailInvoice
+ *
+ *  App\Jobs\Invoice\EmailInvoice
  */
 class InvoiceEmailTest extends TestCase
 {
     use MockAccountData;
     use DatabaseTransactions;
     use GeneratesCounter;
-
-    public $faker;
-
-    protected function setUp() :void
+    protected function setUp(): void
     {
         parent::setUp();
 
         Session::start();
-
-        $this->faker = \Faker\Factory::create();
-
         Model::reguard();
 
         $this->makeTestData();
 
-        // $this->withoutExceptionHandling();
+    }
+
+    public function testEmailTemplateValidation()
+    {
+        $this->user->setCompany($this->company);
+        $this->actingAs($this->user);
+
+        $request = new SendEmailRequest();
+
+        collect($request->templates)->filter(function ($template) {
+            return stripos($template, 'quote') === false;
+        })->each(function ($template) use ($request) {
+
+
+            $data = [
+                "body" => "hey what's up",
+                "entity" => 'App\Models\Invoice',
+                "entity_id" => $this->invoice->id,
+                "subject" => 'Reminder $number',
+                "template" => $template
+            ];
+
+            $request->initialize($data);
+            $validator = Validator::make($data, $request->rules());
+
+            $this->assertTrue($validator->passes());
+
+        });
+
 
     }
 
     public function testInvalidEmailParsing()
     {
-        $email = 'illegal@example.com';
+        $email = 'illegal@gmail.com';
 
-        $this->assertTrue(strpos($email, '@example.com') !== false);
+        $this->assertTrue(strpos($email, '@gmail.com') !== false);
     }
-    
+
+
+    public function testTemplateValidationWhenArray()
+    {
+        $data = [
+            "body" => "hey what's up",
+            "entity" => 'blergen',
+            "entity_id" => $this->invoice->hashed_id,
+            "subject" => 'Reminder $number',
+            "template" => [
+                "email_template_invoice","noo",
+            ],
+        ];
+
+        $response = false;
+
+        $response = $this->withHeaders([
+            'X-API-SECRET' => config('ninja.api_secret'),
+            'X-API-TOKEN' => $this->token,
+        ])->postJson('/api/v1/emails', $data);
+
+        $response->assertStatus(422);
+
+    }
+
+
+    public function testEntityValidation()
+    {
+        $data = [
+            "body" => "hey what's up",
+            "entity" => 'blergen',
+            "entity_id" => $this->invoice->hashed_id,
+            "subject" => 'Reminder $number',
+            "template" => "email_template_invoice"
+        ];
+
+        $response = false;
+
+        $response = $this->withHeaders([
+            'X-API-SECRET' => config('ninja.api_secret'),
+            'X-API-TOKEN' => $this->token,
+        ])->postJson('/api/v1/emails', $data);
+
+        $response->assertStatus(422);
+
+    }
+
 
     public function testClientEmailHistory()
     {
@@ -69,7 +146,7 @@ class InvoiceEmailTest extends TestCase
         $system_log->log = [
             'history' => [
                 'entity_id' => $this->invoice->hashed_id,
-                'entity_type' => 'invoice',
+                'entity' => 'invoice',
                 'subject' => 'Invoice #1',
                 'events' => [
                     [
@@ -83,7 +160,7 @@ class InvoiceEmailTest extends TestCase
                 ],
             ]
         ];
-                
+
         $system_log->save();
 
 
@@ -96,7 +173,7 @@ class InvoiceEmailTest extends TestCase
 
         $arr = $response->json();
 
-        $this->assertEquals('invoice', $arr[0]['entity_type']);
+        $this->assertEquals('invoice', $arr[0]['entity']);
 
         $count = SystemLog::where('client_id', $this->client->id)
                 ->where('category_id', SystemLog::CATEGORY_MAIL)
@@ -117,7 +194,7 @@ class InvoiceEmailTest extends TestCase
         $system_log->log = [
             'history' => [
                 'entity_id' => $this->invoice->hashed_id,
-                'entity_type' => 'invoice',
+                'entity' => 'invoice',
                 'subject' => 'Invoice #1',
                 'events' => [
                     [
@@ -131,7 +208,7 @@ class InvoiceEmailTest extends TestCase
                 ],
             ]
         ];
-                
+
         $system_log->save();
 
         $data = [
@@ -148,7 +225,7 @@ class InvoiceEmailTest extends TestCase
 
         $arr = $response->json();
 
-        $this->assertEquals('invoice', $arr[0]['entity_type']);
+        $this->assertEquals('invoice', $arr[0]['entity']);
         $this->assertEquals($this->invoice->hashed_id, $arr[0]['entity_id']);
 
         $count = SystemLog::where('company_id', $this->company->id)
@@ -166,22 +243,18 @@ class InvoiceEmailTest extends TestCase
         $data = [
             "body" => "hey what's up",
             "entity" => 'invoice',
-            "entity_id"=> $this->invoice->hashed_id,
-            "subject"=> 'Reminder $number',
-            "template"=> "first_custom"
+            "entity_id" => $this->invoice->hashed_id,
+            "subject" => 'Reminder $number',
+            "template" => "first_custom"
         ];
 
         $response = false;
 
-        try {
-            $response = $this->withHeaders([
-                'X-API-SECRET' => config('ninja.api_secret'),
-                'X-API-TOKEN' => $this->token,
-            ])->postJson('/api/v1/emails', $data);
-        } catch (ValidationException $e) {
-            $message = json_decode($e->validator->getMessageBag(), 1);
-            nlog($message);
-        }
+        $response = $this->withHeaders([
+            'X-API-SECRET' => config('ninja.api_secret'),
+            'X-API-TOKEN' => $this->token,
+        ])->postJson('/api/v1/emails', $data);
+
 
         $response->assertStatus(422);
 
@@ -198,18 +271,89 @@ class InvoiceEmailTest extends TestCase
 
         $response = false;
 
-        try {
-            $response = $this->withHeaders([
-                'X-API-SECRET' => config('ninja.api_secret'),
-                'X-API-TOKEN' => $this->token,
-            ])->postJson('/api/v1/emails', $data);
-        } catch (ValidationException $e) {
-            $message = json_decode($e->validator->getMessageBag(), 1);
-            nlog($message);
-        }
+        $response = $this->withHeaders([
+            'X-API-SECRET' => config('ninja.api_secret'),
+            'X-API-TOKEN' => $this->token,
+        ])->postJson('/api/v1/emails', $data);
+
 
         $response->assertStatus(200);
 
+    }
+
+    public function test_cc_email_prepare_for_validation_splits_on_whitespace_and_deduplicates(): void
+    {
+        $this->user->setCompany($this->company);
+        $this->actingAs($this->user);
+
+        $request = new SendEmailRequest();
+        $request->merge([
+            'template' => 'email_template_invoice',
+            'entity' => 'invoice',
+            'entity_id' => $this->invoice->hashed_id,
+            'cc_email' => 'first@test.com  second@test.com   first@test.com FIRST@test.com',
+        ]);
+
+        $prepare = new ReflectionMethod(SendEmailRequest::class, 'prepareForValidation');
+        $prepare->setAccessible(true);
+        $prepare->invoke($request);
+
+        $this->assertSame(
+            ['first@test.com', 'second@test.com'],
+            $request->input('cc_email')
+        );
+    }
+
+    public function testSendEmailRequestRejectsUserWithoutEditPermissionAfterEntityNormalization(): void
+    {
+        $restrictedUser = User::factory()->create([
+            'account_id' => $this->account->id,
+            'confirmation_code' => '123',
+            'email' => uniqid('restricted-user') . '@gmail.com',
+        ]);
+
+        $companyUser = CompanyUserFactory::create(
+            $restrictedUser->id,
+            $this->company->id,
+            $this->account->id,
+        );
+        $companyUser->is_owner = false;
+        $companyUser->is_admin = false;
+        $companyUser->is_locked = false;
+        $companyUser->permissions = '[]';
+        $companyUser->save();
+
+        $companyToken = new CompanyToken();
+        $companyToken->user_id = $restrictedUser->id;
+        $companyToken->company_id = $this->company->id;
+        $companyToken->account_id = $this->account->id;
+        $companyToken->name = 'restricted email test token';
+        $companyToken->token = Str::random(64);
+        $companyToken->is_system = true;
+        $companyToken->save();
+
+        $restrictedUser->setCompany($this->company);
+        $this->actingAs($restrictedUser);
+
+        $request = new SendEmailRequest();
+        $request->merge([
+            'template' => 'email_template_quote',
+            'entity' => 'quote',
+            'entity_id' => $this->quote->hashed_id,
+        ]);
+
+        $prepare = new ReflectionMethod(SendEmailRequest::class, 'prepareForValidation');
+        $prepare->setAccessible(true);
+        $prepare->invoke($request);
+
+        $this->assertSame(Quote::class, $request->input('entity'));
+        $this->assertFalse($restrictedUser->can('edit', $this->quote));
+
+        $validator = Validator::make($request->all(), $request->rules());
+        $request->withValidator($validator);
+
+        $this->assertFalse($validator->passes());
+        $this->assertTrue($validator->errors()->has('error'));
     }
 
     public function test_initial_email_send_emails()
@@ -264,7 +408,7 @@ class InvoiceEmailTest extends TestCase
             if ($invitation->contact->send_email && $invitation->contact->email) {
                 EmailEntity::dispatch($invitation, $invitation->company);
 
-                
+
                 Bus::assertDispatched(EmailEntity::class);
 
             }
@@ -295,7 +439,7 @@ class InvoiceEmailTest extends TestCase
             if ($invitation->contact->send_email && $invitation->contact->email) {
                 EmailEntity::dispatch($invitation, $invitation->company);
 
-                
+
                 Bus::assertDispatched(EmailEntity::class);
 
             }
@@ -321,12 +465,30 @@ class InvoiceEmailTest extends TestCase
             if ($invitation->contact->send_email && $invitation->contact->email) {
                 EmailEntity::dispatch($invitation, $invitation->company);
 
-                
+
                 Bus::assertDispatched(EmailEntity::class);
 
             }
         });
 
         $this->assertTrue(true);
+    }
+
+    public function testEndlessReminderEmailsUseTheEndlessReminderTemplate()
+    {
+        Bus::fake([Email::class]);
+
+        // The scheduler and bulk email send 'reminder_endless'; calculateTemplate() returns 'endless_reminder'.
+        $this->invoice->service()->sendEmail(null, 'reminder_endless');
+        $this->invoice->service()->sendEmail(null, 'endless_reminder');
+
+        Bus::assertDispatched(Email::class, function (Email $job) {
+            return $job->email_object->email_template_body === 'email_template_reminder_endless'
+                && $job->email_object->email_template_subject === 'email_subject_reminder_endless';
+        });
+
+        Bus::assertNotDispatched(Email::class, function (Email $job) {
+            return $job->email_object->email_template_body === 'email_template_invoice';
+        });
     }
 }

@@ -1,10 +1,11 @@
 <?php
+
 /**
  * Invoice Ninja (https://invoiceninja.com).
  *
  * @link https://github.com/invoiceninja/invoiceninja source repository
  *
- * @copyright Copyright (c) 2024. Invoice Ninja LLC (https://invoiceninja.com)
+ * @copyright Copyright (c) 2026. Invoice Ninja LLC (https://invoiceninja.com)
  *
  * @license https://www.elastic.co/licensing/elastic-license
  */
@@ -132,7 +133,7 @@ class IncomeTransformer implements BankRevenueInterface
             }
 
             //some object do no store amounts ignore these
-            if(!property_exists($transaction, 'amount')) {
+            if (!property_exists($transaction, 'amount')) {
                 continue;
             }
 
@@ -144,6 +145,12 @@ class IncomeTransformer implements BankRevenueInterface
 
     public function transformTransaction($transaction)
     {
+        //participant / participant_name are unused by Yodlee, so we repurpose them to persist the
+        //running balance + check number, which disambiguate genuinely-identical transactions during
+        //deduplication. running_balance is stored fixed-2dp so equality is stable across syncs.
+        $running_balance = data_get($transaction, 'runningBalance.amount');
+        $check_number = data_get($transaction, 'checkNumber');
+
         return [
             'transaction_id' => $transaction->id,
             'amount' => $transaction->amount->amount,
@@ -155,6 +162,8 @@ class IncomeTransformer implements BankRevenueInterface
             'bank_account_id' => $transaction->accountId,
             'description' => $transaction?->description?->original ?? '',
             'base_type' => property_exists($transaction, 'baseType') ? $transaction->baseType : $this->calculateBaseType($transaction),
+            'participant' => is_null($running_balance) ? null : number_format($running_balance, 2, '.', ''),
+            'participant_name' => is_null($check_number) ? null : (string) $check_number,
         ];
     }
 
@@ -171,20 +180,16 @@ class IncomeTransformer implements BankRevenueInterface
 
     private function convertCurrency(string $code)
     {
-        $currencies = Cache::get('currencies');
 
-        if (! $currencies) {
-            $this->buildCache(true);
-        }
+        $currencies = app('currencies');
 
-        $currency = $currencies->filter(function ($item) use ($code) {
+        $currency = $currencies->first(function ($item) use ($code) {
+            /** @var \App\Models\Currency $item */
             return $item->code == $code;
-        })->first();
+        });
 
-        if ($currency) {
-            return $currency->id;
-        }
+        /** @var \App\Models\Currency $currency */
+        return $currency ? $currency->id : 1; //@phpstan-ignore-line
 
-        return 1;
     }
 }

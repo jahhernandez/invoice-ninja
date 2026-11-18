@@ -28,8 +28,12 @@
     @livewire('profile.settings.general')
 
     <!-- Client personal address -->
-    @livewire('profile.settings.personal-address', ['countries' => $countries])
+    @livewire('profile.settings.personal-address')
 
     <!-- Client shipping address -->
-    @livewire('profile.settings.shipping-address', ['countries' => $countries])
+    @livewire('profile.settings.shipping-address')
+
+    <!-- Client custom fields -->
+    @livewire('profile.settings.custom-fields')
+
 @endsection

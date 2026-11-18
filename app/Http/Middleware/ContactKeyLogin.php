@@ -1,10 +1,11 @@
 <?php
+
 /**
  * Invoice Ninja (https://invoiceninja.com).
  *
  * @link https://github.com/invoiceninja/invoiceninja source repository
  *
- * @copyright Copyright (c) 2024. Invoice Ninja LLC (https://invoiceninja.com)
+ * @copyright Copyright (c) 2026. Invoice Ninja LLC (https://invoiceninja.com)
  *
  * @license https://www.elastic.co/licensing/elastic-license
  */
@@ -53,7 +54,7 @@ class ContactKeyLogin
 
             if ($client_contact = ClientContact::where('email', $contact_email)->where('company_id', $payload['company_id'])->first()) {
                 if (empty($client_contact->email)) {
-                    $client_contact->email = Str::random(15).'@example.com';
+                    $client_contact->email = Str::random(15) . '@example.com';
                 }
                 $client_contact->save();
 
@@ -73,7 +74,7 @@ class ContactKeyLogin
                     }
 
                     if (empty($client_contact->email)) {
-                        $client_contact->email = Str::random(6).'@example.com';
+                        $client_contact->email = Str::random(6) . '@example.com';
                     }
                     $client_contact->save();
 
@@ -93,7 +94,7 @@ class ContactKeyLogin
                 }
 
                 if (empty($client_contact->email)) {
-                    $client_contact->email = Str::random(6).'@example.com';
+                    $client_contact->email = Str::random(6) . '@example.com';
                     $client_contact->save();
                 }
 
@@ -111,7 +112,7 @@ class ContactKeyLogin
                     $primary_contact = $client->primary_contact()->first();
 
                     if (empty($primary_contact->email)) {
-                        $primary_contact->email = Str::random(6).'@example.com';
+                        $primary_contact->email = Str::random(6) . '@example.com';
                     }
                     $primary_contact->save();
 
@@ -125,7 +126,7 @@ class ContactKeyLogin
                 $primary_contact = $client->primary_contact()->first();
 
                 if (empty($primary_contact->email)) {
-                    $primary_contact->email = Str::random(6).'@example.com';
+                    $primary_contact->email = Str::random(6) . '@example.com';
                 }
                 $primary_contact->save();
 
@@ -140,7 +141,7 @@ class ContactKeyLogin
                 }
 
                 if (empty($client_contact->email)) {
-                    $client_contact->email = Str::random(6).'@example.com';
+                    $client_contact->email = Str::random(6) . '@example.com';
                     $client_contact->save();
                 }
 
@@ -162,18 +163,18 @@ class ContactKeyLogin
     private function setRedirectPath()
     {
         if (auth()->guard('contact')->user()->client->getSetting('enable_client_portal_dashboard') === true) {
-            return '/client/dashboard';                                                                                              
-        } elseif (auth()->guard('contact')->user()->company->enabled_modules & PortalComposer::MODULE_INVOICES) {
+            return '/client/dashboard';
+        } elseif ((bool) (auth()->guard('contact')->user()->company->enabled_modules & PortalComposer::MODULE_INVOICES)) {
             return '/client/invoices';
-        } elseif (auth()->guard('contact')->user()->company->enabled_modules & PortalComposer::MODULE_RECURRING_INVOICES) {
+        } elseif ((bool) (auth()->guard('contact')->user()->company->enabled_modules & PortalComposer::MODULE_RECURRING_INVOICES)) {
             return '/client/recurring_invoices';
-        } elseif (auth()->guard('contact')->user()->company->enabled_modules & PortalComposer::MODULE_QUOTES) {
+        } elseif ((bool) (auth()->guard('contact')->user()->company->enabled_modules & PortalComposer::MODULE_QUOTES)) {
             return '/client/quotes';
-        } elseif (auth()->guard('contact')->user()->company->enabled_modules & PortalComposer::MODULE_CREDITS) {
+        } elseif ((bool) (auth()->guard('contact')->user()->company->enabled_modules & PortalComposer::MODULE_CREDITS)) {
             return '/client/credits';
-        } elseif (auth()->guard('contact')->user()->company->enabled_modules & PortalComposer::MODULE_TASKS) {
+        } elseif ((bool) (auth()->guard('contact')->user()->company->enabled_modules & PortalComposer::MODULE_TASKS)) {
             return '/client/tasks';
-        } elseif (auth()->guard('contact')->user()->company->enabled_modules & PortalComposer::MODULE_EXPENSES) {
+        } elseif ((bool) (auth()->guard('contact')->user()->company->enabled_modules & PortalComposer::MODULE_EXPENSES)) {
             return '/client/expenses';
         }
     }

@@ -153,7 +153,7 @@
                         <div class="dark-bg"
                              style="background-color:#f9f9f9; padding-bottom: 20px; margin-top:20px;">
                             @if($logo && strpos($logo, 'blank.png') === false)
-                            <img class="" src="{{ $logo ?? '' }}" width="50%" height="" alt=" " border="0" style="width: 50%; max-width: 570px; height: auto; display: block;" class="g-img">
+                            <img class="" src="{{ $logo ?? '' }}" alt=" " border="0" style="display: block; width: auto; max-width: 300px; max-height: 100px; height: auto; margin: 0 auto;" class="g-img">
                             @endif
                         </div>
                     </td>
@@ -203,7 +203,7 @@
                         
                         <td>
                         <![endif]-->   
-                            <a href="http://slack.invoiceninja.com/" target="_blank" class="btn-white"
+                            <a href="https://slack.invoiceninja.com/" target="_blank" class="btn-white"
                                style="vertical-align: middle;display: inline-block;background-color: #ffffff; color: {{ $primary_color }}; display: inline-block; text-decoration: none;  width: 100px; text-align: center; font-size: 12px; height: 35px; line-height: 35px; margin-left: 10px; margin-right: 10px;">
                                 <img style="width: 13px; margin-right: 4px; display: inline-block; vertical-align:middle;" src="{{ asset('images/emails/slack.png') }}" width="13">
                                 <span>Slack</span>
@@ -251,11 +251,11 @@
                             font-family: Verdana, Geneva, Tahoma, sans-serif;">© {{ date('Y') }} Invoice Ninja, All Rights Reserved
                             </p>
 
-                            <a href="{{ $email_preferences }}">
+                            <!-- <a href="{{ $email_preferences }}">
                                 <p style="text-align: center; color: #ffffff; font-size: 10px; font-family: Verdana, Geneva, Tahoma, sans-serif;">
                                     {{ ctrans('texts.email_preferences') }}
                                 </p>
-                            </a>
+                            </a> -->
                             
                         </div>
                     </td>

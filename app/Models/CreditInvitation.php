@@ -1,10 +1,11 @@
 <?php
+
 /**
  * Invoice Ninja (https://invoiceninja.com).
  *
  * @link https://github.com/invoiceninja/invoiceninja source repository
  *
- * @copyright Copyright (c) 2024. Invoice Ninja LLC (https://invoiceninja.com)
+ * @copyright Copyright (c) 2026. Invoice Ninja LLC (https://invoiceninja.com)
  *
  * @license https://www.elastic.co/licensing/elastic-license
  */
@@ -12,7 +13,6 @@
 namespace App\Models;
 
 use App\Utils\Traits\Inviteable;
-use App\Utils\Traits\MakesDates;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Support\Carbon;
 
@@ -36,6 +36,7 @@ use Illuminate\Support\Carbon;
  * @property int|null $created_at
  * @property int|null $updated_at
  * @property int|null $deleted_at
+ * @property boolean $can_sign
  * @property string|null $signature_ip
  * @property string|null $email_status
  * @property \App\Models\Company $company
@@ -43,7 +44,7 @@ use Illuminate\Support\Carbon;
  * @property \App\Models\Credit $credit
  * @property mixed $hashed_id
  * @property \App\Models\User $user
- * @method static \Illuminate\Database\Eloquent\Builder|BaseModel company()
+ * 
  * @method static \Illuminate\Database\Eloquent\Builder|BaseModel exclude($columns)
  * @method static \Database\Factories\CreditInvitationFactory factory($count = null, $state = [])
  * @method static \Illuminate\Database\Eloquent\Builder|CreditInvitation newModelQuery()
@@ -76,7 +77,6 @@ use Illuminate\Support\Carbon;
  */
 class CreditInvitation extends BaseModel
 {
-    use MakesDates;
     use SoftDeletes;
     use Inviteable;
 
@@ -154,6 +154,7 @@ class CreditInvitation extends BaseModel
     public function markViewed()
     {
         $this->viewed_date = Carbon::now();
+        $this->credit->last_viewed = Carbon::now();
         $this->save();
     }
 

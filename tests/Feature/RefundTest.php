@@ -1,4 +1,5 @@
 <?php
+
 /**
  * Invoice Ninja (https://invoiceninja.com).
  *
@@ -31,18 +32,15 @@ use Illuminate\Routing\Middleware\ThrottleRequests;
 use Illuminate\Foundation\Testing\DatabaseTransactions;
 
 /**
- * @test
- * @covers App\Utils\Traits\Payment\Refundable
+ *
+ *  App\Utils\Traits\Payment\Refundable
  */
 class RefundTest extends TestCase
 {
     use MakesHash;
     use DatabaseTransactions;
     use MockAccountData;
-
-    public $faker;
-
-    protected function setUp() :void
+    protected function setUp(): void
     {
         parent::setUp();
 
@@ -51,9 +49,6 @@ class RefundTest extends TestCase
         );
 
         Session::start();
-
-        $this->faker = \Faker\Factory::create();
-
         Model::reguard();
 
         $this->makeTestData();
@@ -82,7 +77,7 @@ class RefundTest extends TestCase
 
         $payment_id = $arr['data']['id'];
 
-        $item = new InvoiceItem;
+        $item = new InvoiceItem();
         $item->cost = 300;
         $item->quantity = 1;
 
@@ -250,12 +245,12 @@ class RefundTest extends TestCase
 
         $response = false;
 
-   
+
         $response = $this->withHeaders([
             'X-API-SECRET' => config('ninja.api_secret'),
             'X-API-TOKEN' => $this->token,
         ])->postJson('/api/v1/payments/refund', $data);
-        
+
 
         $arr = $response->json();
 
@@ -352,7 +347,7 @@ class RefundTest extends TestCase
             'X-API-TOKEN' => $this->token,
         ])->postJson('/api/v1/payments/refund', $data);
         $response->assertStatus(422);
-        
+
     }
 
     /**
@@ -782,7 +777,6 @@ class RefundTest extends TestCase
             'user_id' => $this->user->id,
         ]);
 
-        nlog($cl->id);
 
         $i = Invoice::factory()->create([
             'company_id' => $this->company->id,
@@ -793,7 +787,7 @@ class RefundTest extends TestCase
             'balance' => 1000,
         ]);
 
-        $item = new InvoiceItem;
+        $item = new InvoiceItem();
         $item->cost = 1000;
         $item->quantity = 1;
 
@@ -826,9 +820,9 @@ class RefundTest extends TestCase
         $this->assertNotNull($c);
         $this->assertEquals(2, $c->status_id);
 
-$this->assertEquals($cl->id, $c->client_id);
+        $this->assertEquals($cl->id, $c->client_id);
 
-$this->assertEquals($cl->id, $i->client_id);
+        $this->assertEquals($cl->id, $i->client_id);
 
         $data = [
             'amount' => 900,
@@ -873,7 +867,7 @@ $this->assertEquals($cl->id, $i->client_id);
                 ],
             ]
         ];
-    
+
         $response = $this->withHeaders([
             'X-API-SECRET' => config('ninja.api_secret'),
             'X-API-TOKEN' => $this->token,
@@ -884,10 +878,10 @@ $this->assertEquals($cl->id, $i->client_id);
         $arr = $response->json();
 
         $this->assertEquals(0, $arr['data']['refunded']);
-        
+
         $this->assertEquals(10, $c->fresh()->balance);
         $this->assertEquals(10, $i->fresh()->balance);
-        
+
     }
 
     public function testRefundsWithSplitCreditAndPaymentRefund()
@@ -957,7 +951,7 @@ $this->assertEquals($cl->id, $i->client_id);
                 ],
             ]
         ];
-    
+
         $response = $this->withHeaders([
             'X-API-SECRET' => config('ninja.api_secret'),
             'X-API-TOKEN' => $this->token,
@@ -968,10 +962,10 @@ $this->assertEquals($cl->id, $i->client_id);
         $arr = $response->json();
 
         $this->assertEquals(100, $arr['data']['refunded']);
-        
+
         $this->assertEquals(100, $c->fresh()->balance);
         $this->assertEquals(200, $i->fresh()->balance);
-        
+
         $this->assertEquals(900, $payment->fresh()->amount);
         $this->assertEquals(900, $payment->fresh()->applied);
         $this->assertEquals(100, $payment->fresh()->refunded);

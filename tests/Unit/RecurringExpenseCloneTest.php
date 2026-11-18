@@ -1,4 +1,5 @@
 <?php
+
 /**
  * Invoice Ninja (https://invoiceninja.com).
  *
@@ -21,7 +22,7 @@ use App\Utils\Traits\AppSetup;
 use Tests\TestCase;
 
 /**
- * @test
+ *
  */
 class RecurringExpenseCloneTest extends TestCase
 {
@@ -29,18 +30,21 @@ class RecurringExpenseCloneTest extends TestCase
 
     public $faker;
 
-    protected function setUp() :void
+    protected function setUp(): void
     {
         parent::setUp();
         $this->faker = \Faker\Factory::create();
-        $this->buildCache(true);
+
+        if (\App\Models\Country::count() == 0) {
+            \Illuminate\Support\Facades\Artisan::call('db:seed', ['--force' => true]);
+        }
 
     }
 
     public function testBadBase64String()
     {
         $account = Account::factory()->create();
-        $user = User::factory()->create(['account_id' => $account->id, 'email' => $this->faker->unique()->safeEmail()]);
+        $user = User::factory()->create(['account_id' => $account->id, 'email' => \Illuminate\Support\Str::random(32)."@gmail.com"]);
         $company = Company::factory()->create(['account_id' => $account->id]);
 
         $client = Client::factory()->create([

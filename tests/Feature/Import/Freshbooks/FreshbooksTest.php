@@ -1,4 +1,5 @@
 <?php
+
 /**
  * Invoice Ninja (https://invoiceninja.com).
  *
@@ -24,8 +25,8 @@ use Tests\MockAccountData;
 use Tests\TestCase;
 
 /**
- * @test
- * @covers App\Import\Providers\Freshbooks
+ *
+ *  App\Import\Providers\Freshbooks
  */
 class FreshbooksTest extends TestCase
 {

@@ -8,6 +8,8 @@
  * @license https://www.elastic.co/licensing/elastic-license 
  */
 
+import { wait, instant } from '../wait';
+
 class StripeBrowserPay {
     constructor() {
         this.clientSecret = document.querySelector(
@@ -38,11 +40,18 @@ class StripeBrowserPay {
     }
 
     createPaymentRequest() {
-        this.paymentRequest = this.stripe.paymentRequest(
-            JSON.parse(
-                document.querySelector('meta[name=payment-request-data').content
-            )
-        );
+        try {
+            this.paymentRequest = this.stripe.paymentRequest(
+                JSON.parse(
+                    document.querySelector('meta[name=payment-request-data]')?.content
+                )
+            );
+        } catch (e) {
+            document.querySelector('#errors').innerText = e.message;
+            document.querySelector('#errors').hidden = false;
+
+            throw e;
+        }
 
         return this;
     }
@@ -68,7 +77,7 @@ class StripeBrowserPay {
                 )
                 .then(function (confirmResult) {
                     if (confirmResult.error) {
-                        
+
                         document.querySelector('#errors').innerText =
                             confirmResult.error.message;
                         document.querySelector('#errors').hidden = false;
@@ -121,7 +130,11 @@ class StripeBrowserPay {
     }
 
     handle() {
-        this.init().createPaymentRequest().createPaymentRequestButton();
+        try {
+            this.init().createPaymentRequest().createPaymentRequestButton();
+        } catch (e) {
+            return;
+        }
 
         this.paymentRequest.canMakePayment().then((result) => {
             if (result) {
@@ -142,4 +155,8 @@ class StripeBrowserPay {
     }
 }
 
-new StripeBrowserPay().handle();
+function boot() {
+    new StripeBrowserPay().handle()
+}
+
+instant() ? boot() : wait('#stripe-browserpay-payment').then(() => boot())

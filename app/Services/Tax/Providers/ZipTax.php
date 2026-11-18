@@ -1,10 +1,11 @@
 <?php
+
 /**
  * Invoice Ninja (https://invoiceninja.com).
  *
  * @link https://github.com/invoiceninja/invoiceninja source repository
  *
- * @copyright Copyright (c) 2024. Invoice Ninja LLC (https://invoiceninja.com)
+ * @copyright Copyright (c) 2026. Invoice Ninja LLC (https://invoiceninja.com)
  *
  * @license https://www.elastic.co/licensing/elastic-license
  */
@@ -16,13 +17,13 @@ use Illuminate\Support\Facades\Http;
 
 class ZipTax implements TaxProviderInterface
 {
-    private string $endpoint = 'https://api.zip-tax.com/request/v40';
+    // private string $endpoint = 'https://api.zip-tax.com/request/v40';
+
+    private string $endpoint = 'https://api.zip-tax.com/request/v50';
 
     private string $api_key = '';
 
-    public function __construct(protected array $address)
-    {
-    }
+    public function __construct(protected array $address) {}
 
     public function run()
     {
@@ -30,14 +31,14 @@ class ZipTax implements TaxProviderInterface
 
         $response = $this->callApi(['key' => $this->api_key, 'address' => $string_address]);
 
-        if($response->successful()) {
+        if ($response->successful()) {
             return $this->parseResponse($response->json());
         }
 
-        if(isset($this->address['postal_code'])) {
+        if (isset($this->address['postal_code'])) {
             $response = $this->callApi(['key' => $this->api_key, 'address' => $this->address['postal_code']]);
 
-            if($response->successful()) {
+            if ($response->successful()) {
                 return $this->parseResponse($response->json());
             }
 
@@ -57,10 +58,10 @@ class ZipTax implements TaxProviderInterface
      * callApi
      *
      * @param  array $parameters
-     * @return Response
      */
-    private function callApi(array $parameters): Response
+    private function callApi(array $parameters)
     {
+        $parameters['adjustment'] = 'auto'; //v50 specific
 
         return Http::retry(3, 1000)->withHeaders([])->get($this->endpoint, $parameters);
 
@@ -69,11 +70,11 @@ class ZipTax implements TaxProviderInterface
     private function parseResponse($response)
     {
 
-        if(isset($response['rCode']) && $response['rCode'] == 100 && isset($response['results']['0'])) {
+        if (isset($response['rCode']) && $response['rCode'] == 100 && isset($response['results']['0'])) {
             return $response['results']['0'];
         }
 
-        if(isset($response['rCode']) && class_exists(\Modules\Admin\Events\TaxProviderException::class)) {
+        if (isset($response['rCode']) && class_exists(\Modules\Admin\Events\TaxProviderException::class)) {
             event(new \Modules\Admin\Events\TaxProviderException($response['rCode']));
         }
 

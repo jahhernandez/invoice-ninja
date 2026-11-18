@@ -5,7 +5,7 @@
  *
  * @link https://github.com/invoiceninja/invoiceninja source repository
  *
- * @copyright Copyright (c) 2024. Invoice Ninja LLC (https://invoiceninja.com)
+ * @copyright Copyright (c) 2026. Invoice Ninja LLC (https://invoiceninja.com)
  *
  * @license https://www.elastic.co/licensing/elastic-license
  */
@@ -19,6 +19,7 @@ use App\Models\GatewayType;
 use App\Models\Payment;
 use App\Models\PaymentType;
 use App\Models\SystemLog;
+use App\PaymentDrivers\Common\LivewireMethodInterface;
 use App\PaymentDrivers\Common\MethodInterface;
 use App\PaymentDrivers\MolliePaymentDriver;
 use Exception;
@@ -28,7 +29,7 @@ use Illuminate\Routing\Redirector;
 use Illuminate\View\View;
 use Mollie\Api\Resources\Payment as ResourcesPayment;
 
-class BankTransfer implements MethodInterface
+class BankTransfer implements MethodInterface, LivewireMethodInterface
 {
     protected MolliePaymentDriver $mollie;
 
@@ -54,7 +55,7 @@ class BankTransfer implements MethodInterface
      * Handle the authorization for bank transfer.
      *
      * @param Request $request
-     * @return RedirectResponse
+     * @return \Illuminate\Http\RedirectResponse
      */
     public function authorizeResponse(Request $request): RedirectResponse
     {
@@ -65,7 +66,7 @@ class BankTransfer implements MethodInterface
      * Show the payment page for bank transfer.
      *
      * @param array $data
-     * @return Redirector|RedirectResponse
+     * @return \Illuminate\Http\RedirectResponseor|RedirectResponse
      */
     public function paymentView(array $data)
     {
@@ -100,7 +101,7 @@ class BankTransfer implements MethodInterface
             return redirect(
                 $payment->getCheckoutUrl()
             );
-        } catch (\Mollie\Api\Exceptions\ApiException | \Exception $exception) {
+        } catch (\Mollie\Api\Exceptions\ApiException|\Exception $exception) {
             return $this->processUnsuccessfulPayment($exception);
         }
     }
@@ -138,7 +139,7 @@ class BankTransfer implements MethodInterface
     {
         if (! \property_exists($this->mollie->payment_hash->data, 'payment_id')) {
             return $this->processUnsuccessfulPayment(
-                new PaymentFailed('Whoops, something went wrong. Missing required [payment_id] parameter. Please contact administrator. Reference hash: '.$this->mollie->payment_hash->hash)
+                new PaymentFailed('Whoops, something went wrong. Missing required [payment_id] parameter. Please contact administrator. Reference hash: ' . $this->mollie->payment_hash->hash)
             );
         }
 
@@ -158,7 +159,7 @@ class BankTransfer implements MethodInterface
             return $this->processUnsuccessfulPayment(
                 new PaymentFailed(ctrans('texts.status_voided'))
             );
-        } catch (\Mollie\Api\Exceptions\ApiException | \Exception $exception) {
+        } catch (\Mollie\Api\Exceptions\ApiException|\Exception $exception) {
             return $this->processUnsuccessfulPayment($exception);
         }
     }
@@ -168,7 +169,7 @@ class BankTransfer implements MethodInterface
      *
      * @param ResourcesPayment $payment
      * @param string $status
-     * @return RedirectResponse
+     * @return \Illuminate\Http\RedirectResponse
      */
     public function processSuccessfulPayment(ResourcesPayment $payment, $status = 'paid'): RedirectResponse
     {
@@ -200,10 +201,30 @@ class BankTransfer implements MethodInterface
      * Handle 'open' payment status for bank transfer.
      *
      * @param ResourcesPayment $payment
-     * @return RedirectResponse
+     * @return \Illuminate\Http\RedirectResponse
      */
     public function processOpenPayment(ResourcesPayment $payment): RedirectResponse
     {
         return $this->processSuccessfulPayment($payment, 'open');
+    }
+
+    /**
+     * @inheritDoc
+     */
+    public function livewirePaymentView(array $data): string
+    {
+        // Doesn't support, it's offsite payment method.
+
+        return '';
+    }
+
+    /**
+     * @inheritDoc
+     */
+    public function paymentData(array $data): array
+    {
+        $this->paymentView($data);
+
+        return $data;
     }
 }

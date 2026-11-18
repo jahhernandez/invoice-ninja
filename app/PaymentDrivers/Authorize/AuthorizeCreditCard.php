@@ -5,7 +5,7 @@
  *
  * @link https://github.com/invoiceninja/invoiceninja source repository
  *
- * @copyright Copyright (c) 2024. Invoice Ninja LLC (https://invoiceninja.com)
+ * @copyright Copyright (c) 2026. Invoice Ninja LLC (https://invoiceninja.com)
  *
  * @license https://www.elastic.co/licensing/elastic-license
  */
@@ -21,6 +21,7 @@ use App\Models\PaymentHash;
 use App\Models\PaymentType;
 use App\Models\SystemLog;
 use App\PaymentDrivers\AuthorizePaymentDriver;
+use App\PaymentDrivers\Common\LivewireMethodInterface;
 use App\Utils\Traits\MakesHash;
 use net\authorize\api\contract\v1\DeleteCustomerPaymentProfileRequest;
 use net\authorize\api\contract\v1\DeleteCustomerProfileRequest;
@@ -30,7 +31,7 @@ use net\authorize\api\controller\DeleteCustomerProfileController;
 /**
  * Class AuthorizeCreditCard.
  */
-class AuthorizeCreditCard
+class AuthorizeCreditCard implements LivewireMethodInterface
 {
     use MakesHash;
 
@@ -41,7 +42,7 @@ class AuthorizeCreditCard
         $this->authorize = $authorize;
     }
 
-    public function processPaymentView($data)
+    public function paymentData(array $data): array
     {
         $tokens = ClientGatewayToken::where('client_id', $this->authorize->client->id)
                                     ->where('company_gateway_id', $this->authorize->company_gateway->id)
@@ -53,6 +54,13 @@ class AuthorizeCreditCard
         $data['gateway'] = $this->authorize;
         $data['public_client_id'] = $this->authorize->init()->getPublicClientKey();
         $data['api_login_id'] = $this->authorize->company_gateway->getConfigField('apiLoginId');
+
+        return $data;
+    }
+
+    public function processPaymentView($data)
+    {
+        $data = $this->paymentData($data);
 
         return render('gateways.authorize.credit_card.pay', $data);
     }
@@ -72,11 +80,13 @@ class AuthorizeCreditCard
         if ($request->has('store_card') && $request->input('store_card') === true) {
 
             $authorise_payment_method = new AuthorizePaymentMethod($this->authorize);
+            $authorise_payment_method->setPaymentMethodId(\App\Models\GatewayType::CREDIT_CARD);
 
             $payment_profile = $authorise_payment_method->addPaymentMethodToClient($gateway_customer_reference, $data);
             $payment_profile_id = $payment_profile->getPaymentProfile()->getCustomerPaymentProfileId();
 
-            $data = (new ChargePaymentProfile($this->authorize))->chargeCustomerProfile($gateway_customer_reference, $payment_profile_id, $data['amount_with_fee']);
+            $payment_hash = PaymentHash::where('hash', $request->input('payment_hash'))->firstOrFail();
+            $data = (new ChargePaymentProfile($this->authorize))->chargeCustomerProfile($gateway_customer_reference, $payment_profile_id, round($payment_hash->data->amount_with_fee, 2));
 
             $authorise_payment_method->payment_method = GatewayType::CREDIT_CARD;
             $client_gateway_token = $authorise_payment_method->createClientGatewayToken($payment_profile, $gateway_customer_reference);
@@ -87,6 +97,7 @@ class AuthorizeCreditCard
             $data = $authorise_transaction->chargeCustomer($gateway_customer_reference, $data);
 
             $transaction_id = $data['transaction_id'];
+
             nlog($transaction_id);
 
         }
@@ -128,14 +139,12 @@ class AuthorizeCreditCard
     {
         $client_gateway_token = ClientGatewayToken::query()
             ->where('id', $this->decodePrimaryKey($request->token))
-            ->where('company_id', auth()->guard('contact')->user()->client->company->id)
-            ->first();
+            ->where('client_id', $this->authorize->client->id)
+            ->firstOrFail();
 
-        if (! $client_gateway_token) {
-            throw new PaymentFailed(ctrans('texts.payment_token_not_found'), 401);
-        }
+        $payment_hash = PaymentHash::where('hash', $request->input('payment_hash'))->firstOrFail();
 
-        $data = (new ChargePaymentProfile($this->authorize))->chargeCustomerProfile($client_gateway_token->gateway_customer_reference, $client_gateway_token->token, $request->input('amount_with_fee'));
+        $data = (new ChargePaymentProfile($this->authorize))->chargeCustomerProfile($client_gateway_token->gateway_customer_reference, $client_gateway_token->token, $payment_hash->data->amount_with_fee);
 
         return $this->handleResponse($data, $request);
     }
@@ -143,6 +152,7 @@ class AuthorizeCreditCard
     public function tokenBilling($cgt, $payment_hash)
     {
         $amount = array_sum(array_column($payment_hash->invoices(), 'amount')) + $payment_hash->fee_total;
+        $amount = round($amount, 2);
 
         $data = (new ChargePaymentProfile($this->authorize))->chargeCustomerProfile($cgt->gateway_customer_reference, $cgt->token, $amount);
 
@@ -150,7 +160,7 @@ class AuthorizeCreditCard
 
         // if ($response != null && $response->getMessages()->getResultCode() == 'Ok') {
         if ($response != null && $response->getMessages() != null) {
-            $this->storePayment($payment_hash, $data);
+            $this->storePayment($payment_hash, $data, $gateway_type = $cgt->gateway_type_id);
 
             $vars = [
                 'invoices' => $payment_hash->invoices(),
@@ -204,7 +214,7 @@ class AuthorizeCreditCard
         return $this->processFailedResponse($data, $request);
     }
 
-    private function storePayment($payment_hash, $data)
+    private function storePayment($payment_hash, $data, $gateway_type)
     {
         $amount = array_sum(array_column($payment_hash->invoices(), 'amount')) + $payment_hash->fee_total;
 
@@ -212,8 +222,8 @@ class AuthorizeCreditCard
 
         $payment_record = [];
         $payment_record['amount'] = $amount;
-        $payment_record['payment_type'] = PaymentType::CREDIT_CARD_OTHER;
-        $payment_record['gateway_type_id'] = GatewayType::CREDIT_CARD;
+        $payment_record['payment_type'] = $gateway_type == GatewayType::CREDIT_CARD ? PaymentType::CREDIT_CARD_OTHER : PaymentType::ACH;
+        $payment_record['gateway_type_id'] = $gateway_type;
         $payment_record['transaction_reference'] = $response->getTransId();
 
         $payment = $this->authorize->createPayment($payment_record);
@@ -224,7 +234,7 @@ class AuthorizeCreditCard
     private function processSuccessfulResponse($data, $request)
     {
         $payment_hash = PaymentHash::where('hash', $request->input('payment_hash'))->firstOrFail();
-        $payment = $this->storePayment($payment_hash, $data);
+        $payment = $this->storePayment($payment_hash, $data, \App\Models\GatewayType::CREDIT_CARD);
 
         $vars = [
             'invoices' => $payment_hash->invoices(),
@@ -267,7 +277,7 @@ class AuthorizeCreditCard
 
         $vars = [
             'invoices' => $payment_hash->invoices(),
-            'amount' => array_sum(array_column($payment_hash->invoices(), 'amount')) + $payment_hash->fee_total,
+            'amount' => $payment_hash->amount_with_fee(),
         ];
 
         $logger_message = [
@@ -312,5 +322,10 @@ class AuthorizeCreditCard
             'description' => $description,
             'invoices' => $vars['invoices'],
         ];
+    }
+
+    public function livewirePaymentView(array $data): string
+    {
+        return 'gateways.authorize.credit_card.pay_livewire';
     }
 }

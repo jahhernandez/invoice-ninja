@@ -1,4 +1,5 @@
 <?php
+
 /**
  * Invoice Ninja (https://invoiceninja.com).
  *
@@ -11,18 +12,16 @@
 
 namespace Tests\Feature;
 
-use App\Jobs\Invoice\CheckGatewayFee;
 use App\Models\CompanyGateway;
 use App\Models\GatewayType;
 use App\Models\Invoice;
 use Illuminate\Foundation\Testing\DatabaseTransactions;
-use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\MockAccountData;
 use Tests\TestCase;
 
 /**
- * @test
- * @covers  App\Models\CompanyGateway
+ *
+ *   App\Models\CompanyGateway
  */
 class CompanyGatewayTest extends TestCase
 {
@@ -30,7 +29,7 @@ class CompanyGatewayTest extends TestCase
     use DatabaseTransactions;
     // use RefreshDatabase;
 
-    protected function setUp() :void
+    protected function setUp(): void
     {
         parent::setUp();
 
@@ -50,7 +49,7 @@ class CompanyGatewayTest extends TestCase
     public function testSetConfigFields()
     {
         $company_gateway = CompanyGateway::first();
-        
+
         $this->assertNotNull($company_gateway->getConfig());
 
         $company_gateway->setConfigField('test', 'test');
@@ -80,7 +79,7 @@ class CompanyGatewayTest extends TestCase
         $data[1]['fee_cap'] = 0;
         $data[1]['is_enabled'] = true;
 
-        $cg = new CompanyGateway;
+        $cg = new CompanyGateway();
         $cg->company_id = $this->company->id;
         $cg->user_id = $this->user->id;
         $cg->gateway_key = 'd14dd26a37cecc30fdd65700bfb55b23';
@@ -135,6 +134,25 @@ class CompanyGatewayTest extends TestCase
         return $passes;
     }
 
+    /**
+     * Quotes the fee and confirms it, the way a completed payment does.
+     */
+    private function quoteAndConfirmFee(CompanyGateway $cg, string $hash): void
+    {
+        $quote = $this->invoice->service()->quoteGatewayFee($cg, GatewayType::CREDIT_CARD, $this->invoice->balance);
+
+        $payment_hash = \App\Models\PaymentHash::create([
+            'hash' => $hash,
+            'fee_total' => $quote['gross'],
+            'fee_invoice_id' => $this->invoice->id,
+            'data' => ['invoices' => [], 'credits' => 0, 'fee_net' => $quote['net'], 'amount_with_fee' => 0],
+        ]);
+
+        (new \App\Services\Invoice\ConfirmGatewayFee($payment_hash, $cg, ['gateway_type_id' => GatewayType::CREDIT_CARD]))->run();
+
+        $this->invoice = $this->invoice->fresh();
+    }
+
     public function testFeesAreAppendedToInvoice() //after refactor this may be redundant
     {
         $data = [];
@@ -152,7 +170,7 @@ class CompanyGatewayTest extends TestCase
         $data[1]['fee_cap'] = 0;
         $data[1]['is_enabled'] = true;
 
-        $cg = new CompanyGateway;
+        $cg = new CompanyGateway();
         $cg->company_id = $this->company->id;
         $cg->user_id = $this->user->id;
         $cg->gateway_key = 'd14dd26a37cecc30fdd65700bfb55b23';
@@ -166,10 +184,7 @@ class CompanyGatewayTest extends TestCase
 
         $balance = $this->invoice->balance;
 
-        $this->invoice = $this->invoice->service()->addGatewayFee($cg, GatewayType::CREDIT_CARD, $this->invoice->balance)->save();
-        $this->invoice = $this->invoice->calc()->getInvoice();
-
-        $items = $this->invoice->line_items;
+        $this->quoteAndConfirmFee($cg, '12321');
 
         $this->assertEquals(($balance + 1), $this->invoice->balance);
     }
@@ -191,7 +206,7 @@ class CompanyGatewayTest extends TestCase
         $data[1]['fee_cap'] = 0;
         $data[1]['is_enabled'] = true;
 
-        $cg = new CompanyGateway;
+        $cg = new CompanyGateway();
         $cg->company_id = $this->company->id;
         $cg->user_id = $this->user->id;
         $cg->gateway_key = 'd14dd26a37cecc30fdd65700bfb55b23';
@@ -206,18 +221,10 @@ class CompanyGatewayTest extends TestCase
         $balance = $this->invoice->balance;
         $wiped_balance = $balance;
 
-        $this->invoice = $this->invoice->service()->addGatewayFee($cg, GatewayType::CREDIT_CARD, $this->invoice->balance)->save();
-        $this->invoice = $this->invoice->calc()->getInvoice();
-
-        $items = $this->invoice->line_items;
+        $this->quoteAndConfirmFee($cg, '123212');
 
         $this->assertEquals(($balance + 1), $this->invoice->balance);
 
-        (new CheckGatewayFee($this->invoice->id, $this->company->db))->handle();
-
-        $i = Invoice::withTrashed()->find($this->invoice->id);
-
-        $this->assertEquals($wiped_balance, $i->balance);
     }
 
     public function testMarkPaidAdjustsGatewayFeeAppropriately()
@@ -237,7 +244,7 @@ class CompanyGatewayTest extends TestCase
         $data[1]['fee_cap'] = 0;
         $data[1]['is_enabled'] = true;
 
-        $cg = new CompanyGateway;
+        $cg = new CompanyGateway();
         $cg->company_id = $this->company->id;
         $cg->user_id = $this->user->id;
         $cg->gateway_key = 'd14dd26a37cecc30fdd65700bfb55b23';
@@ -252,10 +259,7 @@ class CompanyGatewayTest extends TestCase
         $balance = $this->invoice->balance;
         $wiped_balance = $balance;
 
-        $this->invoice = $this->invoice->service()->addGatewayFee($cg, GatewayType::CREDIT_CARD, $this->invoice->balance)->save();
-        $this->invoice = $this->invoice->calc()->getInvoice();
-
-        $items = $this->invoice->line_items;
+        $this->quoteAndConfirmFee($cg, '123213');
 
         $this->assertEquals(($balance + 1), $this->invoice->balance);
 
@@ -263,7 +267,9 @@ class CompanyGatewayTest extends TestCase
 
         $i = Invoice::withTrashed()->find($this->invoice->id);
 
-        $this->assertEquals($wiped_balance, $i->amount);
+        /** A confirmed fee is part of what was charged - marking paid must not strip it. */
+        $this->assertEquals($wiped_balance + 1, $i->amount);
+        $this->assertTrue(collect($i->line_items)->contains('unit_code', '123213'));
     }
 
 
@@ -285,7 +291,7 @@ class CompanyGatewayTest extends TestCase
         $data[1]['fee_cap'] = 0;
         $data[1]['is_enabled'] = true;
 
-        $cg = new CompanyGateway;
+        $cg = new CompanyGateway();
         $cg->company_id = $this->company->id;
         $cg->user_id = $this->user->id;
         $cg->gateway_key = 'd14dd26a37cecc30fdd65700bfb55b23';

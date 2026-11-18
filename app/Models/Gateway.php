@@ -5,7 +5,7 @@
  *
  * @link https://github.com/invoiceninja/invoiceninja source repository
  *
- * @copyright Copyright (c) 2024. Invoice Ninja LLC (https://invoiceninja.com)
+ * @copyright Copyright (c) 2026. Invoice Ninja LLC (https://invoiceninja.com)
  *
  * @license https://www.elastic.co/licensing/elastic-license
  */
@@ -24,8 +24,8 @@ namespace App\Models;
  * @property string|null $site_url
  * @property bool $is_offsite
  * @property bool $is_secure
- * @property object|null $fields
- * @property string $default_gateway_type_id
+ * @property object|null|string $fields
+ * @property int $default_gateway_type_id
  * @property int|null $created_at
  * @property int|null $updated_at
  * @property-read mixed $options
@@ -49,6 +49,7 @@ namespace App\Models;
  * @method static \Illuminate\Database\Eloquent\Builder|Gateway whereVisible($value)
  * @mixin \Eloquent
  */
+#[\AllowDynamicProperties]
 class Gateway extends StaticModel
 {
     protected $casts = [
@@ -104,7 +105,17 @@ class Gateway extends StaticModel
         } elseif ($this->id == 59) {
             $link = 'https://www.forte.net/';
         } elseif ($this->id == 62) {
-            $link = 'https://docs.btcpayserver.org';
+            $link = 'https://docs.btcpayserver.org/InvoiceNinja/';
+        } elseif ($this->id == 63) {
+            $link = 'https://rotessa.com';
+        } elseif ($this->id == 65) {
+            $link = 'https://help.blockonomics.co/a/solutions/articles/33000291849';
+        } elseif ($this->id == 67) {
+            $link = 'https://payware.eu';
+        } elseif ($this->id == 68) {
+            $link = 'https://notes.chip-in.asia/s/faq/p/Qwsatm6PeN';
+        } elseif ($this->id == 69) {
+            $link = 'https://www.helcim.com/';
         }
 
         return $link;
@@ -119,18 +130,21 @@ class Gateway extends StaticModel
     {
         switch ($this->id) {
             case 1:
-                return [GatewayType::CREDIT_CARD => ['refund' => true, 'token_billing' => true]]; //Authorize.net
+                return [
+                    GatewayType::CREDIT_CARD => ['refund' => true, 'token_billing' => true, 'webhooks' => ['net.authorize.payment.void.created']],
+                    GatewayType::BANK_TRANSFER => ['refund' => true, 'token_billing' => true, 'webhooks' => ['net.authorize.payment.void.created']],
+                ]; //Authorize.net
             case 3:
                 return [GatewayType::CREDIT_CARD => ['refund' => false, 'token_billing' => true]]; //eWay
             case 11:
                 return [GatewayType::CREDIT_CARD => ['refund' => false, 'token_billing' => true]]; //Payfast
             case 7:
                 return [
-                    GatewayType::CREDIT_CARD => ['refund' => false, 'token_billing' => true, 'webhooks' => [' ']], // Mollie
-                    GatewayType::BANK_TRANSFER => ['refund' => false, 'token_billing' => true, 'webhooks' => [' ']],
-                    GatewayType::KBC => ['refund' => false, 'token_billing' => false, 'webhooks' => [' ']],
-                    GatewayType::BANCONTACT => ['refund' => false, 'token_billing' => false, 'webhooks' => [' ']],
-                    GatewayType::IDEAL => ['refund' => false, 'token_billing' => false, 'webhooks' => [' ']],
+                    GatewayType::CREDIT_CARD => ['refund' => false, 'token_billing' => true, 'webhooks' => ['all']], // Mollie
+                    GatewayType::BANK_TRANSFER => ['refund' => false, 'token_billing' => true, 'webhooks' => ['all']],
+                    GatewayType::KBC => ['refund' => false, 'token_billing' => false, 'webhooks' => ['all']],
+                    GatewayType::BANCONTACT => ['refund' => false, 'token_billing' => false, 'webhooks' => ['all']],
+                    GatewayType::IDEAL => ['refund' => false, 'token_billing' => false, 'webhooks' => ['all']],
                 ];
             case 15:
                 return [
@@ -139,26 +153,37 @@ class Gateway extends StaticModel
             case 20:
             case 56:
                 return [
-                    GatewayType::CREDIT_CARD => ['refund' => true, 'token_billing' => true, 'webhooks' => ['payment_intent.succeeded', 'payment_intent.payment_failed']],
-                    GatewayType::BANK_TRANSFER => ['refund' => true, 'token_billing' => true, 'webhooks' => ['source.chargeable', 'charge.succeeded', 'customer.source.updated', 'payment_intent.processing', 'payment_intent.payment_failed', 'charge.failed']],
-                    GatewayType::DIRECT_DEBIT => ['refund' => false, 'token_billing' => false, 'webhooks' => ['payment_intent.processing', 'payment_intent.succeeded', 'payment_intent.partially_funded', 'payment_intent.payment_failed']],
+                    GatewayType::CREDIT_CARD => ['refund' => true, 'token_billing' => true, 'webhooks' => ['payment_intent.succeeded', 'charge.refunded', 'refund.failed', 'payment_intent.payment_failed']],
+                    GatewayType::BANK_TRANSFER => ['refund' => true, 'token_billing' => true, 'webhooks' => ['source.chargeable', 'charge.refunded', 'refund.failed', 'charge.succeeded', 'customer.source.updated', 'setup_intent.succeeded', 'payment_intent.processing', 'payment_intent.payment_failed', 'charge.failed']],
+                    GatewayType::DIRECT_DEBIT => ['refund' => false, 'token_billing' => false, 'webhooks' => ['payment_intent.processing', 'charge.refunded', 'refund.failed', 'payment_intent.succeeded', 'payment_intent.partially_funded', 'payment_intent.payment_failed']],
                     GatewayType::ALIPAY => ['refund' => false, 'token_billing' => false],
                     GatewayType::APPLE_PAY => ['refund' => false, 'token_billing' => false],
-                    GatewayType::BACS => ['refund' => true, 'token_billing' => true, 'webhooks' => ['source.chargeable', 'charge.succeeded', 'charge.failed', 'payment_intent.processing', 'payment_intent.succeeded', 'mandate.updated', 'payment_intent.payment_failed']],
-                    GatewayType::SOFORT => ['refund' => true, 'token_billing' => true, 'webhooks' => ['source.chargeable', 'charge.succeeded', 'charge.failed', 'payment_intent.succeeded', 'payment_intent.payment_failed']],
-                    GatewayType::KLARNA => ['refund' => true, 'token_billing' => true, 'webhooks' => ['source.chargeable', 'charge.succeeded', 'charge.failed', 'payment_intent.succeeded', 'payment_intent.payment_failed']],
-                    GatewayType::SEPA => ['refund' => true, 'token_billing' => true, 'webhooks' => ['source.chargeable', 'charge.succeeded', 'charge.failed', 'payment_intent.succeeded', 'payment_intent.payment_failed']],
-                    GatewayType::PRZELEWY24 => ['refund' => true, 'token_billing' => true, 'webhooks' => ['source.chargeable', 'charge.succeeded', 'charge.failed', 'payment_intent.succeeded', 'payment_intent.payment_failed']],
-                    GatewayType::GIROPAY => ['refund' => true, 'token_billing' => true, 'webhooks' => ['source.chargeable', 'charge.succeeded', 'charge.failed', 'payment_intent.succeeded', 'payment_intent.payment_failed']],
-                    GatewayType::EPS => ['refund' => true, 'token_billing' => true, 'webhooks' => ['source.chargeable', 'charge.succeeded', 'charge.failed', 'payment_intent.succeeded', 'payment_intent.payment_failed']],
-                    GatewayType::BANCONTACT => ['refund' => true, 'token_billing' => true, 'webhooks' => ['source.chargeable', 'charge.succeeded', 'charge.failed', 'payment_intent.succeeded', 'payment_intent.payment_failed']],
-                    GatewayType::BECS => ['refund' => true, 'token_billing' => true, 'webhooks' => ['source.chargeable', 'charge.succeeded', 'charge.failed', 'payment_intent.succeeded', 'payment_intent.payment_failed']],
-                    GatewayType::IDEAL => ['refund' => true, 'token_billing' => true, 'webhooks' => ['source.chargeable', 'charge.succeeded', 'charge.failed', 'payment_intent.succeeded', 'payment_intent.payment_failed']],
-                    GatewayType::ACSS => ['refund' => true, 'token_billing' => true, 'webhooks' => ['source.chargeable', 'charge.succeeded', 'charge.failed', 'payment_intent.succeeded', 'payment_intent.payment_failed']],
-                    GatewayType::FPX => ['refund' => true, 'token_billing' => true, 'webhooks' => ['source.chargeable', 'charge.succeeded', 'charge.failed',]],
+                    GatewayType::BACS => ['refund' => true, 'token_billing' => true, 'webhooks' => ['source.chargeable', 'charge.succeeded', 'charge.refunded', 'refund.failed', 'charge.failed', 'payment_intent.processing', 'payment_intent.succeeded', 'mandate.updated', 'payment_intent.payment_failed']],
+                    GatewayType::SOFORT => ['refund' => true, 'token_billing' => true, 'webhooks' => ['source.chargeable', 'charge.succeeded', 'charge.refunded', 'refund.failed', 'charge.failed', 'payment_intent.succeeded', 'payment_intent.payment_failed']],
+                    GatewayType::KLARNA => ['refund' => true, 'token_billing' => true, 'webhooks' => ['source.chargeable', 'charge.succeeded', 'charge.refunded', 'refund.failed', 'charge.failed', 'payment_intent.succeeded', 'payment_intent.payment_failed']],
+                    GatewayType::SEPA => ['refund' => true, 'token_billing' => true, 'webhooks' => ['source.chargeable', 'charge.succeeded', 'charge.refunded', 'refund.failed', 'charge.failed', 'payment_intent.succeeded', 'payment_intent.payment_failed']],
+                    GatewayType::PRZELEWY24 => ['refund' => true, 'token_billing' => true, 'webhooks' => ['source.chargeable', 'charge.succeeded', 'charge.refunded', 'refund.failed', 'charge.failed', 'payment_intent.succeeded', 'payment_intent.payment_failed']],
+                    GatewayType::GIROPAY => ['refund' => true, 'token_billing' => true, 'webhooks' => ['source.chargeable', 'charge.succeeded', 'charge.refunded', 'refund.failed', 'charge.failed', 'payment_intent.succeeded', 'payment_intent.payment_failed']],
+                    GatewayType::EPS => ['refund' => true, 'token_billing' => true, 'webhooks' => ['source.chargeable', 'charge.succeeded', 'charge.refunded', 'refund.failed', 'charge.failed', 'payment_intent.succeeded', 'payment_intent.payment_failed']],
+                    GatewayType::BANCONTACT => ['refund' => true, 'token_billing' => true, 'webhooks' => ['source.chargeable', 'charge.succeeded', 'charge.refunded', 'refund.failed', 'charge.failed', 'payment_intent.succeeded', 'payment_intent.payment_failed']],
+                    GatewayType::BECS => ['refund' => true, 'token_billing' => true, 'webhooks' => ['source.chargeable', 'charge.succeeded', 'charge.refunded', 'refund.failed', 'charge.failed', 'payment_intent.succeeded', 'payment_intent.payment_failed']],
+                    GatewayType::IDEAL => ['refund' => true, 'token_billing' => true, 'webhooks' => ['source.chargeable', 'charge.succeeded', 'charge.refunded', 'refund.failed', 'charge.failed', 'payment_intent.succeeded', 'payment_intent.payment_failed']],
+                    GatewayType::ACSS => ['refund' => true, 'token_billing' => true, 'webhooks' => ['source.chargeable', 'charge.succeeded', 'charge.refunded', 'refund.failed', 'charge.failed', 'payment_intent.succeeded', 'payment_intent.payment_failed']],
+                    GatewayType::FPX => ['refund' => true, 'token_billing' => true, 'webhooks' => ['source.chargeable', 'charge.succeeded', 'charge.refunded', 'refund.failed', 'charge.failed',]],
+                    GatewayType::PROMPTPAY => ['refund' => true, 'token_billing' => false, 'webhooks' => ['payment_intent.succeeded', 'payment_intent.processing', 'payment_intent.payment_failed', 'charge.refunded', 'refund.failed', 'charge.failed']],
                 ];
             case 39:
-                return [GatewayType::CREDIT_CARD => ['refund' => true, 'token_billing' => true, 'webhooks' => [' ']]]; //Checkout
+                return [
+                    GatewayType::CREDIT_CARD => ['refund' => true, 'token_billing' => true, 'webhooks' => ['payment_approved']],
+                    GatewayType::IDEAL       => ['refund' => true, 'token_billing' => false, 'webhooks' => ['payment_approved']],
+                    GatewayType::BANCONTACT  => ['refund' => true, 'token_billing' => false, 'webhooks' => ['payment_approved']],
+                    GatewayType::GIROPAY     => ['refund' => true, 'token_billing' => false, 'webhooks' => ['payment_approved']],
+                    GatewayType::EPS         => ['refund' => true, 'token_billing' => false, 'webhooks' => ['payment_approved']],
+                    GatewayType::SOFORT      => ['refund' => true, 'token_billing' => false, 'webhooks' => ['payment_approved']],
+                    GatewayType::PRZELEWY24  => ['refund' => true, 'token_billing' => false, 'webhooks' => ['payment_approved']],
+                    GatewayType::PAYPAL      => ['refund' => true, 'token_billing' => false, 'webhooks' => ['payment_approved']],
+                    GatewayType::APPLE_PAY   => ['refund' => true, 'token_billing' => false, 'webhooks' => ['payment_approved']],
+                ]; //Checkout
             case 46:
                 return [GatewayType::CREDIT_CARD => ['refund' => true, 'token_billing' => true]]; //Paytrace
             case 49:
@@ -224,6 +249,41 @@ class Gateway extends StaticModel
                 return [
                     GatewayType::CRYPTO => ['refund' => true, 'token_billing' => false, 'webhooks' => ['confirmed', 'paid_out', 'failed', 'fulfilled']],
                 ]; //BTCPay
+            case 63:
+                return [
+                    GatewayType::BANK_TRANSFER => [
+                        'refund' => false,
+                        'token_billing' => true,
+                        'webhooks' => [],
+                    ],
+                    GatewayType::ACSS => ['refund' => false, 'token_billing' => true, 'webhooks' => []],
+                ]; // Rotessa
+            case 64: //b67581d804dbad1743b61c57285142ad - powerboard
+                return [
+                    GatewayType::CREDIT_CARD => ['refund' => true, 'token_billing' => true],
+                ];
+            case 65:
+                return [
+                    GatewayType::CRYPTO => ['refund' => false, 'token_billing' => false, 'webhooks' => ['confirmed', 'paid_out', 'failed', 'fulfilled']],
+                ]; //Blockonomics
+            case 66:
+                return [
+                    GatewayType::CREDIT_CARD => ['refund' => true, 'token_billing' => true],
+                    GatewayType::BANK_TRANSFER => ['refund' => true, 'token_billing' => true],
+                ]; //LawPay
+            case 67:
+                return [
+                    GatewayType::MOBILE_PAYMENT => ['refund' => false, 'token_billing' => false, 'webhooks' => ['CONFIRMED', 'DECLINED', 'FAILED', 'CANCELLED', 'EXPIRED']],
+                ]; //payware
+            case 68:
+                return [
+                    GatewayType::HOSTED_PAGE => ['refund' => true, 'token_billing' => true, 'webhooks' => []],
+                ]; //CHIP
+            case 69:
+                return [
+                    GatewayType::CREDIT_CARD => ['refund' => true, 'token_billing' => true, 'webhooks' => ['all']],
+                    GatewayType::BANK_TRANSFER => ['refund' => true, 'token_billing' => true, 'webhooks' => ['all']],
+                ]; //Helcim
             default:
                 return [];
         }

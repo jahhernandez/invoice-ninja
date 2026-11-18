@@ -1,10 +1,11 @@
 <?php
+
 /**
  * Invoice Ninja (https://invoiceninja.com).
  *
  * @link https://github.com/invoiceninja/invoiceninja source repository
  *
- * @copyright Copyright (c) 2024. Invoice Ninja LLC (https://invoiceninja.com)
+ * @copyright Copyright (c) 2026. Invoice Ninja LLC (https://invoiceninja.com)
  *
  * @license https://www.elastic.co/licensing/elastic-license
  */
@@ -17,6 +18,7 @@ use App\Models\Account;
 use App\Models\Client;
 use App\Models\ClientContact;
 use App\Models\Vendor;
+use App\Services\License\WhiteLabelRenewalService;
 use App\Utils\Ninja;
 use Carbon\Carbon;
 use Illuminate\Bus\Queueable;
@@ -33,9 +35,7 @@ class VersionCheck implements ShouldQueue
     use Queueable;
     use SerializesModels;
 
-    public function __construct()
-    {
-    }
+    public function __construct() {}
 
     /**
      * Execute the job.
@@ -53,17 +53,21 @@ class VersionCheck implements ShouldQueue
         if (Ninja::isSelfHost()) {
             nlog("latest version = {$version_file}");
 
-            /** @var \App\Models\Account $account **/
+            /** @var \App\Models\Account|null $account **/
             $account = Account::first();
 
             if (! $account) {
                 return;
             }
 
-            if ($account->plan == 'white_label' && $account->plan_expires && Carbon::parse($account->plan_expires)->lt(now())) {
-                $account->plan = null;
-                $account->plan_expires = null;
-                $account->saveQuietly();
+            if ($account->plan == 'white_label' && $account->plan_expires && (Carbon::parse($account->plan_expires)->lt(now()) || Carbon::parse($account->plan_expires)->gt(now()->addYear()->addDays(30)))) {
+                $result = (new WhiteLabelRenewalService())->checkAndRenew($account);
+
+                if ($result === false) {
+                    $account->plan = null;
+                    $account->plan_expires = null;
+                    $account->saveQuietly();
+                }
             }
 
             Client::query()->whereNull('country_id')->cursor()->each(function ($client) {
@@ -94,7 +98,7 @@ class VersionCheck implements ShouldQueue
 
             Client::doesntHave('contacts')
                             ->cursor()
-                            ->each(function (Client $client) {
+                            ->each(function (Client $client) { //@phpstan-ignore-line
 
                                 $new_contact = ClientContactFactory::create($client->company_id, $client->user_id);
                                 $new_contact->client_id = $client->id;
@@ -107,7 +111,7 @@ class VersionCheck implements ShouldQueue
 
             Vendor::doesntHave('contacts')
                             ->cursor()
-                            ->each(function (Vendor $vendor) {
+                            ->each(function (Vendor $vendor) { //@phpstan-ignore-line
 
                                 $new_contact = VendorContactFactory::create($vendor->company_id, $vendor->user_id);
                                 $new_contact->vendor_id = $vendor->id;

@@ -1,25 +1,28 @@
 <?php
+
 /**
  * Invoice Ninja (https://invoiceninja.com).
  *
  * @link https://github.com/invoiceninja/invoiceninja source repository
  *
- * @copyright Copyright (c) 2024. Invoice Ninja LLC (https://invoiceninja.com)
+ * @copyright Copyright (c) 2026. Invoice Ninja LLC (https://invoiceninja.com)
  *
  * @license https://www.elastic.co/licensing/elastic-license
  */
 
 namespace App\Jobs\Ninja;
 
-use App\Libraries\MultiDB;
-use App\Models\Account;
+use App\Models\User;
+use App\Utils\BcMath;
 use App\Models\Client;
+use App\Models\Account;
 use App\Models\Company;
+use App\Libraries\MultiDB;
 use Illuminate\Bus\Queueable;
+use Illuminate\Queue\SerializesModels;
+use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
-use Illuminate\Queue\InteractsWithQueue;
-use Illuminate\Queue\SerializesModels;
 
 class CompanySizeCheck implements ShouldQueue
 {
@@ -54,6 +57,8 @@ class CompanySizeCheck implements ShouldQueue
                 }
             });
 
+            User::withTrashed()->where('failed_logins', '>', 0)->update(['failed_logins' => 0]);
+
             nlog("updating all client credit balances");
 
             Client::query()
@@ -64,7 +69,7 @@ class CompanySizeCheck implements ShouldQueue
                       $old_credit_balance = $client->credit_balance;
                       $new_credit_balance = $client->service()->getCreditBalance();
 
-                      if(floatval($old_credit_balance) !== floatval($new_credit_balance)) {
+                      if (!BcMath::equal($old_credit_balance, $new_credit_balance)) {
                           $client->credit_balance = $client->service()->getCreditBalance();
                           $client->saveQuietly();
                       }
@@ -88,6 +93,8 @@ class CompanySizeCheck implements ShouldQueue
 
                 nlog("Company size check db {$db}");
 
+                User::withTrashed()->where('failed_logins', '>', 0)->update(['failed_logins' => 0]);
+
                 Company::where('is_large', false)->withCount(['invoices', 'clients', 'products', 'quotes'])->cursor()->each(function ($company) {
                     if ($company->invoices_count > 500 || $company->products_count > 500 || $company->clients_count > 500 || $company->quotes_count > 500) {
                         nlog("Marking company {$company->id} as large");
@@ -106,7 +113,7 @@ class CompanySizeCheck implements ShouldQueue
                           $old_credit_balance = $client->credit_balance;
                           $new_credit_balance = $client->service()->getCreditBalance();
 
-                          if(floatval($old_credit_balance) !== floatval($new_credit_balance)) {
+                          if (!BcMath::equal($old_credit_balance, $new_credit_balance)) {
                               $client->credit_balance = $client->service()->getCreditBalance();
                               $client->saveQuietly();
                           }

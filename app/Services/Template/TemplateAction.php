@@ -1,10 +1,11 @@
 <?php
+
 /**
  * Invoice Ninja (https://invoiceninja.com).
  *
  * @link https://github.com/invoiceninja/invoiceninja source repository
  *
- * @copyright Copyright (c) 2024. Invoice Ninja LLC (https://invoiceninja.com)
+ * @copyright Copyright (c) 2026. Invoice Ninja LLC (https://invoiceninja.com)
  *
  * @license https://www.elastic.co/licensing/elastic-license
  */
@@ -71,8 +72,7 @@ class TemplateAction implements ShouldQueue
         private string $db,
         private string $hash,
         private bool $send_email = false
-    ) {
-    }
+    ) {}
 
     /**
      * Execute the job.
@@ -92,17 +92,20 @@ class TemplateAction implements ShouldQueue
 
         $template_service = new \App\Services\Template\TemplateService($template);
 
-        match($this->entity) {
+        match ($this->entity) {
             Invoice::class => $resource->with('payments', 'client'),
             Quote::class => $resource->with('client'),
             Task::class => $resource->with('client'),
             Credit::class => $resource->with('client'),
             RecurringInvoice::class => $resource->with('client'),
             Project::class => $resource->with('client'),
-            Expense::class => $resource->with('client'),
             Payment::class => $resource->with('invoices', 'client'),
             Client::class => $resource,
+            Expense::class => $resource->with('client', 'project', 'vendor', 'invoice'),
+            default => $resource,
         };
+
+        $resource->with('tags');
 
         $result = $resource->withTrashed()
             ->whereIn('id', $this->transformKeys($this->ids))
@@ -113,46 +116,48 @@ class TemplateAction implements ShouldQueue
         $first_entity = $result->first();
 
         /** Lets be clever and sniff out Statements */
-        if($first_entity instanceof Client && stripos(json_encode($template->design), '##statement##') !== false) {
-            
-                $options = [
-                    'show_payments_table' => true, 
-                    'show_aging_table' => true, 
-                    'status' => 'all', 
-                    'show_credits_table' => false,
-                    'template' => $this->template,
-                ];
+        if ($first_entity instanceof Client && stripos(json_encode($template->design), '##statement##') !== false) {
 
-                $pdfs = [];
+            $options = [
+                'show_payments_table' => true,
+                'show_aging_table' => true,
+                'status' => 'all',
+                'show_credits_table' => false,
+                'template' => $this->template,
+            ];
 
-                foreach($result as $client) {
-                    $pdfs[] = $client->service()->statement($options);
-                }
+            $pdfs = [];
 
-                if(count($pdfs) == 1) {
-                    $pdf = $pdfs[0];
-                } else {
-                    $pdf = (new PdfMerge($pdfs))->run();
-                }
-                
-                if($this->send_email) {
-                    $this->sendEmail($pdf, $template);
-                } else {
-                    $filename = "templates/{$this->hash}.pdf";
-                    Storage::disk(config('filesystems.default'))->put($filename, $pdf);
-                    return $pdf;
-                }
+            foreach ($result as $client) {
+                $pdfs[] = $client->service()->statement($options);
+            }
+
+            if (count($pdfs) == 1) {
+                $pdf = $pdfs[0];
+            } else {
+                $pdf = (new PdfMerge($pdfs))->run();
+            }
+
+            if ($this->send_email) {
+                $this->sendEmail($pdf, $template);
+                return;
+            } else {
+                $filename = "templates/{$this->hash}.pdf";
+                Storage::disk(config('filesystems.default'))->put($filename, $pdf);
+                return $pdf;
+            }
 
         }
 
-        if($first_entity instanceof Client)
+        if ($first_entity instanceof Client) {
             $currency_code = $first_entity->currency()->code;
-        elseif($first_entity->client)
+        } elseif ($first_entity->client) {
             $currency_code = $first_entity->client->currency()->code;
-        else
+        } else {
             $currency_code = $this->company->currency()->code;
+        }
 
-        if($result->count() <= 1) {
+        if ($result->count() <= 1) {
             $data[$key] = collect($result);
         } else {
             $data[$key] = $result;
@@ -160,10 +165,11 @@ class TemplateAction implements ShouldQueue
 
         $ts = $template_service
                     ->setCompany($this->company)
+                    ->setEntity($first_entity)
                     ->addGlobal(['currency_code' => $currency_code])
                     ->build($data);
 
-        if($this->send_email) {
+        if ($this->send_email) {
             $pdf = $ts->getPdf();
             $this->sendEmail($pdf, $template);
         } else {
@@ -186,7 +192,7 @@ class TemplateAction implements ShouldQueue
         $email_object->company = $this->company;
         $email_object->settings = $this->company->settings;
         $email_object->logo = $this->company->present()->logo();
-        $email_object->whitelabel = $this->company->account->isPaid() ? true : false;
+        $email_object->whitelabel = true;
         $email_object->user_id = $user->id;
         $email_object->text_body = ctrans('texts.download_report_description') . $template_name;
         $email_object->body = ctrans('texts.download_report_description') . $template_name;
@@ -215,15 +221,15 @@ class TemplateAction implements ShouldQueue
             Payment::class => 'payments',
             Product::class => 'products',
             PurchaseOrder::class => 'purchase_orders',
-            Project::class => 'projects',
             Client::class => 'clients',
             Vendor::class => 'vendors',
+            default => 'invoices',
         };
     }
 
     public function middleware()
     {
-        return [new WithoutOverlapping("template-{$this->company->company_key}")];
+        return [(new WithoutOverlapping('template-' . $this->company->company_key . $this->entity))->dontRelease()];
     }
 
 }

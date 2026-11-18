@@ -1,10 +1,11 @@
 <?php
+
 /**
  * Invoice Ninja (https://invoiceninja.com).
  *
  * @link https://github.com/invoiceninja/invoiceninja source repository
  *
- * @copyright Copyright (c) 2024. Invoice Ninja LLC (https://invoiceninja.com)
+ * @copyright Copyright (c) 2026. Invoice Ninja LLC (https://invoiceninja.com)
  *
  * @license https://www.elastic.co/licensing/elastic-license
  */
@@ -28,6 +29,8 @@ class ProjectObserver
     public function created(Project $project)
     {
         $subscriptions = Webhook::where('company_id', $project->company_id)
+                            ->where('is_deleted', false)
+                            ->whereNull('deleted_at')
                             ->where('event_id', Webhook::EVENT_PROJECT_CREATE)
                             ->exists();
 
@@ -56,6 +59,8 @@ class ProjectObserver
 
 
         $subscriptions = Webhook::where('company_id', $project->company_id)
+                                    ->where('is_deleted', false)
+                                    ->whereNull('deleted_at')
                                     ->where('event_id', $event)
                                     ->exists();
 
@@ -77,6 +82,8 @@ class ProjectObserver
         }
 
         $subscriptions = Webhook::where('company_id', $project->company_id)
+                            ->where('is_deleted', false)
+                            ->whereNull('deleted_at')
                             ->where('event_id', Webhook::EVENT_ARCHIVE_PROJECT)
                             ->exists();
 

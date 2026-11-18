@@ -1,47 +1,50 @@
 <?php
+
 /**
  * Invoice Ninja (https://invoiceninja.com).
  *
  * @link https://github.com/invoiceninja/invoiceninja source repository
  *
- * @copyright Copyright (c) 2024. Invoice Ninja LLC (https://invoiceninja.com)
+ * @copyright Copyright (c) 2026. Invoice Ninja LLC (https://invoiceninja.com)
  *
  * @license https://www.elastic.co/licensing/elastic-license
  */
 
 namespace App\Http\Controllers;
 
-use App\Utils\Ninja;
-use App\Models\Client;
-use App\Models\Credit;
-use App\Models\Account;
-use App\Models\Invoice;
-use App\Models\Webhook;
-use Illuminate\Http\Response;
-use App\Factory\CreditFactory;
-use App\Filters\CreditFilters;
-use App\Jobs\Credit\ZipCredits;
-use App\Utils\Traits\MakesHash;
-use App\Jobs\Entity\EmailEntity;
-use App\Factory\CloneCreditFactory;
-use App\Services\PdfMaker\PdfMerge;
-use Illuminate\Support\Facades\App;
-use App\Utils\Traits\SavesDocuments;
-use App\Repositories\CreditRepository;
 use App\Events\Credit\CreditWasCreated;
 use App\Events\Credit\CreditWasUpdated;
-use App\Transformers\CreditTransformer;
-use Illuminate\Support\Facades\Storage;
-use App\Services\Template\TemplateAction;
+use App\Events\General\EntityWasEmailed;
+use App\Factory\CloneCreditFactory;
+use App\Factory\CreditFactory;
+use App\Filters\CreditFilters;
+use App\Http\Requests\Credit\ActionCreditRequest;
 use App\Http\Requests\Credit\BulkCreditRequest;
+use App\Http\Requests\Credit\CreateCreditRequest;
+use App\Http\Requests\Credit\DestroyCreditRequest;
 use App\Http\Requests\Credit\EditCreditRequest;
 use App\Http\Requests\Credit\ShowCreditRequest;
 use App\Http\Requests\Credit\StoreCreditRequest;
-use App\Http\Requests\Credit\ActionCreditRequest;
-use App\Http\Requests\Credit\CreateCreditRequest;
 use App\Http\Requests\Credit\UpdateCreditRequest;
 use App\Http\Requests\Credit\UploadCreditRequest;
-use App\Http\Requests\Credit\DestroyCreditRequest;
+use App\Jobs\Entity\EmailEntity;
+use App\Jobs\Entity\ZipEntity;
+use App\Models\Account;
+use App\Models\Client;
+use App\Models\Credit;
+use App\Models\Invoice;
+use App\Models\Webhook;
+use App\Repositories\CreditRepository;
+use App\Services\PdfMaker\BatchPdfService;
+use App\Services\PdfMaker\PdfMerge;
+use App\Services\Template\TemplateAction;
+use App\Transformers\CreditTransformer;
+use App\Utils\Ninja;
+use App\Utils\Traits\MakesHash;
+use App\Utils\Traits\SavesDocuments;
+use Illuminate\Http\Response;
+use Illuminate\Support\Facades\App;
+use Illuminate\Support\Facades\Storage;
 
 /**
  * Class CreditController.
@@ -69,7 +72,7 @@ class CreditController extends BaseController
      *
      * @param CreditFilters $filters  The filters
      *
-     * @return Response
+     * @return Response| \Illuminate\Http\JsonResponse
      *
      * @OA\Get(
      *      path="/api/v1/credits",
@@ -105,7 +108,7 @@ class CreditController extends BaseController
      */
     public function index(CreditFilters $filters)
     {
-        $credits = Credit::filter($filters);
+        $credits = Credit::filter($filters)->with('tags');
 
         return $this->listResponse($credits);
     }
@@ -115,7 +118,7 @@ class CreditController extends BaseController
      *
      * @param CreateCreditRequest $request  The request
      *
-     * @return Response
+     * @return Response| \Illuminate\Http\JsonResponse
      *
      *
      * @OA\Get(
@@ -164,7 +167,7 @@ class CreditController extends BaseController
      *
      * @param StoreCreditRequest $request  The request
      *
-     * @return Response
+     * @return Response| \Illuminate\Http\JsonResponse
      *
      *
      * @OA\Post(
@@ -210,9 +213,41 @@ class CreditController extends BaseController
                          ->triggeredActions($request)
                          ->save();
 
+        /** 2025-09-24
+         *
+         * Handling invoice reversals needs stricter boundary checks:
+         *
+         * On the reversal of a paid invoice creates a credit note. However if this credit note is deleted the original payment becomes a dangling record.
+         *
+         * In order to avoid this, we link the payment to the credit note. This allows us to preserve the relation of the payment to the subsequent credit note.
+         *
+         * Now on Credit or Payment deletion we can correctly maintain the relation of the payment to the credit note.
+         */
         if ($credit->invoice_id) {
             $credit = $credit->service()->markSent()->save();
-            $credit->client->service()->updatePaidToDate(-1 * $credit->balance)->save();
+            $credit->client->service()->updateBalanceAndPaidToDate(-1 * ($credit->invoice->balance ?? 0), -1 * $credit->balance)->save();
+
+            $invoice = \App\Models\Invoice::withTrashed()->find($credit->invoice_id);
+            if ($invoice) {
+                $invoice->status_id = Invoice::STATUS_REVERSED;
+                $invoice->save();
+
+                //2025-08-25 after convert to a credit note, we need to delete the payments associated with the invoice.
+                //2025-09-25 this logic is flawed as unlinking the invoice then prevents a valid refund from taking place.
+                // $invoice->payments()->each(function ($p) use ($credit) {
+                //     // $p->pivot->forceDelete();
+                //     $p->invoices()->each(function ($i) use ($credit) {
+                //         // $i->pivot->forceDelete();
+                //         $pivot = $i->pivot;
+                //         $pivot->paymentable_id = $credit->id;
+                //         $pivot->paymentable_type = Credit::class;
+                //         $pivot->save();
+
+                //     });
+                // });
+
+            }
+
         }
 
         event(new CreditWasCreated($credit, $credit->company, Ninja::eventVars($user->id)));
@@ -226,7 +261,7 @@ class CreditController extends BaseController
      * @param ShowCreditRequest $request  The request
      * @param Credit $credit  The credit
      *
-     * @return Response
+     * @return Response| \Illuminate\Http\JsonResponse
      *
      *
      * @OA\Get(
@@ -281,7 +316,7 @@ class CreditController extends BaseController
      * @param EditCreditRequest $request The request
      * @param Credit $credit The credit
      *
-     * @return Response
+     * @return Response| \Illuminate\Http\JsonResponse
      *
      * @OA\Get(
      *      path="/api/v1/credits/{id}/edit",
@@ -334,7 +369,7 @@ class CreditController extends BaseController
      *
      * @param UpdateCreditRequest $request The request
      * @param Credit $credit
-     * @return Response
+     * @return Response| \Illuminate\Http\JsonResponse
      *
      *
      * @throws \ReflectionException
@@ -458,7 +493,7 @@ class CreditController extends BaseController
     /**
      * Perform bulk actions on the list view.
      *
-     * @return \Illuminate\Support\Collection
+     * @return \Symfony\Component\HttpFoundation\StreamedResponse | \Illuminate\Http\JsonResponse | \Illuminate\Http\Response
      *
      * @OA\Post(
      *      path="/api/v1/credits/bulk",
@@ -516,12 +551,20 @@ class CreditController extends BaseController
             return response(['message' => 'Please verify your account to send emails.'], 400);
         }
 
+        if (Ninja::isHosted() && $user->account->emailQuotaExceeded()) {
+            return response(['message' => ctrans('texts.email_quota_exceeded_subject')], 400);
+        }
+
+        if ($user->hasExactPermission('disable_emails') && (stripos($action, 'email') !== false)) {
+            return response(['message' => ctrans('texts.disable_emails_error')], 400);
+        }
+
         $credits = Credit::withTrashed()
                          ->whereIn('id', $request->ids)
                          ->company()
                          ->get();
 
-        if (! $credits) {
+        if ($credits->isEmpty()) {
             return response()->json(['message' => ctrans('texts.no_credits_found')]);
         }
 
@@ -530,31 +573,49 @@ class CreditController extends BaseController
          */
 
         if ($action == 'bulk_download' && $credits->count() > 1) {
-            $credits->each(function ($credit) use ($user) {
-                if ($user->cannot('view', $credit)) {
-                    return response()->json(['message' => ctrans('text.access_denied')]);
-                }
+            $authorized = $credits->filter(function ($credit) use ($user) {
+                return $user->can('view', $credit);
             });
 
-            ZipCredits::dispatch($credits->pluck('id')->toArray(), $user->company(), $user);
+            if ($authorized->isEmpty()) {
+                return response()->json(['message' => ctrans('texts.access_denied')], 403);
+            }
+
+            ZipEntity::dispatch($authorized->pluck('id'), $user->company(), $user, Credit::class);
 
             return response()->json(['message' => ctrans('texts.sent_message')], 200);
         }
 
-        if ($action == 'bulk_print' && $user->can('view', $credits->first())) {
-            $paths = $credits->map(function ($credit) {
-                return (new \App\Jobs\Entity\CreateRawPdf($credit->invitations->first()))->handle();
+        if ($action == 'bulk_print') {
+            $credits = $credits->filter(function ($credit) use ($user) {
+                return $user->can('view', $credit);
             });
 
-            $merge = (new PdfMerge($paths->toArray()))->run();
+            if ($credits->isEmpty()) {
+                return response()->json(['message' => ctrans('texts.access_denied')], 403);
+            }
 
-            return response()->streamDownload(function () use ($merge) {
-                echo($merge);
-            }, 'print.pdf', ['Content-Type' => 'application/pdf']);
+            $start = microtime(true);
+
+            $merged_pdf = app(BatchPdfService::class)->render(
+                Credit::class,
+                $credits->pluck('id')->all(),
+                $user->company()->db,
+            );
+
+            return response()->streamDownload(function () use ($merged_pdf) {
+                echo $merged_pdf;
+            }, 'print.pdf', [
+                'Content-Type' => 'application/pdf',
+                'Cache-Control:' => 'no-cache',
+                'Server-Timing' => (string) (microtime(true) - $start),
+            ]);
+
+
         }
 
 
-        if($action == 'template' && $user->can('view', $credits->first())) {
+        if ($action == 'template' && $user->can('view', $credits->first())) {
 
             $hash_or_response = $request->boolean('send_email') ? 'email sent' : \Illuminate\Support\Str::uuid();
 
@@ -594,13 +655,11 @@ class CreditController extends BaseController
                 $credit->service()->markPaid()->save();
 
                 return $this->itemResponse($credit);
-                break;
 
             case 'clone_to_credit':
                 $credit = CloneCreditFactory::create($credit, auth()->user()->id);
 
                 return $this->itemResponse($credit);
-                break;
             case 'history':
                 // code...
                 break;
@@ -617,7 +676,7 @@ class CreditController extends BaseController
                 return response()->streamDownload(function () use ($file) {
                     echo $file;
                 }, $credit->numberFormatter() . '.pdf', ['Content-Type' => 'application/pdf']);
-                break;
+
             case 'archive':
                 $this->credit_repository->archive($credit);
 
@@ -642,11 +701,7 @@ class CreditController extends BaseController
             case 'email':
             case 'send_email':
 
-                $credit->invitations->load('contact.client.country', 'credit.client.country', 'credit.company')->each(function ($invitation) use ($credit) {
-                    EmailEntity::dispatch($invitation, $credit->company, 'credit');
-                });
-
-                // $credit->sendEvent(Webhook::EVENT_SENT_CREDIT, "client");
+                $credit->service()->sendEmail();
 
                 if (! $bulk) {
                     return response()->json(['message' => 'email sent'], 200);
@@ -655,7 +710,6 @@ class CreditController extends BaseController
 
             default:
                 return response()->json(['message' => ctrans('texts.action_unavailable', ['action' => $action])], 400);
-                break;
         }
     }
 
@@ -700,7 +754,7 @@ class CreditController extends BaseController
      *       ),
      *     )
      * @param $invitation_key
-     * @return \Symfony\Component\HttpFoundation\BinaryFileResponse
+     * @return \Symfony\Component\HttpFoundation\StreamedResponse | \Illuminate\Http\JsonResponse | \Illuminate\Http\Response
      */
     public function downloadPdf($invitation_key)
     {
@@ -768,7 +822,7 @@ class CreditController extends BaseController
      *       ),
      *     )
      * @param $invitation_key
-     * @return \Symfony\Component\HttpFoundation\BinaryFileResponse
+     * @return \Symfony\Component\HttpFoundation\StreamedResponse | \Illuminate\Http\JsonResponse | \Illuminate\Http\Response
      */
     public function downloadECredit($invitation_key)
     {
@@ -801,7 +855,7 @@ class CreditController extends BaseController
      *
      * @param UploadCreditRequest $request
      * @param Credit $credit
-     * @return Response
+     * @return Response| \Illuminate\Http\JsonResponse
      *
      *
      *
@@ -853,7 +907,7 @@ class CreditController extends BaseController
         }
 
         if ($request->has('documents')) {
-            $this->saveDocuments($request->file('documents'), $credit, $request->input('is_public', true));
+            $this->saveDocuments($request->file('documents'), $credit, $request->has('is_public') ? $request->boolean('is_public') : null);
         }
 
         return $this->itemResponse($credit->fresh());

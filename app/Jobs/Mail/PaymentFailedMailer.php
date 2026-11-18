@@ -1,10 +1,11 @@
 <?php
+
 /**
  * Invoice Ninja (https://invoiceninja.com).
  *
  * @link https://github.com/invoiceninja/invoiceninja source repository
  *
- * @copyright Copyright (c) 2024. Invoice Ninja LLC (https://invoiceninja.com)
+ * @copyright Copyright (c) 2026. Invoice Ninja LLC (https://invoiceninja.com)
  *
  * @license https://www.elastic.co/licensing/elastic-license
  */
@@ -82,11 +83,14 @@ class PaymentFailedMailer implements ShouldQueue
 
         $amount = 0;
         $invoice = false;
+        $invitation = false;
+        $contact = false;
 
         if ($this->payment_hash) {
-            // $amount = array_sum(array_column($this->payment_hash->invoices(), 'amount')) + $this->payment_hash->fee_total;
+
             $amount = $this->payment_hash?->amount_with_fee() ?: 0;
-            $invoice = Invoice::query()->whereIn('id', $this->transformKeys(array_column($this->payment_hash->invoices(), 'invoice_id')))->withTrashed()->first();
+            $invoice = Invoice::query()->with('invitations')->whereIn('id', $this->transformKeys(array_column($this->payment_hash->invoices(), 'invoice_id')))->withTrashed()->first();
+            $invitation = $invoice->invitations->first();
         }
 
         //iterate through company_users
@@ -97,7 +101,9 @@ class PaymentFailedMailer implements ShouldQueue
             if (($key = array_search('mail', $methods)) !== false) {
                 unset($methods[$key]);
 
-                $mail_obj = (new PaymentFailureObject($this->client, $this->error, $this->company, $amount, $this->payment_hash, $company_user->portalType()))->build();
+                $invitation = $invoice->invitations->first();
+
+                $mail_obj = (new PaymentFailureObject($this->client, $this->error, $this->company, $amount, $this->payment_hash))->build();
 
                 $nmo = new NinjaMailerObject();
                 $nmo->mailable = new NinjaMailer($mail_obj);
@@ -109,10 +115,19 @@ class PaymentFailedMailer implements ShouldQueue
             }
         });
 
-        //add client payment failures here.
+        if ($this->payment_hash && 
+        $invitation && 
+        $invitation->contact->send_email &&
+        filter_var($invitation->contact->email, FILTER_VALIDATE_EMAIL) !== false) 
+        {
+            $contact = $invitation->contact;
+        }
+        elseif($this->client->contacts()->whereNotNull('email')->exists() && $this->payment_hash){
+            $contact = $this->client->contacts()->whereNotNull('email')->orderBy('is_primary', 'desc')->orderBy('send_email', 'desc')->first();
+        }
 
-        if ($this->client->contacts()->whereNotNull('email')->exists() && $this->payment_hash) {
-            $contact = $this->client->contacts()->whereNotNull('email')->first();
+        //add client payment failures here.
+        if ($contact) {
 
             $mail_obj = (new ClientPaymentFailureObject($this->client, $this->error, $this->company, $this->payment_hash))->build();
 
@@ -121,6 +136,10 @@ class PaymentFailedMailer implements ShouldQueue
             $nmo->company = $this->company;
             $nmo->to_user = $contact;
             $nmo->settings = $settings;
+
+            if ($invitation) {
+                $nmo->invitation = $invitation->withoutRelations();
+            }
 
             NinjaMailerJob::dispatch($nmo);
         }

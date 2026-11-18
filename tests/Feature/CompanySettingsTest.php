@@ -1,4 +1,5 @@
 <?php
+
 /**
  * Invoice Ninja (https://invoiceninja.com).
  *
@@ -8,6 +9,7 @@
  *
  * @license https://www.elastic.co/licensing/elastic-license
  */
+
 namespace Tests\Feature;
 
 use App\DataMapper\CompanySettings;
@@ -21,17 +23,18 @@ use Tests\MockAccountData;
 use Tests\TestCase;
 
 /**
- * @test
- * @covers App\Utils\Traits\CompanySettingsSaver
+ *
+ *  App\Utils\Traits\CompanySettingsSaver
  */
 class CompanySettingsTest extends TestCase
 {
     use MakesHash;
     use DatabaseTransactions;
     use MockAccountData;
+
     // use RefreshDatabase;
 
-    public function setUp() :void
+    public function setUp(): void
     {
         parent::setUp();
 
@@ -39,7 +42,6 @@ class CompanySettingsTest extends TestCase
 
         Session::start();
 
-        $this->faker = \Faker\Factory::create();
         $this->withoutExceptionHandling();
         Model::reguard();
     }
@@ -81,7 +83,7 @@ class CompanySettingsTest extends TestCase
         $this->company->saveSettings($settings, $this->company);
 
         $response = false;
-        
+
         try {
             $response = $this->withHeaders([
                     'X-API-SECRET' => config('ninja.api_secret'),
@@ -97,6 +99,20 @@ class CompanySettingsTest extends TestCase
         $arr = $response->json();
 
         $this->assertEquals($arr['data']['settings']['reset_counter_date'], '');
+    }
+
+    public function testCompanyCanSaveTranslationsAndPdfVariables(): void
+    {
+        $settings = $this->company->settings;
+        $settings->translations = (object) ['invoice' => 'Custom Company Invoice'];
+        $settings->pdf_variables = (object) ['invoice_details' => ['$invoice.number']];
+
+        $this->company->saveSettings($settings, $this->company);
+
+        $savedSettings = $this->company->fresh()->settings;
+
+        $this->assertSame('Custom Company Invoice', $savedSettings->translations->invoice);
+        $this->assertSame(['$invoice.number'], $savedSettings->pdf_variables->invoice_details);
     }
 
     public function testIntegerEdgeCases()

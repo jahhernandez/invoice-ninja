@@ -1,4 +1,5 @@
 <?php
+
 /**
  * Invoice Ninja (https://invoiceninja.com).
  *
@@ -21,14 +22,14 @@ use Tests\MockAccountData;
 use Tests\TestCase;
 
 /**
- * @test
+ *
  */
 class InventoryManagementTest extends TestCase
 {
     use DatabaseTransactions;
     use MockAccountData;
 
-    protected function setUp() :void
+    protected function setUp(): void
     {
         parent::setUp();
 
@@ -39,12 +40,15 @@ class InventoryManagementTest extends TestCase
         );
 
         if (config('ninja.testvars.travis') !== false) {
-            $this->markTestSkipped('Skip test for Travis');
+            $this->markTestSkipped('Skip test for GH Actions');
         }
     }
 
     public function testInventoryMovements()
     {
+
+        config(['queue.default' => 'sync']);
+
         $product = Product::factory()->create([
             'user_id' => $this->user->id,
             'company_id' => $this->company->id,
@@ -62,7 +66,7 @@ class InventoryManagementTest extends TestCase
         $invoice->company->track_inventory = true;
         $invoice->push();
 
-        $invoice_item = new InvoiceItem;
+        $invoice_item = new InvoiceItem();
         $invoice_item->type_id = 1;
         $invoice_item->product_key = $product->product_key;
         $invoice_item->notes = $product->notes;
@@ -82,7 +86,7 @@ class InventoryManagementTest extends TestCase
             'X-API-SECRET' => config('ninja.api_secret'),
             'X-API-TOKEN' => $this->token,
         ])->post('/api/v1/invoices/', $invoice_array)
-            ->assertStatus(200);
+        ->assertStatus(200);
 
         $product = $product->fresh();
 
@@ -95,7 +99,7 @@ class InventoryManagementTest extends TestCase
         $invoice->service()->markDeleted()->save();
         $invoice->is_deleted = true;
         $invoice->save();
-        
+
         $this->assertEquals(100, $product->fresh()->in_stock_quantity);
 
         $invoice = Invoice::withTrashed()->find($this->decodePrimaryKey($data['data']['id']));

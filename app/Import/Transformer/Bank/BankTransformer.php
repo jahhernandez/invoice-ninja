@@ -1,4 +1,5 @@
 <?php
+
 /**
  * Invoice Ninja (https://invoiceninja.com).
  *
@@ -54,15 +55,15 @@ class BankTransformer extends BaseTransformer
     private function calculateAmount(array $transaction): float
     {
 
-        if (array_key_exists('transaction.amount', $transaction) && is_numeric($transaction['transaction.amount'])) {
+        if (isset($transaction['transaction.amount'])) {
             return abs($this->getFloat($transaction, 'transaction.amount'));
         }
 
-        if (array_key_exists('transaction.payment_type_Credit', $transaction) && is_numeric($transaction['transaction.payment_type_Credit'])) {
+        if (isset($transaction['transaction.payment_type_Credit'])) {
             return abs($this->getFloat($transaction, 'transaction.payment_type_Credit'));
         }
 
-        if (array_key_exists('transaction.payment_type_Debit', $transaction) && is_numeric($transaction['transaction.payment_type_Debit'])) {
+        if (isset($transaction['transaction.payment_type_Debit'])) {
             return abs($this->getFloat($transaction, 'transaction.payment_type_Debit'));
         }
 
@@ -76,7 +77,7 @@ class BankTransformer extends BaseTransformer
             return 'CREDIT';
         }
 
-        if (array_key_exists('transaction.transaction.payment_type_Debit', $transaction) && is_numeric($transaction['transaction.payment_type_Debit'])) {
+        if (array_key_exists('transaction.payment_type_Debit', $transaction) && is_numeric($transaction['transaction.payment_type_Debit'])) {
             return 'DEBIT';
         }
 
@@ -84,20 +85,27 @@ class BankTransformer extends BaseTransformer
             return 'DEBIT';
         }
 
+        if (array_key_exists('transaction.base_type', $transaction) && in_array(strtolower($transaction['transaction.base_type']), ['income', 'credit'])) {
+            return 'CREDIT';
+        }
+
         if (array_key_exists('transaction.category_id', $transaction)) {
             return 'DEBIT';
         }
 
-        if (array_key_exists('transaction.category_type', $transaction) && $transaction['transaction.category_type'] == 'Income') {
+        if (array_key_exists('transaction.category_type', $transaction) && in_array(strtolower($transaction['transaction.category_type']), ['income', 'credit'])) {
             return 'CREDIT';
         }
 
-        if (array_key_exists('transaction.category_type', $transaction)) {
+        if (array_key_exists('transaction.category_type', $transaction) && strlen($transaction['transaction.category_type']) >= 1) {
             return 'DEBIT';
         }
 
-        if (array_key_exists('transaction.amount', $transaction) && is_numeric($transaction['transaction.amount']) && $transaction['transaction.amount'] > 0) {
-            return 'CREDIT';
+        if (array_key_exists('transaction.amount', $transaction)) {
+
+            if ($this->getFloat($transaction, 'transaction.amount') > 0) {
+                return 'CREDIT';
+            }
         }
 
         return 'DEBIT';

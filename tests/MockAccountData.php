@@ -1,4 +1,5 @@
 <?php
+
 /**
  * Invoice Ninja (https://invoiceninja.com).
  *
@@ -11,58 +12,66 @@
 
 namespace Tests;
 
-use App\DataMapper\ClientRegistrationFields;
-use App\DataMapper\ClientSettings;
-use App\DataMapper\CompanySettings;
-use App\Factory\CompanyUserFactory;
-use App\Factory\CreditFactory;
-use App\Factory\InvoiceFactory;
-use App\Factory\InvoiceInvitationFactory;
-use App\Factory\InvoiceItemFactory;
-use App\Factory\InvoiceToRecurringInvoiceFactory;
-use App\Factory\PurchaseOrderFactory;
-use App\Helpers\Invoice\InvoiceSum;
-use App\Jobs\Company\CreateCompanyTaskStatuses;
-use App\Models\Account;
-use App\Models\BankIntegration;
-use App\Models\BankTransaction;
-use App\Models\BankTransactionRule;
+use App\Models\Task;
+use App\Models\User;
+use Faker\Generator;
+use App\Models\Quote;
 use App\Models\Client;
-use App\Models\ClientContact;
-use App\Models\Company;
-use App\Models\CompanyGateway;
-use App\Models\CompanyToken;
 use App\Models\Credit;
-use App\Models\CreditInvitation;
+use App\Models\Vendor;
+use App\Models\Account;
+use App\Models\Company;
+use App\Models\Country;
 use App\Models\Expense;
-use App\Models\ExpenseCategory;
-use App\Models\GroupSetting;
-use App\Models\InvoiceInvitation;
 use App\Models\Payment;
 use App\Models\Product;
 use App\Models\Project;
-use App\Models\PurchaseOrderInvitation;
-use App\Models\Quote;
+use App\Models\TaxRate;
+use App\Models\Currency;
+use App\Models\Language;
+use App\Models\Scheduler;
+use App\Models\TaskStatus;
+use App\Utils\TruthSource;
+use App\Models\CompanyToken;
+use App\Models\GroupSetting;
+use App\Models\ClientContact;
+use App\Models\VendorContact;
+use App\Factory\CreditFactory;
+use App\Models\CompanyGateway;
+use App\Models\RecurringQuote;
+use Illuminate\Support\Carbon;
+use App\Factory\InvoiceFactory;
+use App\Models\BankIntegration;
+use App\Models\BankTransaction;
+use App\Models\ExpenseCategory;
 use App\Models\QuoteInvitation;
+use App\Utils\Traits\MakesHash;
+use App\Models\CreditInvitation;
 use App\Models\RecurringExpense;
 use App\Models\RecurringInvoice;
-use App\Models\RecurringQuote;
-use App\Models\Scheduler;
-use App\Models\Task;
-use App\Models\TaskStatus;
-use App\Models\TaxRate;
-use App\Models\User;
-use App\Models\Vendor;
-use App\Models\VendorContact;
-use App\Utils\Traits\GeneratesCounter;
-use App\Utils\Traits\MakesHash;
-use App\Utils\TruthSource;
-use Illuminate\Support\Carbon;
-use Illuminate\Support\Facades\Artisan;
-use Illuminate\Support\Facades\Cache;
+use App\Models\InvoiceInvitation;
+use App\DataMapper\ClientSettings;
+use App\DataMapper\CompanySettings;
+use App\Factory\CompanyUserFactory;
+use App\Factory\InvoiceItemFactory;
+use App\Helpers\Invoice\InvoiceSum;
+use App\Models\BankTransactionRule;
 use Illuminate\Support\Facades\Hash;
+use App\Factory\PurchaseOrderFactory;
+use Illuminate\Support\Facades\Cache;
+use App\Repositories\CreditRepository;
+use App\Utils\Traits\GeneratesCounter;
 use Illuminate\Support\Facades\Schema;
+use App\Models\PurchaseOrderInvitation;
+use App\Repositories\InvoiceRepository;
+use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Storage;
+use App\Factory\InvoiceInvitationFactory;
+use App\DataMapper\ClientRegistrationFields;
+use App\Jobs\Company\CreateCompanyTaskStatuses;
+
+use App\Repositories\RecurringInvoiceRepository;
+use App\Factory\InvoiceToRecurringInvoiceFactory;
 
 /**
  * Class MockAccountData.
@@ -72,166 +81,178 @@ trait MockAccountData
     use MakesHash;
     use GeneratesCounter;
 
+    public mixed $credit_calc = null;
+
+    public $invoice_calc;
+
+    public $quote_calc;
+
+    public $recurring_invoice_calc;
+    
     /**
-     * @var
+     * @var Project|null
      */
     public $project;
 
     /**
-     * @var
+     * @var Account|null
      */
     public $account;
 
     /**
-     * @var
+     * @var Company|null
      */
     public $company;
 
     /**
-     * @var
+     * @var User|null
      */
     public $user;
 
     /**
-     * @var
+     * @var Client|null
      */
     public $client;
 
     /**
-     * @var
+     * @var CompanyToken|string|null
      */
     public $token;
 
     /**
-     * @var
+     * @var RecurringExpense|null
      */
     public $recurring_expense;
 
     /**
-     * @var
+     * @var RecurringQuote|null
      */
     public $recurring_quote;
 
     /**
-     * @var \App\Models\Credit
+     * @var Credit|null
      */
     public $credit;
 
     /**
-     * @var \App\Models\Invoice
+     * @var \App\Models\Invoice|null
      */
     public $invoice;
 
     /**
-     * @var
+     * @var Quote|null
      */
     public $quote;
 
     /**
-     * @var
+     * @var Vendor|null
      */
     public $vendor;
 
     /**
-     * @var
+     * @var Expense|null
      */
     public $expense;
 
     /**
-     * @var
+     * @var Task|null
      */
     public $task;
 
     /**
-     * @var
+     * @var TaskStatus|null
      */
     public $task_status;
 
     /**
-     * @var
+     * @var ExpenseCategory|null
      */
     public $expense_category;
 
     /**
-     * @var
+     * @var \App\Models\CompanyUser|null
      */
     public $cu;
 
     /**
-     * @var
+     * @var BankIntegration|null
      */
     public $bank_integration;
 
     /**
-     * @var
+     * @var BankTransaction|null
      */
     public $bank_transaction;
-    
+
     /**
-     * @var
+     * @var BankTransactionRule|null
      */
     public $bank_transaction_rule;
 
 
     /**
-     * @var
+     * @var Payment|null
      */
     public $payment;
 
     /**
-     * @var
+     * @var TaxRate|null
      */
     public $tax_rate;
 
     /**
-     * @var
+     * @var Scheduler|null
      */
     public $scheduler;
 
     /**
-     * @var
+     * @var \App\Models\PurchaseOrder|null
      */
     public $purchase_order;
 
     public $contact;
-    
+
     public $product;
 
     public $recurring_invoice;
 
+    public $faker;
+    
     public function makeTestData()
     {
         config(['database.default' => config('ninja.db.default')]);
 
-        /* Warm up the cache !*/
-        $cached_tables = config('ninja.cached_tables');
-
-        Artisan::call('db:seed', [
-        '--force' => true
-        ]);
-
-        foreach ($cached_tables as $name => $class) {
-            // check that the table exists in case the migration is pending
-            if (! Schema::hasTable((new $class())->getTable())) {
-                continue;
-            }
-            if ($name == 'payment_terms') {
-                $orderBy = 'num_days';
-            } elseif ($name == 'fonts') {
-                $orderBy = 'sort_order';
-            } elseif (in_array($name, ['currencies', 'industries', 'languages', 'countries', 'banks'])) {
-                $orderBy = 'name';
-            } else {
-                $orderBy = 'id';
-            }
-            $tableData = $class::orderBy($orderBy)->get();
-            if ($tableData->count()) {
-                Cache::forever($name, $tableData);
-            }
+        if (! Schema::hasTable('countries') || Country::count() == 0) {
+            Artisan::call('migrate', ['--force' => true]);
+            Artisan::call('db:seed', ['--force' => true]);
         }
 
+        app()->singleton('currencies', function ($app) {
+
+            $resource = Currency::query()->orderBy('name')->get();
+            Cache::forever('currencies', $resource);
+            return $resource;
+
+        });
+
+        app()->singleton('languages', function ($app) {
+
+            $resource = Language::query()->orderBy('name')->get();
+            Cache::forever('languages', $resource);
+            return $resource;
+
+        });
+
+        app()->singleton('countries', function ($app) {
+
+            $resource = Country::query()->orderBy('name')->get();
+            Cache::forever('countries', $resource);
+            return $resource;
+
+        });
+
         $this->faker = \Faker\Factory::create();
-        $fake_email = $this->faker->email();
+        $fake_email = uniqid('testuser') . '@gmail.com';
 
         $this->account = Account::factory()->create([
             'hosted_client_count' => 1000000,
@@ -268,6 +289,7 @@ trait MockAccountData
         $settings->use_credits_payment = 'always';
         $settings->timezone_id = '1';
         $settings->entity_send_time = 0;
+        $settings->e_invoice_type = 'EN16931';
 
         $this->company->track_inventory = true;
         $this->company->settings = $settings;
@@ -294,8 +316,8 @@ trait MockAccountData
         $user_id = $user->id;
         $this->user = $user;
 
-        // auth()->login($user);
-        // auth()->user()->setCompany($this->company);
+        auth()->login($user, false);
+        auth()->user()->setCompany($this->company);
 
         CreateCompanyTaskStatuses::dispatchSync($this->company, $this->user);
 
@@ -307,7 +329,7 @@ trait MockAccountData
 
         $this->token = \Illuminate\Support\Str::random(64);
 
-        $company_token = new CompanyToken;
+        $company_token = new CompanyToken();
         $company_token->user_id = $user->id;
         $company_token->company_id = $this->company->id;
         $company_token->account_id = $this->account->id;
@@ -317,11 +339,13 @@ trait MockAccountData
 
         $company_token->save();
 
+        // $user->setContext($this->company, $company_token);
+
         $truth = app()->make(TruthSource::class);
         $truth->setCompanyUser($company_token->first());
         $truth->setUser($this->user);
         $truth->setCompany($this->company);
-        
+
         //todo create one token with token name TOKEN - use firstOrCreate
 
         Product::factory()->create([
@@ -329,9 +353,13 @@ trait MockAccountData
             'company_id' => $this->company->id,
         ]);
 
+        // $client_settings = ClientSettings::defaults();
+        // $client_settings->currency_id = '1';
+
         $this->client = Client::factory()->create([
             'user_id' => $user_id,
             'company_id' => $this->company->id,
+            // 'settings' => $client_settings,
         ]);
 
         Storage::makeDirectory($this->company->company_key.'/'.$this->client->client_hash.'/invoices', 0755, true);
@@ -366,6 +394,7 @@ trait MockAccountData
             'user_id' => $user_id,
             'company_id' => $this->company->id,
             'currency_id' => 1,
+            // 'country_id' => 840,
         ]);
 
         $vendor_contact = VendorContact::factory()->create([
@@ -392,12 +421,6 @@ trait MockAccountData
         $this->product = Product::factory()->create([
             'user_id' => $user_id,
             'company_id' => $this->company->id,
-        ]);
-
-        $this->recurring_invoice = RecurringInvoice::factory()->create([
-            'user_id' => $user_id,
-            'company_id' => $this->company->id,
-            'client_id' => $this->client->id,
         ]);
 
         $this->expense = Expense::factory()->create([
@@ -441,7 +464,7 @@ trait MockAccountData
             'company_id' => $this->company->id,
         ]);
 
-        $gs = new GroupSetting;
+        $gs = new GroupSetting();
         $gs->name = 'Test';
         $gs->company_id = $this->client->company_id;
         $gs->settings = ClientSettings::buildClientSettings($this->company->settings, $this->client->settings);
@@ -453,6 +476,23 @@ trait MockAccountData
 
         $this->client->group_settings_id = $gs->id;
         $this->client->save();
+
+        $items = $this->buildLineItems();
+
+        $this->recurring_invoice = RecurringInvoice::factory()->create([
+            'user_id' => $user_id,
+            'company_id' => $this->company->id,
+            'client_id' => $this->client->id,
+            'line_items' => $items,
+            'uses_inclusive_taxes' => false,
+        ]);
+
+        $repo = new RecurringInvoiceRepository();
+        $this->recurring_invoice = $repo->save([], $this->recurring_invoice);
+
+        $this->recurring_invoice_calc = new InvoiceSum($this->recurring_invoice);
+        $this->recurring_invoice_calc->build();
+        $this->recurring_invoice = $this->recurring_invoice_calc->getRecurringInvoice();
 
         $this->invoice = InvoiceFactory::create($this->company->id, $user_id); //stub the company and user_id
         $this->invoice->client_id = $this->client->id;
@@ -490,6 +530,9 @@ trait MockAccountData
 
         $this->invoice->fresh()->service()->markSent();
         // $this->invoice->service()->markSent();
+
+        $repo = new InvoiceRepository();
+        $this->invoice = $repo->save([], $this->invoice);
 
         $this->quote = Quote::factory()->create([
             'user_id' => $user_id,
@@ -552,27 +595,30 @@ trait MockAccountData
         $this->credit->number = $this->getNextCreditNumber($this->client, $this->credit);
 
 
-        CreditInvitation::factory()->create([
-            'user_id' => $user_id,
-            'company_id' => $this->company->id,
-            'client_contact_id' => $contact->id,
-            'credit_id' => $this->credit->id,
-        ]);
+        // CreditInvitation::factory()->create([
+        //     'user_id' => $user_id,
+        //     'company_id' => $this->company->id,
+        //     'client_contact_id' => $contact->id,
+        //     'credit_id' => $this->credit->id,
+        // ]);
 
-        CreditInvitation::factory()->create([
-            'user_id' => $user_id,
-            'company_id' => $this->company->id,
-            'client_contact_id' => $contact2->id,
-            'credit_id' => $this->credit->id,
-        ]);
+        // CreditInvitation::factory()->create([
+        //     'user_id' => $user_id,
+        //     'company_id' => $this->company->id,
+        //     'client_contact_id' => $contact2->id,
+        //     'credit_id' => $this->credit->id,
+        // ]);
 
-        $this->credit->setRelation('client', $this->client);
-        $this->credit->setRelation('company', $this->company);
+        // $this->credit->setRelation('client', $this->client);
+        // $this->credit->setRelation('company', $this->company);
 
-        $this->credit->save();
+        // $this->credit->save();
 
-        $this->credit->service()->createInvitations()->markSent();
+        $repo = new CreditRepository();
+        $repo->save([], $this->credit);
 
+        // $this->credit->service()->createInvitations()->markSent();
+        // $this->credit->save();
 
         $this->purchase_order = PurchaseOrderFactory::create($this->company->id, $user_id);
         $this->purchase_order->vendor_id = $this->vendor->id;
@@ -600,14 +646,9 @@ trait MockAccountData
             'purchase_order_id' => $this->purchase_order->id,
         ]);
 
-        $purchase_order_invitations = PurchaseOrderInvitation::whereCompanyId($this->purchase_order->company_id)
-            ->wherePurchaseOrderId($this->purchase_order->id);
-
-        $this->purchase_order->setRelation('invitations', $purchase_order_invitations);
-
         $this->purchase_order->service()->markSent();
 
-        $this->purchase_order->setRelation('client', $this->client);
+        $this->purchase_order->setRelation('vendor', $this->vendor);
         $this->purchase_order->setRelation('company', $this->company);
 
         $this->purchase_order->save();
@@ -641,19 +682,25 @@ trait MockAccountData
         $this->credit->ledger()->updateCreditBalance($this->credit->balance)->save();
         $this->credit->number = $this->getNextCreditNumber($this->client, $this->credit);
 
-        CreditInvitation::factory()->create([
-            'user_id' => $user_id,
-            'company_id' => $this->company->id,
-            'client_contact_id' => $contact->id,
-            'credit_id' => $this->credit->id,
-        ]);
+        $this->credit->save();
 
-        CreditInvitation::factory()->create([
-            'user_id' => $user_id,
-            'company_id' => $this->company->id,
-            'client_contact_id' => $contact2->id,
-            'credit_id' => $this->credit->id,
-        ]);
+
+        $repo = new CreditRepository();
+        $repo->save([], $this->credit);
+
+        // CreditInvitation::factory()->create([
+        //     'user_id' => $user_id,
+        //     'company_id' => $this->company->id,
+        //     'client_contact_id' => $contact->id,
+        //     'credit_id' => $this->credit->id,
+        // ]);
+
+        // CreditInvitation::factory()->create([
+        //     'user_id' => $user_id,
+        //     'company_id' => $this->company->id,
+        //     'client_contact_id' => $contact2->id,
+        //     'credit_id' => $this->credit->id,
+        // ]);
 
         $this->bank_integration = BankIntegration::factory()->create([
             'user_id' => $user_id,
@@ -696,17 +743,17 @@ trait MockAccountData
             'company_id' => $this->company->id,
         ]);
 
-        $invitations = CreditInvitation::whereCompanyId($this->credit->company_id)
-                                        ->whereCreditId($this->credit->id);
+        // $invitations = CreditInvitation::whereCompanyId($this->credit->company_id)
+        //                                 ->whereCreditId($this->credit->id);
 
-        $this->credit->setRelation('invitations', $invitations);
+        // $this->credit->setRelation('invitations', $invitations);
 
-        $this->credit->service()->markSent();
+        // $this->credit->service()->markSent();
 
-        $this->credit->setRelation('client', $this->client);
-        $this->credit->setRelation('company', $this->company);
+        // $this->credit->setRelation('client', $this->client);
+        // $this->credit->setRelation('company', $this->company);
 
-        $this->credit->save();
+        // $this->credit->save();
 
         $contacts = $this->invoice->client->contacts;
 
@@ -804,7 +851,7 @@ trait MockAccountData
         $recurring_invoice->number = $this->getNextRecurringInvoiceNumber($this->invoice->client, $this->invoice);
         $recurring_invoice->save();
 
-        $gs = new GroupSetting;
+        $gs = new GroupSetting();
         $gs->company_id = $this->company->id;
         $gs->user_id = $user_id;
         $gs->settings = ClientSettings::buildClientSettings(CompanySettings::defaults(), ClientSettings::defaults());
@@ -813,7 +860,7 @@ trait MockAccountData
 
         if (config('ninja.testvars.stripe')) {
             $data = [];
-            $data[1]['min_limit'] = 234;
+            $data[1]['min_limit'] = 22;
             $data[1]['max_limit'] = 65317;
             $data[1]['fee_amount'] = 0.00;
             $data[1]['fee_percent'] = 0.000;
@@ -826,7 +873,7 @@ trait MockAccountData
             $data[1]['fee_cap'] = '';
             $data[1]['is_enabled'] = true;
 
-            $cg = new CompanyGateway;
+            $cg = new CompanyGateway();
             $cg->company_id = $this->company->id;
             $cg->user_id = $user_id;
             $cg->gateway_key = 'd14dd26a37cecc30fdd65700bfb55b23';
@@ -838,8 +885,8 @@ trait MockAccountData
             $cg->fees_and_limits = $data;
             $cg->save();
 
-            
-            $cg = new CompanyGateway;
+
+            $cg = new CompanyGateway();
             $cg->company_id = $this->company->id;
             $cg->user_id = $user_id;
             $cg->gateway_key = 'd14dd26a37cecc30fdd65700bfb55b23';
@@ -872,6 +919,7 @@ trait MockAccountData
 
         $item = InvoiceItemFactory::create();
         $item->quantity = 1;
+        $item->notes = $this->faker->sentence();
         $item->cost = 10;
         $item->task_id = $this->encodePrimaryKey($this->task->id);
         $item->expense_id = $this->encodePrimaryKey($this->expense->id);
@@ -880,4 +928,5 @@ trait MockAccountData
 
         return $line_items;
     }
+
 }

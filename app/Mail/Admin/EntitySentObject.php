@@ -1,10 +1,11 @@
 <?php
+
 /**
  * Invoice Ninja (https://invoiceninja.com).
  *
  * @link https://github.com/invoiceninja/invoiceninja source repository
  *
- * @copyright Copyright (c) 2024. Invoice Ninja LLC (https://invoiceninja.com)
+ * @copyright Copyright (c) 2026. Invoice Ninja LLC (https://invoiceninja.com)
  *
  * @license https://www.elastic.co/licensing/elastic-license
  */
@@ -36,9 +37,7 @@ class EntitySentObject
 
     private $template_body;
 
-    protected $use_react_url;
-
-    public function __construct($invitation, $entity_type, $template, $use_react_url)
+    public function __construct($invitation, $entity_type, $template)
     {
         $this->invitation = $invitation;
         $this->entity_type = $entity_type;
@@ -46,7 +45,6 @@ class EntitySentObject
         $this->contact = $invitation->contact;
         $this->company = $invitation->company;
         $this->template = $template;
-        $this->use_react_url = $use_react_url;
     }
 
     public function build()
@@ -81,17 +79,26 @@ class EntitySentObject
                         'purchase_order' => $this->entity->number,
                     ]
                 ),
-                'url' => $this->invitation->getAdminLink($this->use_react_url),
+                'url' => $this->invitation->getAdminLink(),
                 'button' => ctrans("texts.view_{$this->entity_type}"),
                 'signature' => $this->company->settings->email_signature,
                 'logo' => $this->company->present()->logo(),
                 'settings' => $this->company->settings,
-                'whitelabel' => $this->company->account->isPaid() ? true : false,
+                'whitelabel' => true,
                 'template' => $this->company->account->isPremium() ? 'email.template.admin_premium' : 'email.template.admin',
-
+                'text_body' => ctrans(
+                    $this->template_body,
+                    [
+                        'amount' => $mail_obj->amount,
+                        'vendor' => $this->contact->vendor->present()->name(),
+                        'purchase_order' => $this->entity->number,
+                    ]
+                ),
             ];
+
             $mail_obj->markdown = 'email.admin.generic';
             $mail_obj->tag = $this->company->company_key;
+
         } else {
             $mail_obj = new stdClass();
             $mail_obj->amount = $this->getAmount();
@@ -127,11 +134,16 @@ class EntitySentObject
                 $this->template_body = 'texts.notification_invoice_sent';
                 break;
             case 'reminder_endless':
+            case 'endless_reminder':
                 $this->template_subject = 'texts.notification_invoice_reminder_endless_sent_subject';
                 $this->template_body = 'texts.notification_invoice_sent';
                 break;
             case 'quote':
                 $this->template_subject = 'texts.notification_quote_sent_subject';
+                $this->template_body = 'texts.notification_quote_sent';
+                break;
+            case 'email_quote_template_reminder1':
+                $this->template_subject = 'texts.notification_quote_reminder1_sent_subject';
                 $this->template_body = 'texts.notification_quote_sent';
                 break;
             case 'credit':
@@ -192,15 +204,15 @@ class EntitySentObject
         return [
             'title' => $this->getSubject(),
             'content' => $content,
-            'url' => $this->invitation->getAdminLink($this->use_react_url),
+            'url' => $this->invitation->getAdminLink(),
             'button' => ctrans("texts.view_{$this->entity_type}"),
             'signature' => $settings->email_signature,
             'logo' => $this->company->present()->logo(),
             'settings' => $settings,
-            'whitelabel' => $this->company->account->isPaid() ? true : false,
+            'whitelabel' => true,
             'text_body' => $content,
             'template' => $this->company->account->isPremium() ? 'email.template.admin_premium' : 'email.template.admin',
-            
+
         ];
     }
 }

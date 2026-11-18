@@ -1,10 +1,11 @@
 <?php
+
 /**
  * Invoice Ninja (https://invoiceninja.com).
  *
  * @link https://github.com/invoiceninja/invoiceninja source repository
  *
- * @copyright Copyright (c) 2024. Invoice Ninja LLC (https://invoiceninja.com)
+ * @copyright Copyright (c) 2026. Invoice Ninja LLC (https://invoiceninja.com)
  *
  * @license https://www.elastic.co/licensing/elastic-license
  */
@@ -45,9 +46,7 @@ class EmailQuotaNotification extends Notification
      * @param  mixed  $notifiable
      *
      */
-    public function toMail($notifiable)
-    {
-    }
+    public function toMail($notifiable) {}
 
     /**
      * Get the array representation of the notification.
@@ -66,7 +65,7 @@ class EmailQuotaNotification extends Notification
     {
         $content = "Email quota exceeded by Account {$this->account->key} \n";
 
-        $owner = $this->account->companies()->first()->owner();
+        $owner = $this->account->companies()->first()->owner() ?? $this->account->users()->orderBy('id', 'asc')->first();
         $owner_name = $owner->present()->name() ?? 'No Owner Found';
         $owner_email = $owner->email ?? 'No Owner Email Found';
 

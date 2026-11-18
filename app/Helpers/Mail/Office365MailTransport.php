@@ -1,10 +1,11 @@
 <?php
+
 /**
  * Invoice Ninja (https://invoiceninja.com).
  *
  * @link https://github.com/invoiceninja/invoiceninja source repository
  *
- * @copyright Copyright (c) 2021. Invoice Ninja LLC (https://invoiceninja.com)
+ * @copyright Copyright (c) 2026. Invoice Ninja LLC (https://invoiceninja.com)
  *
  * @license https://www.elastic.co/licensing/elastic-license
  */
@@ -25,13 +26,14 @@ class Office365MailTransport extends AbstractTransport
 
     protected function doSend(SentMessage $message): void
     {
-        $symfony_message = MessageConverter::toEmail($message->getOriginalMessage());
+        $symfony_message = MessageConverter::toEmail($message->getOriginalMessage()); //@phpstan-ignore-line
 
         $graph = new Graph();
 
         /** @phpstan-ignore-next-line **/
         $token = $symfony_message->getHeaders()->get('gmailtoken')->getValue();
-        $symfony_message->getHeaders()->remove('gmailtoken');
+        // $symfony_message->getHeaders()->remove('gmailtoken');
+        $message->getOriginalMessage()->getHeaders()->remove('gmailtoken');
 
         $graph->setAccessToken($token);
 
@@ -43,28 +45,28 @@ class Office365MailTransport extends AbstractTransport
 
             /** @phpstan-ignore-next-line **/
             foreach ($bccs->getAddresses() as $address) {
-                $bcc_list .= 'Bcc: "'.$address->getAddress().'" <'.$address->getAddress().'>\r\n';
+                $bcc_list .= 'Bcc: "' . $address->getAddress() . '" <' . $address->getAddress() . '>\r\n';
             }
         }
 
         try {
-            $graphMessage = $graph->createRequest('POST', '/users/'.$symfony_message->getFrom()[0]->getAddress().'/sendmail')
-                ->attachBody(base64_encode($bcc_list.$message->toString()))
+            $graphMessage = $graph->createRequest('POST', '/users/' . $symfony_message->getFrom()[0]->getAddress() . '/sendmail')
+                ->attachBody(base64_encode($bcc_list . $message->toString()))
                 ->addHeaders(['Content-Type' => 'text/plain'])
                 ->setReturnType(\Microsoft\Graph\Model\Message::class)
                 ->execute();
         } catch (\Exception $e) {
-            
-            sleep(rand(5,10));
+
+            sleep(rand(5, 10));
 
             try {
-            $graphMessage = $graph->createRequest('POST', '/users/'.$symfony_message->getFrom()[0]->getAddress().'/sendmail')
-                ->attachBody(base64_encode($bcc_list.$message->toString()))
-                ->addHeaders(['Content-Type' => 'text/plain'])
-                ->setReturnType(\Microsoft\Graph\Model\Message::class)
-                ->execute();
+                $graphMessage = $graph->createRequest('POST', '/users/' . $symfony_message->getFrom()[0]->getAddress() . '/sendmail')
+                    ->attachBody(base64_encode($bcc_list . $message->toString()))
+                    ->addHeaders(['Content-Type' => 'text/plain'])
+                    ->setReturnType(\Microsoft\Graph\Model\Message::class)
+                    ->execute();
             } catch (\Exception $e) {
-            
+
             }
 
         }

@@ -1,4 +1,5 @@
 <?php
+
 /**
  * Invoice Ninja (https://invoiceninja.com).
  *
@@ -17,14 +18,14 @@ use Tests\MockUnitData;
 use Tests\TestCase;
 
 /**
- * @test
+ *
  */
 class CreditBalanceTest extends TestCase
 {
     use MockUnitData;
     use AppSetup;
 
-    protected function setUp() :void
+    protected function setUp(): void
     {
         parent::setUp();
 
@@ -33,8 +34,6 @@ class CreditBalanceTest extends TestCase
         });
 
         $this->makeTestData();
-
-        $this->buildCache(true);
     }
 
     public function testCreditBalance()
@@ -44,12 +43,29 @@ class CreditBalanceTest extends TestCase
             'company_id' => $this->company->id,
             'client_id' => $this->client->id,
             'balance' => 10,
+            'due_date' => null,
             'number' => 'testing-number-01',
             'status_id' => Credit::STATUS_SENT,
         ]);
 
         $this->assertEquals($this->client->service()->getCreditBalance(), 10);
     }
+
+    public function testCreditBalance2()
+    {
+        $credit = Credit::factory()->create([
+            'user_id' => $this->user->id,
+            'company_id' => $this->company->id,
+            'client_id' => $this->client->id,
+            'balance' => 10,
+            'due_date' => now()->addDays(10),
+            'number' => 'testing-number-01',
+            'status_id' => Credit::STATUS_SENT,
+        ]);
+
+        $this->assertEquals($this->client->service()->getCreditBalance(), 10);
+    }
+
 
     public function testExpiredCreditBalance()
     {
@@ -58,7 +74,7 @@ class CreditBalanceTest extends TestCase
             'company_id' => $this->company->id,
             'client_id' => $this->client->id,
             'balance' => 10,
-            'due_date' => now()->addDays(5),
+            'due_date' => now()->subDays(5),
             'number' => 'testing-number-02',
             'status_id' => Credit::STATUS_SENT,
         ]);

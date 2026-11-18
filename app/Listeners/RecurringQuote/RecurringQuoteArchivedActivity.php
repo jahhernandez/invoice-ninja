@@ -1,10 +1,11 @@
 <?php
+
 /**
  * Invoice Ninja (https://invoiceninja.com).
  *
  * @link https://github.com/invoiceninja/invoiceninja source repository
  *
- * @copyright Copyright (c) 2024. Invoice Ninja LLC (https://invoiceninja.com)
+ * @copyright Copyright (c) 2026. Invoice Ninja LLC (https://invoiceninja.com)
  *
  * @license https://www.elastic.co/licensing/elastic-license
  */
@@ -44,7 +45,7 @@ class RecurringQuoteArchivedActivity implements ShouldQueue
         $event->recurring_quote->service()->deletePdf();
 
         $fields = new stdClass();
-        $user_id = isset($event->event_vars['user_id']) ? $event->event_vars['user_id'] : $event->recurring_quote->user_id;
+        $user_id = $event->event_vars['user_id'] ?? $event->recurring_quote->user_id;
 
         $fields->user_id = $user_id;
         $fields->recurring_quote_id = $event->recurring_quote->id;

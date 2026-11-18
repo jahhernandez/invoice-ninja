@@ -1,10 +1,11 @@
 <?php
+
 /**
  * Invoice Ninja (https://invoiceninja.com).
  *
  * @link https://github.com/invoiceninja/invoiceninja source repository
  *
- * @copyright Copyright (c) 2024. Invoice Ninja LLC (https://invoiceninja.com)
+ * @copyright Copyright (c) 2026. Invoice Ninja LLC (https://invoiceninja.com)
  *
  * @license https://www.elastic.co/licensing/elastic-license
  */
@@ -16,6 +17,7 @@ use App\Http\ValidationRules\Payment\ValidRefundableRequest;
 use App\Http\ValidationRules\ValidRefundableInvoices;
 use App\Models\Payment;
 use App\Utils\Traits\MakesHash;
+use Illuminate\Validation\Rule;
 
 class RefundPaymentRequest extends Request
 {
@@ -52,6 +54,7 @@ class RefundPaymentRequest extends Request
         if (isset($input['invoices'])) {
             foreach ($input['invoices'] as $key => $invoice) {
                 $input['invoices'][$key]['invoice_id'] = $this->decodePrimaryKey($invoice['invoice_id']);
+                $input['invoices'][$key]['date'] = now()->format('Y-m-d');
             }
         }
 
@@ -68,11 +71,12 @@ class RefundPaymentRequest extends Request
 
         $rules = [
             'id' => ['bail','required', new ValidRefundableRequest($input)],
-            'amount' => ['numeric', 'max:99999999999999'],
+            'amount' => ['numeric', 'max:99999999999999', 'gt:0'],
             'date' => 'required',
-            'invoices.*.invoice_id' => 'required',
-            'invoices.*.amount' => 'required',
-            'invoices' => new ValidRefundableInvoices($input),
+            'invoices.*.invoice_id' => ['required','bail','distinct', Rule::exists('invoices', 'id')->where('company_id', auth()->user()->company()->id)],
+            'invoices.*.amount' => 'required|bail|numeric|gt:0',
+            'invoices' => ['sometimes','array', new ValidRefundableInvoices($input)],
+            
         ];
 
         return $rules;
@@ -81,7 +85,7 @@ class RefundPaymentRequest extends Request
     public function payment(): ?\App\Models\Payment
     {
         $input = $this->all();
-
-        return Payment::whereId($input['id'])->first();
+        /** @var \App\Models\Payment */
+        return Payment::withTrashed()->where('id', $input['id'])->where('company_id', auth()->user()->company()->id)->first();
     }
 }

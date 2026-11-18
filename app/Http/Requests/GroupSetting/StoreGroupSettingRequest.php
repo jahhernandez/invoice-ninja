@@ -1,10 +1,11 @@
 <?php
+
 /**
  * Invoice Ninja (https://invoiceninja.com).
  *
  * @link https://github.com/invoiceninja/invoiceninja source repository
  *
- * @copyright Copyright (c) 2024. Invoice Ninja LLC (https://invoiceninja.com)
+ * @copyright Copyright (c) 2026. Invoice Ninja LLC (https://invoiceninja.com)
  *
  * @license https://www.elastic.co/licensing/elastic-license
  */
@@ -39,11 +40,30 @@ class StoreGroupSettingRequest extends Request
         /** @var \App\Models\User $user */
         $user = auth()->user();
 
-        $rules['name'] = 'required|unique:group_settings,name,null,null,company_id,'.$user->companyId();
+        $rules['name'] = 'required|unique:group_settings,name,null,null,company_id,' . $user->companyId();
 
         $rules['settings'] = new ValidClientGroupSettingsRule();
 
         return $rules;
+    }
+
+    public function withValidator($validator)
+    {
+
+        if ($validator->errors()->isNotEmpty()) {
+            return;
+        }
+        
+        $validator->after(function ($validator) {
+
+            $user = auth()->user();
+            $company = $user->company();
+
+            if (isset($this->settings['lock_invoices']) && $company->verifactuEnabled() && $this->settings['lock_invoices'] != 'when_sent') {
+                $validator->errors()->add('settings.lock_invoices', 'Locked Invoices Cannot Be Disabled');
+            }
+
+        });
     }
 
     public function prepareForValidation()
@@ -53,7 +73,7 @@ class StoreGroupSettingRequest extends Request
         if (array_key_exists('settings', $input)) {
             $input['settings'] = $this->filterSaveableSettings($input['settings']);
         } else {
-            $input['settings'] = (array)ClientSettings::defaults();
+            $input['settings'] = (array) ClientSettings::defaults();
         }
 
         $this->replace($input);
@@ -81,11 +101,13 @@ class StoreGroupSettingRequest extends Request
         /** @var \App\Models\User $user */
         $user = auth()->user();
 
+        unset($settings->pdf_variables);
+
         $settings_data = new SettingsData();
         $settings = $settings_data->cast($settings)->toObject();
 
         if (! $user->account->isFreeHostedClient()) {
-            return (array)$settings;
+            return (array) $settings;
         }
 
         $saveable_casts = CompanySettings::$free_plan_casts;
@@ -96,7 +118,7 @@ class StoreGroupSettingRequest extends Request
             }
         }
 
-        return (array)$settings;
+        return (array) $settings;
     }
 
 }

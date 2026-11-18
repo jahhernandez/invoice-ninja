@@ -1,10 +1,11 @@
 <?php
+
 /**
  * Invoice Ninja (https://invoiceninja.com).
  *
  * @link https://github.com/invoiceninja/invoiceninja source repository
  *
- * @copyright Copyright (c) 2024. Invoice Ninja LLC (https://invoiceninja.com)
+ * @copyright Copyright (c) 2026. Invoice Ninja LLC (https://invoiceninja.com)
  *
  * @license https://www.elastic.co/licensing/elastic-license
  */
@@ -51,7 +52,7 @@ class EmailQuotaExceeded extends Mailable
         $this->logo = $this->company->present()->logo();
         $this->title = ctrans('texts.email_quota_exceeded_subject');
         $this->body = ctrans('texts.email_quota_exceeded_body', ['quota' => $this->company->account->getDailyEmailLimit()]);
-        $this->whitelabel = $this->company->account->isPaid();
+        $this->whitelabel = true;
         $this->replyTo('contact@invoiceninja.com', 'Contact');
 
         return $this->from(config('mail.from.address'), config('mail.from.name'))

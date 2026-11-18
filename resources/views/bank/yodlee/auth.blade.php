@@ -42,9 +42,9 @@
 
 <div class="flex flex-col justify-center items-center mt-10" id="container-fastlink">
     <div class="mb-4">
-        @if($account && $account->isPaid())
+        @if(false)
           <div class="max-h-28">
-              <img src="{{ asset('images/invoiceninja-black-logo-2.png') }}"
+              <img src="{{ asset('images/blank.png') }}"
                    class="border-b border-gray-100 h-18 pb-4" alt="Invoice Ninja logo">
           </div>
         @elseif(isset($company) && !is_null($company))
@@ -96,13 +96,18 @@
 
     var fastlinkBtn = document.getElementById('btn-fastlink');
     fastlinkBtn.addEventListener(
-      'click',
+      'click', 
       function() {
           window.fastlink.open({
             flow: '{{ $flow }}',//flow changes depending on what we are doing sometimes it could be add/edit etc etc
             fastLinkURL: '{{ $fasttrack_url }}',
             accessToken: 'Bearer {{ $access_token }}',
             params: {
+              @if($provider_id)
+              flow: '{{ $flow }}',
+              providerAccountId: {{ $provider_id }},
+              reauthenticate: true,
+              @endif
               configName : '{{ $config_name }}'
             },
             onSuccess: function (data) {
@@ -113,7 +118,7 @@
             onError: function (data) {
               // will be called on error. For list of possible message, refer to onError(data) Method.
               console.log('error');
-
+              
               console.log(data);
             },
             onClose: function (data) {

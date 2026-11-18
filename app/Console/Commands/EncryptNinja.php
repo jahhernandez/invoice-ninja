@@ -1,10 +1,11 @@
 <?php
+
 /**
  * Invoice Ninja (https://invoiceninja.com).
  *
  * @link https://github.com/invoiceninja/invoiceninja source repository
  *
- * @copyright Copyright (c) 2024. Invoice Ninja LLC (https://invoiceninja.com)
+ * @copyright Copyright (c) 2026. Invoice Ninja LLC (https://invoiceninja.com)
  *
  * @license https://www.elastic.co/licensing/elastic-license
  */
@@ -52,11 +53,11 @@ class EncryptNinja extends Command
      */
     public function handle()
     {
-        if($this->option('encrypt')) {
+        if ($this->option('encrypt')) {
             return $this->encryptFiles();
         }
 
-        if($this->option('decrypt')) {
+        if ($this->option('decrypt')) {
             return $this->decryptFiles();
         }
 
@@ -67,7 +68,7 @@ class EncryptNinja extends Command
         foreach ($this->files as $file) {
             $contents = Storage::disk('base')->get($file);
             $encrypted = encrypt($contents);
-            Storage::disk('base')->put($file.".enc", $encrypted);
+            Storage::disk('base')->put($file . ".enc", $encrypted);
         }
     }
 

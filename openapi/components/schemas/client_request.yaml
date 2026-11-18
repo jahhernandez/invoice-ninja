@@ -16,11 +16,11 @@
         name:
           description: 'The name of the client company or organization'
           type: string
-          example: "Jim's Housekeeping"
+          example: "Bob & Co Housekeeping"
         website:
           description: 'The website URL of the client company or organization'
           type: string
-          example: 'https://www.jims-housekeeping.com'
+          example: 'https://www.boandco-housekeeping.com'
         private_notes:
           description: 'Notes that are only visible to the user who created the client'
           type: string
@@ -28,11 +28,11 @@
         industry_id:
           description: 'The unique identifier of the industry the client operates in'
           type: number
-          example: '5'
+          example: 5
         size_id:
           description: 'The unique identifier for the size category of the client company or organization'
           type: number
-          example: '2'
+          example: 2
         address1:
           description: "First line of the client's address"
           type: string
@@ -58,10 +58,14 @@
           type: string
           example: '555-3434-3434'
         country_id:
-          description: "The unique identifier of the client's country"
+          description: |
+            The unique identifier of the client's country expressed by the countries ISO number.
+
+            Optionally, instead of the country_id you can pass either the iso_3166_2 or iso_3166_3 country code into the country_code property.
           type: number
           format: integer
-          example: '1'
+          $ref: '#/components/schemas/CountryType'
+          example: 1
         custom_value1:
           description: 'A custom field for storing additional information'
           type: string
@@ -110,10 +114,13 @@
           type: string
           example: '6110'
         shipping_country_id:
-          description: "The unique identifier of the country for the client's shipping address"
+          description: |
+            The unique identifier of the client's shipping country expressed by the countries ISO number.
+
+            Optionally, instead of the shipping_country_id you can pass either the iso_3166_2 or iso_3166_3 country code into the shipping_country_code property.
           type: number
           format: integer
-          example: '4'
+          example: 4
         is_deleted:
           description: 'A boolean value indicating whether the client has been deleted or not'
           type: boolean
@@ -135,11 +142,16 @@
           description: 'Flag which defines if the client has a valid VAT number'
           type: boolean
           example: false
-          readOnly: true
         classification:
           description: 'The classification of the client'
           type: string
           example: 'individual'
         settings:
           $ref: '#/components/schemas/ClientSettings'
+        tags:
+          description: 'Full sync array of hashed tag IDs. Omit to leave existing tags unchanged; send [] to detach all tags.'
+          type: array
+          items:
+            type: string
+            example: Opnel5aKBz
       type: object

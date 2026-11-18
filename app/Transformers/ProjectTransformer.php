@@ -5,21 +5,23 @@
  *
  * @link https://github.com/invoiceninja/invoiceninja source repository
  *
- * @copyright Copyright (c) 2024. Invoice Ninja LLC (https://invoiceninja.com)
+ * @copyright Copyright (c) 2026. Invoice Ninja LLC (https://invoiceninja.com)
  *
  * @license https://www.elastic.co/licensing/elastic-license
  */
 
 namespace App\Transformers;
 
-use App\Models\Task;
-use App\Models\Quote;
 use App\Models\Client;
-use App\Models\Project;
 use App\Models\Document;
 use App\Models\Expense;
 use App\Models\Invoice;
+use App\Models\Project;
+use App\Models\Quote;
+use App\Models\Task;
+use App\Models\User;
 use App\Utils\Traits\MakesHash;
+use League\Fractal\Resource\Item;
 
 /**
  * class ProjectTransformer.
@@ -41,19 +43,44 @@ class ProjectTransformer extends EntityTransformer
         'invoices',
         'expenses',
         'quotes',
+        'user',
+        'assigned_user',
     ];
+
+    public function includeUser(Project $project): ?Item
+    {
+        $transformer = new UserTransformer($this->serializer);
+
+        if (!$project->user) { //@phpstan-ignore-line
+            return null;
+        }
+
+        return $this->includeItem($project->user, $transformer, User::class);
+    }
+
+    public function includeAssignedUser(Project $project): ?Item
+    {
+        $transformer = new UserTransformer($this->serializer);
+
+        if (!$project->assigned_user) { //@phpstan-ignore-line
+            return null;
+        }
+
+        return $this->includeItem($project->assigned_user, $transformer, User::class);
+    }
 
     public function includeDocuments(Project $project)
     {
         $transformer = new DocumentTransformer($this->serializer);
 
-        if($project->documents)
-            return $this->includeCollection($project->documents, $transformer, Document::class);
-    
-        return null;
+        // if($project->documents->count() > 0) {
+        return $this->includeCollection($project->documents, $transformer, Document::class);
+        // }
+
+        // return null;
     }
 
-    public function includeClient(Project $project): \League\Fractal\Resource\Item
+    public function includeClient(Project $project): ?\League\Fractal\Resource\Item
     {
 
         if (!$project->client) {
@@ -68,6 +95,13 @@ class ProjectTransformer extends EntityTransformer
 
     public function includeTasks(Project $project): \League\Fractal\Resource\Collection
     {
+        $project->loadMissing([
+            'tasks.tags',
+            'tasks.documents',
+            'tasks.project.tags',
+            'tasks.project.documents',
+        ]);
+        
         $transformer = new TaskTransformer($this->serializer);
 
         return $this->includeCollection($project->tasks, $transformer, Task::class);
@@ -75,6 +109,7 @@ class ProjectTransformer extends EntityTransformer
 
     public function includeInvoices(Project $project): \League\Fractal\Resource\Collection
     {
+       
         $transformer = new InvoiceTransformer($this->serializer);
 
         return $this->includeCollection($project->invoices, $transformer, Invoice::class);
@@ -83,14 +118,14 @@ class ProjectTransformer extends EntityTransformer
     public function includeExpenses(Project $project): \League\Fractal\Resource\Collection
     {
         $transformer = new ExpenseTransformer($this->serializer);
-                
+
         return $this->includeCollection($project->expenses, $transformer, Expense::class);
     }
 
     public function includeQuotes(Project $project): \League\Fractal\Resource\Collection
     {
         $transformer = new QuoteTransformer($this->serializer);
-        
+
         return $this->includeCollection($project->quotes, $transformer, Quote::class);
     }
 
@@ -118,6 +153,9 @@ class ProjectTransformer extends EntityTransformer
             'custom_value4' => (string) $project->custom_value4 ?: '',
             'color' => (string) $project->color ?: '',
             'current_hours' => (int) $project->current_hours ?: 0,
+            'tags' => $this->transformTags($project),
+            'budgeted_amount' => (float) $project->budgeted_amount,
         ];
     }
+
 }

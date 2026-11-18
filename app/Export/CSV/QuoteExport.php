@@ -1,4 +1,5 @@
 <?php
+
 /**
  * Quote Ninja (https://quoteninja.com).
  *
@@ -31,12 +32,6 @@ class QuoteExport extends BaseExport
 
     private Decorator $decorator;
 
-    private array $decorate_keys = [
-        'client',
-        'currency',
-        'invoice',
-    ];
-
     public function __construct(Company $company, array $input)
     {
         $this->company = $company;
@@ -45,7 +40,7 @@ class QuoteExport extends BaseExport
         $this->decorator = new Decorator();
     }
 
-    private function init(): Builder
+    public function init(): Builder
     {
 
         MultiDB::setDb($this->company->db);
@@ -63,28 +58,36 @@ class QuoteExport extends BaseExport
 
         $query = Quote::query()
                         ->withTrashed()
-                        ->with('client')
-                        ->whereHas('client', function ($q){
+                        ->with('client', 'location', 'tags')
+                        ->whereHas('client', function ($q) {
                             $q->where('is_deleted', false);
                         })
                         ->where('company_id', $this->company->id);
-                        
-        if(!$this->input['include_deleted'] ?? false){
+
+        if (!($this->input['include_deleted'] ?? false)) {
             $query->where('is_deleted', 0);
         }
 
-        $query = $this->addDateRange($query);
+        $query = $this->addDateRange($query, 'quotes');
 
         $clients = &$this->input['client_id'];
 
-        if($clients) {
+        if ($clients) {
             $query = $this->addClientFilter($query, $clients);
         }
 
         $query = $this->addQuoteStatusFilter($query, $this->input['status'] ?? '');
 
-        if($this->input['document_email_attachment'] ?? false) {
+        $query = $this->addTagFilter($query);
+
+        $query = $this->filterByUserPermissions($query);
+
+        if ($this->input['document_email_attachment'] ?? false) {
             $this->queueDocuments($query);
+        }
+
+        if ($this->input['pdf_email_attachment'] ?? false) {
+            $this->queuePdfs($query);
         }
 
         return $query;
@@ -101,8 +104,10 @@ class QuoteExport extends BaseExport
             return ['identifier' => $key, 'display_value' => $headerdisplay[$value]];
         })->toArray();
 
-        $report = $query->cursor()
+        $report = $this->streamQuery($query)
                 ->map(function ($resource) {
+
+                    /** @var \App\Models\Quote $resource */
                     $row = $this->buildRow($resource);
                     return $this->processMetaData($row, $resource);
                 })->toArray();
@@ -115,7 +120,7 @@ class QuoteExport extends BaseExport
     public function run()
     {
         //load the CSV document from a string
-        $this->csv = Writer::createFromString();
+        $this->csv = Writer::fromString();
         \League\Csv\CharsetConverter::addTo($this->csv, 'UTF-8', 'UTF-8');
 
         $query = $this->init();
@@ -123,15 +128,17 @@ class QuoteExport extends BaseExport
         //insert the header
         $this->csv->insertOne($this->buildHeader());
 
-        $query->cursor()
+        $this->streamQuery($query)
             ->each(function ($quote) {
+
+                /** @var \App\Models\Quote $quote */
                 $this->csv->insertOne($this->buildRow($quote));
             });
 
         return $this->csv->toString();
     }
 
-    private function buildRow(Quote $quote): array
+    protected function buildRow(Quote $quote): array
     {
         $transformed_invoice = $this->quote_transformer->transform($quote);
 
@@ -141,18 +148,23 @@ class QuoteExport extends BaseExport
 
             $parts = explode('.', $key);
 
-            if (is_array($parts) && $parts[0] == 'quote' && array_key_exists($parts[1], $transformed_invoice)) {
+            if (str_ends_with($key, '.tags')) {
+                $entity[$key] = $this->decorator->transform($key, $quote);
+                continue;
+            }
+
+            if ($parts[0] === 'quote' && isset($parts[1], $transformed_invoice[$parts[1]])) {
                 $entity[$key] = $transformed_invoice[$parts[1]];
             } else {
-                // nlog($key);
                 $entity[$key] = $this->decorator->transform($key, $quote);
-                // $entity[$key] = '';
-                // $entity[$key] = $this->resolveKey($key, $quote, $this->quote_transformer);
             }
 
         }
-        // return $entity;
-        return $this->decorateAdvancedFields($quote, $entity);
+
+        $entity = $this->decorateAdvancedFields($quote, $entity);
+        return $this->convertFloats($entity);
+
+
     }
 
     private function decorateAdvancedFields(Quote $quote, array $entity): array
@@ -178,9 +190,12 @@ class QuoteExport extends BaseExport
         }
 
         if (in_array('quote.user_id', $this->input['report_keys'])) {
-            $entity['quote.user_id'] = $quote->user ? $quote->user->present()->name() : '';
+            $entity['quote.user_id'] = $quote->user->present()->name() ?? '';
         }
 
+        if (in_array('quote.subtotal', $this->input['report_keys'])) {
+            $entity['quote.subtotal'] = $quote->calc()->getSubTotal();
+        }
 
         return $entity;
     }

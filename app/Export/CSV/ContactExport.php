@@ -1,10 +1,11 @@
 <?php
+
 /**
  * Invoice Ninja (https://invoiceninja.com).
  *
  * @link https://github.com/invoiceninja/invoiceninja source repository
  *
- * @copyright Copyright (c) 2024. Invoice Ninja LLC (https://invoiceninja.com)
+ * @copyright Copyright (c) 2026. Invoice Ninja LLC (https://invoiceninja.com)
  *
  * @license https://www.elastic.co/licensing/elastic-license
  */
@@ -44,7 +45,7 @@ class ContactExport extends BaseExport
         $this->decorator = new Decorator();
     }
 
-    private function init(): Builder
+    public function init(): Builder
     {
 
         MultiDB::setDb($this->company->db);
@@ -59,11 +60,12 @@ class ContactExport extends BaseExport
 
         $query = ClientContact::query()
                         ->where('company_id', $this->company->id)
-                        ->whereHas('client', function ($q){
+                        ->whereHas('client', function ($q) {
                             $q->where('is_deleted', false);
                         });
 
-        $query = $this->addDateRange($query);
+        $query = $this->addDateRange($query, 'client_contacts');
+        $query = $this->filterByUserPermissions($query);
 
         return $query;
 
@@ -75,13 +77,14 @@ class ContactExport extends BaseExport
         $query = $this->init();
 
         //load the CSV document from a string
-        $this->csv = Writer::createFromString();
+        $this->csv = Writer::fromString();
         \League\Csv\CharsetConverter::addTo($this->csv, 'UTF-8', 'UTF-8');
 
         //insert the header
         $this->csv->insertOne($this->buildHeader());
 
-        $query->cursor()->each(function ($contact) {
+        $this->streamQuery($query)->each(function ($contact) {
+            /** @var \App\Models\ClientContact $contact */
             $this->csv->insertOne($this->buildRow($contact));
         });
 
@@ -99,8 +102,9 @@ class ContactExport extends BaseExport
             return ['identifier' => $key, 'display_value' => $headerdisplay[$value]];
         })->toArray();
 
-        $report = $query->cursor()
+        $report = $this->streamQuery($query)
                 ->map(function ($contact) {
+                    /** @var \App\Models\ClientContact $contact */
                     $row = $this->buildRow($contact);
                     return $this->processMetaData($row, $contact);
                 })->toArray();
@@ -109,7 +113,7 @@ class ContactExport extends BaseExport
     }
 
 
-    private function buildRow(ClientContact $contact): array
+    protected function buildRow(ClientContact $contact): array
     {
         $transformed_contact = false;
 
@@ -120,6 +124,11 @@ class ContactExport extends BaseExport
 
         foreach (array_values($this->input['report_keys']) as $key) {
             $parts = explode('.', $key);
+
+            if (str_ends_with($key, '.tags')) {
+                $entity[$key] = $this->decorator->transform($key, $contact);
+                continue;
+            }
 
             if ($parts[0] == 'client' && array_key_exists($parts[1], $transformed_client)) {
                 $entity[$key] = $transformed_client[$parts[1]];
@@ -132,18 +141,18 @@ class ContactExport extends BaseExport
 
             }
         }
-        // return $entity;
+
         return $this->decorateAdvancedFields($contact->client, $entity);
     }
 
     private function decorateAdvancedFields(Client $client, array $entity): array
     {
         if (in_array('client.country_id', $this->input['report_keys'])) {
-            $entity['country'] = $client->country ? ctrans("texts.country_{$client->country->name}") : '';
+            $entity['client.country_id'] = $client->country ? ctrans("texts.country_{$client->country->name}") : '';
         }
 
         if (in_array('client.shipping_country_id', $this->input['report_keys'])) {
-            $entity['shipping_country'] = $client->shipping_country ? ctrans("texts.country_{$client->shipping_country->name}") : '';
+            $entity['client.shipping_country_id'] = $client->shipping_country ? ctrans("texts.country_{$client->shipping_country->name}") : '';
         }
 
         if (in_array('client.currency', $this->input['report_keys'])) {
@@ -155,7 +164,7 @@ class ContactExport extends BaseExport
         }
 
         if (in_array('client.user_id', $this->input['report_keys'])) {
-            $entity['client.user_id'] = $client->user ? $client->user->present()->name() : '';
+            $entity['client.user_id'] = $client->user ? $client->user->present()->name() : '';// @phpstan-ignore-line
         }
 
         if (in_array('client.assigned_user_id', $this->input['report_keys'])) {

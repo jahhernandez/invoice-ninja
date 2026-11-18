@@ -1,10 +1,11 @@
 <?php
+
 /**
  * Invoice Ninja (https://invoiceninja.com).
  *
  * @link https://github.com/invoiceninja/invoiceninja source repository
  *
- * @copyright Copyright (c) 2024. Invoice Ninja LLC (https://invoiceninja.com)
+ * @copyright Copyright (c) 2026. Invoice Ninja LLC (https://invoiceninja.com)
  *
  * @license https://www.elastic.co/licensing/elastic-license
  */
@@ -61,6 +62,13 @@ class SubscriptionService
 
     public const WHITE_LABEL = 4316;
 
+    private array $peppol_keys = [
+        'peppol_500',
+        'peppol_1000',
+        'selfhost_peppol_500',
+        'selfhost_peppol_1000',
+    ];
+
     private float $credit_payments = 0;
 
     public function __construct(Subscription $subscription)
@@ -86,9 +94,12 @@ class SubscriptionService
             return $this->handleWhiteLabelPurchase($payment_hash);
         }
 
+        if (in_array($payment_hash->data->billing_context->context, $this->peppol_keys)) {
+            return $this->handlePeppolPurchase($payment_hash);
+        }
 
         // if we have a recurring product - then generate a recurring invoice
-        if (strlen($this->subscription->recurring_product_ids) >= 1) {
+        if (strlen($this->subscription->recurring_product_ids ?? '') >= 1) {
             if (isset($payment_hash->data->billing_context->bundle)) {
                 $recurring_invoice = $this->convertInvoiceToRecurringBundle($payment_hash->payment->client_id, $payment_hash->data->billing_context->bundle);
             } else {
@@ -99,6 +110,7 @@ class SubscriptionService
 
             $recurring_invoice = $recurring_invoice_repo->save([], $recurring_invoice);
             $recurring_invoice->auto_bill = $this->subscription->auto_bill;
+            $recurring_invoice->auto_bill_enabled = ($this->subscription->auto_bill == 'always' || $this->subscription->auto_bill == 'optout') ? true : false;
 
             /* Start the recurring service */
             $recurring_invoice->service()
@@ -128,7 +140,7 @@ class SubscriptionService
 
             $response = $this->triggerWebhook($context);
 
-            return $this->handleRedirect('/client/recurring_invoices/'.$recurring_invoice->hashed_id);
+            return $this->handleRedirect('/client/recurring_invoices/' . $recurring_invoice->hashed_id);
         } else {
             $invoice = Invoice::withTrashed()->find($payment_hash->fee_invoice_id);
 
@@ -145,8 +157,8 @@ class SubscriptionService
 
             /* 06-04-2022 */
             /* We may not be in a state where the user is present */
-            if (auth()->guard('contact')) {
-                return $this->handleRedirect('/client/invoices/'.$this->encodePrimaryKey($payment_hash->fee_invoice_id));
+            if (auth()->guard('contact')->user()) {
+                return $this->handleRedirect('/client/invoices/' . $this->encodePrimaryKey($payment_hash->fee_invoice_id));
             }
         }
     }
@@ -168,11 +180,20 @@ class SubscriptionService
         return $response;
     }
 
+    private function handlePeppolPurchase(PaymentHash $payment_hash)
+    {
+
+        if (class_exists(\Modules\Admin\Jobs\Account\PeppolPurchase::class)) {
+            (new \Modules\Admin\Jobs\Account\PeppolPurchase($payment_hash))->run();
+        }
+
+    }
+
     private function handleWhiteLabelPurchase(PaymentHash $payment_hash): bool
     {
         //send license to the user.
         $invoice = $payment_hash->fee_invoice;
-        $license_key = "v5_".Str::uuid()->toString();
+        $license_key = "v5_" . Str::uuid()->toString();
         $invoice->footer = ctrans('texts.white_label_body', ['license_key' => $license_key]);
 
         $recurring_invoice = $this->convertInvoiceToRecurring($payment_hash->payment->client_id);
@@ -180,6 +201,8 @@ class SubscriptionService
         $recurring_invoice_repo = new RecurringInvoiceRepository();
         $recurring_invoice = $recurring_invoice_repo->save([], $recurring_invoice);
         $recurring_invoice->auto_bill = $this->subscription->auto_bill;
+        $recurring_invoice->auto_bill_enabled =  $this->setAutoBillFlag($recurring_invoice->auto_bill);
+        $recurring_invoice->footer = $invoice->footer;
 
         /* Start the recurring service */
         $recurring_invoice->service()
@@ -189,7 +212,6 @@ class SubscriptionService
         //update the invoice and attach to the recurring invoice!!!!!
         $invoice->recurring_id = $recurring_invoice->id;
         $invoice->is_proforma = false;
-        // $invoice->service()->deletePdf();
         $invoice->save();
 
         $contact = $invoice->client->contacts()->whereNotNull('email')->first();
@@ -200,7 +222,7 @@ class SubscriptionService
         $license->first_name = $contact ? $contact->first_name : ' ';
         $license->last_name = $contact ? $contact->last_name : ' ';
         $license->is_claimed = 1;
-        $license->transaction_reference = $payment_hash?->payment?->transaction_reference ?: ' ';
+        $license->transaction_reference = $payment_hash?->payment?->transaction_reference ?: ' '; //@phpstan-ignore-line
         $license->product_id = self::WHITE_LABEL;
         $license->recurring_invoice_id = $recurring_invoice->id;
 
@@ -210,7 +232,7 @@ class SubscriptionService
 
         $email_object = new EmailObject();
         $email_object->to = [new Address($contact->email, $contact->present()->name())];
-        $email_object->subject = ctrans('texts.white_label_link') . " " .ctrans('texts.payment_subject');
+        $email_object->subject = ctrans('texts.white_label_link') . " " . ctrans('texts.payment_subject');
         $email_object->body = ctrans('texts.white_label_body', ['license_key' => $license_key]);
         $email_object->client_id = $invoice->client_id;
         $email_object->client_contact_id = $contact->id;
@@ -235,7 +257,7 @@ class SubscriptionService
         // Redirects from here work just fine. Livewire will respect it.
         $client_contact = ClientContact::find($this->decodePrimaryKey($data['contact_id']));
 
-        if(is_string($data['client_id'])) {
+        if (is_string($data['client_id'])) {
             $data['client_id'] = $this->decodePrimaryKey($data['client_id']);
         }
 
@@ -284,7 +306,7 @@ class SubscriptionService
         //execute any webhooks
         $response = $this->triggerWebhook($context);
 
-        return $this->handleRedirect('/client/recurring_invoices/'.$recurring_invoice->hashed_id);
+        return $this->handleRedirect('/client/recurring_invoices/' . $recurring_invoice->hashed_id);
     }
 
     /**
@@ -416,7 +438,7 @@ class SubscriptionService
 
         $current_date = now();
 
-        $days_of_subscription_used = $start_date->diffInDays($current_date);
+        $days_of_subscription_used = intval(abs($start_date->diffInDays($current_date)));
 
         $days_in_frequency = $this->getDaysInFrequency();
 
@@ -428,7 +450,7 @@ class SubscriptionService
     /**
      * We refund unused days left.
      *
-     * @param  Invoice $invoice
+     * @param  \App\Models\Invoice | \App\Models\Credit $invoice
      * @return float
      */
     private function calculateProRataRefund($invoice, $subscription = null): float
@@ -441,7 +463,7 @@ class SubscriptionService
 
         $current_date = now();
 
-        $days_of_subscription_used = $start_date->diffInDays($current_date);
+        $days_of_subscription_used = intval(abs($start_date->diffInDays($current_date)));
 
         if ($subscription) {
             $days_in_frequency = $subscription->service()->getDaysInFrequency();
@@ -463,7 +485,7 @@ class SubscriptionService
      * transformed for direct injection into
      * the invoice
      *
-     * @param  Invoice $invoice
+     * @param  ?Invoice $invoice
      * @return array
      */
     private function calculateProRataRefundItems($invoice, $is_credit = false): array
@@ -481,7 +503,7 @@ class SubscriptionService
 
         $current_date = now();
 
-        $days_of_subscription_used = $start_date->diffInDays($current_date);
+        $days_of_subscription_used = intval(abs($start_date->diffInDays($current_date)));
 
         $days_in_frequency = $invoice->subscription->service()->getDaysInFrequency();
 
@@ -506,7 +528,7 @@ class SubscriptionService
 
                 $item->cost = ($item->cost * $ratio * $multiplier * $discount_ratio);
                 $item->product_key = ctrans('texts.refund');
-                $item->notes = ctrans('texts.refund') . ": ". $item->notes;
+                $item->notes = ctrans('texts.refund') . ": " . $item->notes;
 
                 $line_items[] = $item;
             }
@@ -543,7 +565,7 @@ class SubscriptionService
 
         $current_date = now();
 
-        $days_to_charge = $start_date->diffInDays($current_date);
+        $days_to_charge = intval(abs($start_date->diffInDays($current_date)));
 
         $days_in_frequency = $this->getDaysInFrequency();
 
@@ -640,7 +662,7 @@ class SubscriptionService
 
         $response = $this->triggerWebhook($context);
 
-        return '/client/recurring_invoices/'.$new_recurring_invoice->hashed_id;
+        return '/client/recurring_invoices/' . $new_recurring_invoice->hashed_id;
     }
 
     /**
@@ -716,7 +738,7 @@ class SubscriptionService
         nlog($response);
 
         if ($credit) {
-            return '/client/credits/'.$credit->hashed_id;
+            return '/client/credits/' . $credit->hashed_id;
         } else {
             return '/client/credits';
         }
@@ -832,7 +854,7 @@ class SubscriptionService
             'invoice' => $this->encodePrimaryKey($payment_hash->fee_invoice_id),
             'client' => $recurring_invoice->client->hashed_id,
             'subscription' => $this->subscription->hashed_id,
-            'contact' => auth()->guard('contact')->user()?->hashed_id ?? $recurring_invoice->client->contacts()->first()->hashed_id,
+            'contact' => auth()->guard('contact')->user()->hashed_id ?? $recurring_invoice->client->contacts()->first()->hashed_id,
             'account_key' => $recurring_invoice->client->custom_value2,
         ];
 
@@ -841,7 +863,7 @@ class SubscriptionService
 
         nlog($response);
 
-        return $this->handleRedirect('/client/recurring_invoices/'.$recurring_invoice->hashed_id);
+        return $this->handleRedirect('/client/recurring_invoices/' . $recurring_invoice->hashed_id);
     }
 
     /**
@@ -969,7 +991,7 @@ class SubscriptionService
                             ->fillDefaults()
                             ->save();
 
-        if($invoice->fresh()->balance == 0) {
+        if ($invoice->fresh()->balance == 0) {
             $invoice->service()->markPaid()->save();
         }
 
@@ -987,17 +1009,7 @@ class SubscriptionService
         $invoice->client_id = $client_id;
         $invoice->is_proforma = true;
         $invoice->number = "####" . ctrans('texts.subscription') . "_" . now()->format('Y-m-d') . "_" . rand(0, 100000);
-        $line_items = $bundle->map(function ($item) {
-            $line_item = new InvoiceItem();
-            $line_item->product_key = $item['product_key'];
-            $line_item->quantity = (float)$item['qty'];
-            $line_item->cost = (float)$item['unit_cost'];
-            $line_item->notes = $item['description'];
-
-            return $line_item;
-        })->toArray();
-
-        $invoice->line_items = $line_items;
+        $invoice->line_items = $this->subscription->calc()->buildV2Items($bundle);
 
         if ($valid_coupon) {
             $invoice->discount = $this->subscription->promo_discount;
@@ -1024,10 +1036,10 @@ class SubscriptionService
         $invoice->subscription_id = $this->subscription->id;
         $invoice->is_proforma = true;
 
-        if (strlen($data['coupon']) >= 1 && ($data['coupon'] == $this->subscription->promo_code) && $this->subscription->promo_discount > 0) {
+        if (strlen($data['coupon'] ?? '') >= 1 && ($data['coupon'] == $this->subscription->promo_code) && $this->subscription->promo_discount > 0) {
             $invoice->discount = $this->subscription->promo_discount;
             $invoice->is_amount_discount = $this->subscription->is_amount_discount;
-        } elseif (strlen($this->subscription->promo_code) == 0 && $this->subscription->promo_discount > 0) {
+        } elseif (strlen($this->subscription->promo_code ?? '') == 0 && $this->subscription->promo_discount > 0) {
             $invoice->discount = $this->subscription->promo_discount;
             $invoice->is_amount_discount = $this->subscription->is_amount_discount;
         }
@@ -1055,9 +1067,9 @@ class SubscriptionService
         $recurring_invoice->line_items = $subscription_repo->generateLineItems($this->subscription, true, false);
         $recurring_invoice->subscription_id = $this->subscription->id;
         $recurring_invoice->frequency_id = $this->subscription->frequency_id ?: RecurringInvoice::FREQUENCY_MONTHLY;
+        $recurring_invoice->remaining_cycles = $this->subscription->remaining_cycles ?? -1;
         $recurring_invoice->date = now();
-        $recurring_invoice->remaining_cycles = -1;
-        $recurring_invoice->auto_bill = $client->getSetting('auto_bill');
+        $recurring_invoice->auto_bill = $this->subscription->auto_bill ?? $client->getSetting('auto_bill');
         $recurring_invoice->auto_bill_enabled =  $this->setAutoBillFlag($recurring_invoice->auto_bill);
         $recurring_invoice->due_date_days = 'terms';
         $recurring_invoice->next_send_date = now()->format('Y-m-d');
@@ -1085,12 +1097,13 @@ class SubscriptionService
 
         $recurring_invoice = RecurringInvoiceFactory::create($this->subscription->company_id, $this->subscription->user_id);
         $recurring_invoice->client_id = $client_id;
+        $recurring_invoice->uses_inclusive_taxes = $client->getSetting('inclusive_taxes');
         $recurring_invoice->line_items = $subscription_repo->generateBundleLineItems($bundle, true, false);
         $recurring_invoice->subscription_id = $this->subscription->id;
         $recurring_invoice->frequency_id = $this->subscription->frequency_id ?: RecurringInvoice::FREQUENCY_MONTHLY;
         $recurring_invoice->date = now()->addSeconds($client->timezone_offset());
-        $recurring_invoice->remaining_cycles = -1;
-        $recurring_invoice->auto_bill = $client->getSetting('auto_bill');
+        $recurring_invoice->remaining_cycles = $this->subscription->remaining_cycles ?? -1;
+        $recurring_invoice->auto_bill = $this->subscription->auto_bill ?? $client->getSetting('auto_bill');
         $recurring_invoice->auto_bill_enabled =  $this->setAutoBillFlag($recurring_invoice->auto_bill);
         $recurring_invoice->due_date_days = 'terms';
         $recurring_invoice->next_send_date = now()->addSeconds($client->timezone_offset())->format('Y-m-d');
@@ -1118,7 +1131,7 @@ class SubscriptionService
      */
     public function triggerWebhook($context)
     {
-        if (empty($this->subscription->webhook_configuration['post_purchase_url']) || is_null($this->subscription->webhook_configuration['post_purchase_url']) || strlen($this->subscription->webhook_configuration['post_purchase_url']) < 1) {
+        if (empty($this->subscription->webhook_configuration['post_purchase_url']) || is_null($this->subscription->webhook_configuration['post_purchase_url']) || strlen($this->subscription->webhook_configuration['post_purchase_url'] ?? '') < 1) { //@phpstan-ignore-line
             return ["message" => "Success", "status_code" => 200];
         }
 
@@ -1176,9 +1189,9 @@ class SubscriptionService
         $keys = $this->transformKeys(explode(",", $this->subscription->product_ids));
 
         if (is_array($keys)) {
-            return Product::query()->whereIn('id', $keys)->get();
+            return Product::query()->with('tags')->where('company_id', $this->subscription->company_id)->whereIn('id', $keys)->get();
         } else {
-            return Product::query()->where('id', $keys)->get();
+            return Product::query()->with('tags')->where('company_id', $this->subscription->company_id)->where('id', $keys)->get();
         }
     }
 
@@ -1196,9 +1209,9 @@ class SubscriptionService
         $keys = $this->transformKeys(explode(",", $this->subscription->recurring_product_ids));
 
         if (is_array($keys)) {
-            return Product::query()->whereIn('id', $keys)->get();
+            return Product::query()->with('tags')->where('company_id', $this->subscription->company_id)->whereIn('id', $keys)->get();
         } else {
-            return Product::query()->where('id', $keys)->get();
+            return Product::query()->with('tags')->where('company_id', $this->subscription->company_id)->where('id', $keys)->get();
         }
     }
 
@@ -1217,9 +1230,9 @@ class SubscriptionService
         $keys = $this->transformKeys(explode(",", $this->subscription->optional_product_ids));
 
         if (is_array($keys)) {
-            return Product::query()->whereIn('id', $keys)->get();
+            return Product::query()->with('tags')->where('company_id', $this->subscription->company_id)->whereIn('id', $keys)->get();
         } else {
-            return Product::query()->where('id', $keys)->get();
+            return Product::query()->with('tags')->where('company_id', $this->subscription->company_id)->where('id', $keys)->get();
         }
     }
 
@@ -1237,9 +1250,9 @@ class SubscriptionService
         $keys = $this->transformKeys(explode(",", $this->subscription->optional_recurring_product_ids));
 
         if (is_array($keys)) {
-            return Product::query()->whereIn('id', $keys)->get();
+            return Product::query()->with('tags')->where('company_id', $this->subscription->company_id)->whereIn('id', $keys)->get();
         } else {
-            return Product::query()->where('id', $keys)->get();
+            return Product::query()->with('tags')->where('company_id', $this->subscription->company_id)->where('id', $keys)->get();
         }
     }
 
@@ -1260,6 +1273,7 @@ class SubscriptionService
         return Subscription::query()
                             ->where('company_id', $this->subscription->company_id)
                             ->where('group_id', $this->subscription->group_id)
+                            ->whereNotNull('group_id')
                             ->where('id', '!=', $this->subscription->id)
                             ->get();
     }
@@ -1363,23 +1377,23 @@ class SubscriptionService
             case RecurringInvoice::FREQUENCY_TWO_WEEKS:
                 return 14;
             case RecurringInvoice::FREQUENCY_FOUR_WEEKS:
-                return now()->diffInDays(now()->addWeeks(4));
+                return intval(abs(now()->diffInDays(now()->addWeeks(4))));
             case RecurringInvoice::FREQUENCY_MONTHLY:
-                return now()->diffInDays(now()->addMonthNoOverflow());
+                return intval(abs(now()->diffInDays(now()->addMonthNoOverflow())));
             case RecurringInvoice::FREQUENCY_TWO_MONTHS:
-                return now()->diffInDays(now()->addMonthsNoOverflow(2));
+                return intval(abs(now()->diffInDays(now()->addMonthsNoOverflow(2))));
             case RecurringInvoice::FREQUENCY_THREE_MONTHS:
-                return now()->diffInDays(now()->addMonthsNoOverflow(3));
+                return intval(abs(now()->diffInDays(now()->addMonthsNoOverflow(3))));
             case RecurringInvoice::FREQUENCY_FOUR_MONTHS:
-                return now()->diffInDays(now()->addMonthsNoOverflow(4));
+                return intval(abs(now()->diffInDays(now()->addMonthsNoOverflow(4))));
             case RecurringInvoice::FREQUENCY_SIX_MONTHS:
-                return now()->diffInDays(now()->addMonthsNoOverflow(6));
+                return intval(abs(now()->diffInDays(now()->addMonthsNoOverflow(6))));
             case RecurringInvoice::FREQUENCY_ANNUALLY:
-                return now()->diffInDays(now()->addYear());
+                return intval(abs(now()->diffInDays(now()->addYear())));
             case RecurringInvoice::FREQUENCY_TWO_YEARS:
-                return now()->diffInDays(now()->addYears(2));
+                return intval(abs(now()->diffInDays(now()->addYears(2))));
             case RecurringInvoice::FREQUENCY_THREE_YEARS:
-                return now()->diffInDays(now()->addYears(3));
+                return intval(abs(now()->diffInDays(now()->addYears(3))));
             default:
                 return 0;
         }
@@ -1436,7 +1450,7 @@ class SubscriptionService
      */
     public function handleNoPaymentFlow(Invoice $invoice, $bundle, ClientContact $contact)
     {
-        if (strlen($this->subscription->recurring_product_ids) >= 1) {
+        if (strlen($this->subscription->recurring_product_ids ?? '') >= 1) {
             $recurring_invoice = $this->convertInvoiceToRecurringBundle($contact->client_id, collect($bundle)->map(function ($bund) {
                 return (object) $bund;
             }));
@@ -1492,7 +1506,7 @@ class SubscriptionService
      */
     private function handleRedirect($default_redirect)
     {
-        if (array_key_exists('return_url', $this->subscription->webhook_configuration) && strlen($this->subscription->webhook_configuration['return_url']) >= 1) {
+        if (array_key_exists('return_url', $this->subscription->webhook_configuration) && strlen($this->subscription->webhook_configuration['return_url'] ?? '') >= 1) {
             return method_exists(redirect(), "send") ? redirect($this->subscription->webhook_configuration['return_url'])->send() : redirect($this->subscription->webhook_configuration['return_url']);
         }
 

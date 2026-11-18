@@ -1,4 +1,5 @@
 <?php
+
 /**
  * Invoice Ninja (https://invoiceninja.com).
  *
@@ -22,20 +23,30 @@ use Illuminate\Support\Str;
 class ClientTransformer extends BaseTransformer
 {
     /**
-     * @param $data
+     * @param $client_data
      *
      * @return array|bool
      */
-    public function transform($data)
+    public function transform($client_data)
     {
-        if (isset($data->name) && $this->getString($data, 'client.name')) {
+        $data = reset($client_data);
+
+        if (isset($data['client.name']) && $this->hasClient($data['client.name'])) {
             throw new ImportException('Client already exists');
+        }
+
+        if (!is_array($data)) {
+            throw new ImportException('Empty row, or invalid data encountered.');
         }
 
         $settings = ClientSettings::defaults();
         $settings->currency_id = (string) $this->getCurrencyByCode($data);
 
-        return [
+        if (array_key_exists('client.payment_terms', $data)) {
+            $settings->payment_terms = $this->getString($data, 'client.payment_terms');
+        }
+
+        $client = [
             'company_id' => $this->company->id,
             'name' => $this->getString($data, 'client.name'),
             'phone' => $this->getString($data, 'client.phone'),
@@ -64,58 +75,93 @@ class ClientTransformer extends BaseTransformer
             'public_notes' => $this->getString($data, 'client.public_notes'),
             'private_notes' => $this->getString($data, 'client.private_notes'),
             'website' => $this->getString($data, 'client.website'),
+            'industry_id' => $this->getValueOrNull($data, 'client.industry_id'),
+            'size_id' => $this->getValueOrNull($data, 'client.size_id'),
             'vat_number' => $this->getString($data, 'client.vat_number'),
             'id_number' => $this->getString($data, 'client.id_number'),
-            'custom_value1' => $this->getString($data, 'client.custom_value1'),
-            'custom_value2' => $this->getString($data, 'client.custom_value2'),
-            'custom_value3' => $this->getString($data, 'client.custom_value3'),
-            'custom_value4' => $this->getString($data, 'client.custom_value4'),
-            'balance' => preg_replace(
-                '/[^0-9,.]+/',
-                '',
-                $this->getFloat($data, 'client.balance')
-            ),
-            'paid_to_date' => preg_replace(
-                '/[^0-9,.]+/',
-                '',
-                $this->getFloat($data, 'client.paid_to_date')
-            ),
+            'custom_value1' => $this->getCustomFieldValue('client1',$this->getString($data, 'client.custom_value1')),
+            'custom_value2' => $this->getCustomFieldValue('client2',$this->getString($data, 'client.custom_value2')),
+            'custom_value3' => $this->getCustomFieldValue('client3',$this->getString($data, 'client.custom_value3')),
+            'custom_value4' => $this->getCustomFieldValue('client4',$this->getString($data, 'client.custom_value4')),
+            'paid_to_date' => 0,
+            'balance' => 0,
             'credit_balance' => 0,
+            'is_tax_exempt' => $this->toBoolean($this->getString($data, 'client.is_tax_exempt')),
+            'classification' => $this->getString($data, 'client.classification'),
             'settings' => $settings,
             'client_hash' => Str::random(40),
-            'contacts' => [
-                [
-                    'first_name' => $this->getString(
-                        $data,
-                        'contact.first_name'
-                    ),
-                    'last_name' => $this->getString($data, 'contact.last_name'),
-                    'email' => $this->getString($data, 'contact.email'),
-                    'phone' => $this->getString($data, 'contact.phone'),
-                    'custom_value1' => $this->getString(
-                        $data,
-                        'contact.custom_value1'
-                    ),
-                    'custom_value2' => $this->getString(
-                        $data,
-                        'contact.custom_value2'
-                    ),
-                    'custom_value3' => $this->getString(
-                        $data,
-                        'contact.custom_value3'
-                    ),
-                    'custom_value4' => $this->getString(
-                        $data,
-                        'contact.custom_value4'
-                    ),
-                ],
-            ],
-            'country_id' => isset($data['client.country_id'])
-                ? $this->getCountryId($data['client.country_id'])
-                : null,
-            'shipping_country_id' => isset($data['client.shipping_country'])
-                ? $this->getCountryId($data['client.shipping_country'])
-                : null,
+            'country_id' => $this->resolveCountryIdOrCompanyDefault(
+                $data,
+                'client.country_id'
+            ),
+            'shipping_country_id' => $this->resolveCountryIdOrCompanyDefault(
+                $data,
+                ['client.shipping_country_id', 'client.shipping_country']
+            ),
         ];
+
+        $contacts = [];
+
+        foreach ($client_data as $data) {
+            $contacts[] = [
+                'first_name' => $this->getString(
+                    $data,
+                    'contact.first_name'
+                ),
+                'last_name' => $this->getString($data, 'contact.last_name'),
+                'email' => $this->getString($data, 'contact.email'),
+                'phone' => $this->getString($data, 'contact.phone'),
+                'custom_value1' => $this->getCustomFieldValue('contact1',$this->getString(
+                    $data,
+                    'contact.custom_value1'
+                )),
+                'custom_value2' => $this->getCustomFieldValue('contact2',$this->getString(
+                    $data,
+                    'contact.custom_value2'
+                )),
+                'custom_value3' => $this->getCustomFieldValue('contact3',$this->getString(
+                    $data,
+                    'contact.custom_value3'
+                )),
+                'custom_value4' => $this->getCustomFieldValue('contact4',$this->getString(
+                    $data,
+                    'contact.custom_value4'
+                )),
+            ];
+        }
+
+        $client['contacts'] = $contacts;
+
+        return $client;
+
+    }
+
+    /**
+     * @param array<string, mixed> $data
+     * @param array<int, string>|string $keys
+     */
+    private function resolveCountryIdOrCompanyDefault(array $data, array|string $keys): int|string|null
+    {
+        foreach ((array) $keys as $key) {
+            if (! array_key_exists($key, $data)) {
+                continue;
+            }
+
+            $country = trim((string) $data[$key]);
+
+            if ($country === '') {
+                return $this->company->settings->country_id;
+            }
+
+            $country_id = $this->getCountryId($country);
+
+            if ($country_id === null) {
+                return $this->company->settings->country_id;
+            }
+
+            return $country_id;
+        }
+
+        return $this->company->settings->country_id;
     }
 }

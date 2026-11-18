@@ -1,4 +1,5 @@
 <?php
+
 /**
  * Invoice Ninja (https://invoiceninja.com).
  *
@@ -20,7 +21,7 @@ use Tests\MockUnitData;
 use Tests\TestCase;
 
 /**
- * @test
+ *
  */
 class UnappliedPaymentRefundTest extends TestCase
 {
@@ -28,12 +29,9 @@ class UnappliedPaymentRefundTest extends TestCase
     use DatabaseTransactions;
     use MockUnitData;
 
-    protected function setUp() :void
+    protected function setUp(): void
     {
         parent::setUp();
-
-        $this->faker = \Faker\Factory::create();
-
         $this->makeTestData();
         $this->withoutExceptionHandling();
 

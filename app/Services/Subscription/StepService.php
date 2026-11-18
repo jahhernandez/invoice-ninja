@@ -50,7 +50,7 @@ class StepService
         }
 
         $auth = collect($dependencies)
-            ->filter(fn ($dependency) => str_starts_with($dependency['id'], 'auth.'))
+            ->filter(fn($dependency) => str_starts_with($dependency['id'], 'auth.'))
             ->keys()
             ->toArray();
 

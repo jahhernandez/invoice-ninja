@@ -9,8 +9,9 @@
         <div class="h-0 flex-1 flex flex-col overflow-y-auto z-0 border-r">
             <nav class="flex-1 pb-4 pt-0 bg-white">
                 @foreach($sidebar as $row)
-                    <a class="group flex items-center p-4 text-sm leading-5 font-medium hover:font-semibold focus:outline-none focus:bg-primary-darken transition ease-in-out duration-150 {{ isActive($row['url'], true) ? 'bg-primary text-white' : 'text-gray-900' }}"
-                       href="{{ route($row['url']) }}">
+                    <a class="group flex items-center p-4 text-sm leading-5 font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-gray-500 transition ease-in-out duration-150 {{ isActive($row['url'], true) ? 'bg-primary text-white hover:brightness-90' : 'text-gray-900 hover:bg-gray-100' }}"
+                       href="{{ route($row['url']) }}"
+                       id="{{ $row['id'] }}">
                         @if(isActive($row['url'], true))
                             <img src="{{ asset('images/svg/' . $row['icon'] . '.svg') }}"
                                  class="w-5 h-5 fill-current text-white mr-3" alt=""/>
@@ -24,7 +25,7 @@
                 @endforeach
             </nav>
 
-            @if(!auth()->guard('vendor')->user()->user->account->isPaid())
+            @if(false)
                 <div class="flex-shrink-0 flex bg-white p-4 justify-center">
                     <div class="flex items-center">
                         <a target="_blank" href="https://www.facebook.com/invoiceninja/">

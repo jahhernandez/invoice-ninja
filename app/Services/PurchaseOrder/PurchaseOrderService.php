@@ -1,10 +1,11 @@
 <?php
+
 /**
  * Invoice Ninja (https://invoiceninja.com).
  *
  * @link https://github.com/invoiceninja/invoiceninja source repository
  *
- * @copyright Copyright (c) 2024. Invoice Ninja LLC (https://invoiceninja.com)
+ * @copyright Copyright (c) 2026. Invoice Ninja LLC (https://invoiceninja.com)
  *
  * @license https://www.elastic.co/licensing/elastic-license
  */
@@ -21,9 +22,7 @@ class PurchaseOrderService
 {
     use MakesHash;
 
-    public function __construct(public PurchaseOrder $purchase_order)
-    {
-    }
+    public function __construct(public PurchaseOrder $purchase_order) {}
 
     public function createInvitations()
     {
@@ -86,7 +85,7 @@ class PurchaseOrderService
     {
         return $this->getEPurchaseOrder($contact);
     }
-    
+
     public function deleteEPurchaseOrder()
     {
         $this->purchase_order->load('invitations');
@@ -94,12 +93,12 @@ class PurchaseOrderService
         $this->purchase_order->invitations->each(function ($invitation) {
             try {
                 // if (Storage::disk(config('filesystems.default'))->exists($this->invoice->client->e_invoice_filepath($invitation).$this->invoice->getFileName("xml"))) {
-                Storage::disk(config('filesystems.default'))->delete($this->purchase_order->vendor->e_document_filepath($invitation).$this->purchase_order->getFileName("xml"));
+                Storage::disk(config('filesystems.default'))->delete($this->purchase_order->vendor->e_document_filepath($invitation) . $this->purchase_order->getFileName("xml"));
                 // }
 
                 // if (Ninja::isHosted() && Storage::disk('public')->exists($this->invoice->client->e_invoice_filepath($invitation).$this->invoice->getFileName("xml"))) {
                 if (Ninja::isHosted()) {
-                    Storage::disk('public')->delete($this->purchase_order->vendor->e_document_filepath($invitation).$this->purchase_order->getFileName("xml"));
+                    Storage::disk('public')->delete($this->purchase_order->vendor->e_document_filepath($invitation) . $this->purchase_order->getFileName("xml"));
                 }
             } catch (\Exception $e) {
                 nlog($e->getMessage());
@@ -154,13 +153,22 @@ class PurchaseOrderService
         return $expense;
     }
 
-    public function sendEmail($contact = null)
+    public function sendEmail($contact = null, $email_type = 'purchase_order')
     {
-        $send_email = new SendEmail($this->purchase_order, null, $contact);
+        $send_email = new SendEmail($this->purchase_order, $email_type, $contact);
 
         return $send_email->run();
     }
 
+    public function getDocuNinjaSignable(?\App\Models\PurchaseOrderInvitation $invite = null)
+    {
+
+        if (class_exists(\InvoiceNinja\AdminApi\Services\DocuNinja\DocuNinja::class)) {
+            $invite = $invite ?: $this->purchase_order->invitations->first();
+            return (new \InvoiceNinja\AdminApi\Services\DocuNinja\DocuNinja())->signable->get($invite);
+        }
+
+    }
 
     /**
      * Saves the purchase order.

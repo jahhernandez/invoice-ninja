@@ -1,4 +1,5 @@
 <?php
+
 /**
  * Credit Ninja (https://creditninja.com).
  *
@@ -21,9 +22,7 @@ class ValidInvoiceCreditRule implements Rule
 {
     public $error_message;
 
-    public function __construct()
-    {
-    }
+    public function __construct() {}
 
     /**
      * @param string $attribute
@@ -48,11 +47,23 @@ class ValidInvoiceCreditRule implements Rule
      */
     private function checkIfCreditInvoiceValid($value): bool
     {
-        $invoice = Invoice::withTrashed()->find($value);
+        $invoice = Invoice::withTrashed()->where('id', $value)->company()->first();
 
-        if ($invoice->balance >= $invoice->amount) {
+        if (!$invoice) {
+
+            $this->error_message = 'Invoice not found.';
+
+            return false;
+
+        } elseif ($invoice->balance >= $invoice->amount) {
             $this->error_message = 'Cannot reverse an invoice with no payment applied.';
 
+            return false;
+        } elseif ($invoice->status_id == Invoice::STATUS_REVERSED) {
+            $this->error_message = 'Cannot reverse an invoice that has already been reversed.';
+            return false;
+        } elseif ($invoice->is_deleted) {
+            $this->error_message = 'Cannot reverse an invoice that has already been deleted.';
             return false;
         }
 
@@ -72,6 +83,7 @@ class ValidInvoiceCreditRule implements Rule
         $cost = 0;
 
         foreach (request()->input('line_items') as $item) {
+            $item = (array) $item;
             $cost += $item['cost'] * $item['quantity'];
         }
 

@@ -1,10 +1,11 @@
 <?php
+
 /**
  * Invoice Ninja (https://invoiceninja.com).
  *
  * @link https://github.com/invoiceninja/invoiceninja source repository
  *
- * @copyright Copyright (c) 2024. Invoice Ninja LLC (https://invoiceninja.com)
+ * @copyright Copyright (c) 2026. Invoice Ninja LLC (https://invoiceninja.com)
  *
  * @license https://www.elastic.co/licensing/elastic-license
  */
@@ -27,9 +28,7 @@ class UpgradePrice extends AbstractService
 
     public float $outstanding_credit = 0;
 
-    public function __construct(protected RecurringInvoice $recurring_invoice, public Subscription $subscription)
-    {
-    }
+    public function __construct(protected RecurringInvoice $recurring_invoice, public Subscription $subscription) {}
 
     public function run(): self
     {
@@ -38,7 +37,7 @@ class UpgradePrice extends AbstractService
                        ->subscription
                        ->status($this->recurring_invoice);
 
-        if($this->status->is_in_good_standing) {
+        if ($this->status->is_in_good_standing) {
             $this->calculateUpgrade();
         } else {
             $this->upgrade_price = $this->subscription->price;
@@ -84,7 +83,7 @@ class UpgradePrice extends AbstractService
 
         $use_credit_setting = $this->recurring_invoice->client->getSetting('use_credits_payment');
 
-        if($use_credit_setting) {
+        if ($use_credit_setting) {
 
             $outstanding_credits = Credit::query()
                                ->where('client_id', $this->recurring_invoice->client_id)

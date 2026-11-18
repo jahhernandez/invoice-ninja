@@ -1,10 +1,11 @@
 <?php
+
 /**
  * Invoice Ninja (https://invoiceninja.com).
  *
  * @link https://github.com/invoiceninja/invoiceninja source repository
  *
- * @copyright Copyright (c) 2024. Invoice Ninja LLC (https://invoiceninja.com)
+ * @copyright Copyright (c) 2026. Invoice Ninja LLC (https://invoiceninja.com)
  *
  * @license https://www.elastic.co/licensing/elastic-license
  */
@@ -23,9 +24,7 @@ class ClientStatement extends Mailable
      *
      * @return void
      */
-    public function __construct(public array $data)
-    {
-    }
+    public function __construct(public array $data) {}
 
     /**
      * Get the message envelope.
@@ -58,7 +57,7 @@ class ClientStatement extends Mailable
                 'text_body' => $this->data['body'],
                 'body' => $this->data['body'],
                 'settings' => $this->data['settings'],
-                'whitelabel' => $this->data['whitelabel'],
+                'whitelabel' => true,
                 'logo' => $this->data['logo'],
                 'signature' => $this->data['signature'],
                 'company' => $this->data['company'],
@@ -77,8 +76,8 @@ class ClientStatement extends Mailable
         $array_of_attachments = [];
 
         foreach ($this->data['attachments'] as $attachment) {
-            $array_of_attachments[] =
-                    Attachment::fromData(fn () => base64_decode($attachment['file']), $attachment['name'])
+            $array_of_attachments[]
+                    = Attachment::fromData(fn() => base64_decode($attachment['file']), $attachment['name'])
                               ->withMime('application/pdf');
         }
 

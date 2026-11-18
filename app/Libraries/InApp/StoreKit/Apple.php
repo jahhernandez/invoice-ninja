@@ -1,10 +1,11 @@
 <?php
+
 /**
  * Invoice Ninja (https://invoiceninja.com).
  *
  * @link https://github.com/invoiceninja/invoiceninja source repository
  *
- * @copyright Copyright (c) 2024. Invoice Ninja LLC (https://invoiceninja.com)
+ * @copyright Copyright (c) 2026. Invoice Ninja LLC (https://invoiceninja.com)
  *
  * @license https://www.elastic.co/licensing/elastic-license
  */
@@ -58,7 +59,7 @@ class Apple
             'bid' => $this->bundle_id,
         ];
 
-        $jwt = JWT::encode($payload, $this->private_key, $this->alg, $header);
+        $jwt = JWT::encode($payload, $this->private_key, $this->alg, null, $header);
 
         $decoded = JWT::decode($jwt, new Key($this->private_key, $this->alg));
 

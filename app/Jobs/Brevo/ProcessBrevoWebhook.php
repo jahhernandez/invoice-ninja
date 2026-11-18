@@ -1,10 +1,11 @@
 <?php
+
 /**
  * Invoice Ninja (https://invoiceninja.com).
  *
  * @link https://github.com/invoiceninja/invoiceninja source repository
  *
- * @copyright Copyright (c) 2024. Invoice Ninja LLC (https://invoiceninja.com)
+ * @copyright Copyright (c) 2026. Invoice Ninja LLC (https://invoiceninja.com)
  *
  * @license https://www.elastic.co/licensing/elastic-license
  */
@@ -36,7 +37,10 @@ use Turbo124\Beacon\Facades\LightLogs;
 
 class ProcessBrevoWebhook implements ShouldQueue
 {
-    use Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
+    use Dispatchable;
+    use InteractsWithQueue;
+    use Queueable;
+    use SerializesModels;
 
     public $tries = 1;
 
@@ -52,15 +56,15 @@ class ProcessBrevoWebhook implements ShouldQueue
         'events' => [],
     ];
 
+
+    /** @var ?\App\Models\Company $company*/
     private ?Company $company = null;
 
     /**
      * Create a new job instance.
      *
      */
-    public function __construct(private array $request)
-    {
-    }
+    public function __construct(private array $request) {}
 
     private function getSystemLog(string $message_id): ?SystemLog
     {
@@ -83,12 +87,12 @@ class ProcessBrevoWebhook implements ShouldQueue
      * Execute the job.
      *
      *
-     * @return void
      */
     public function handle()
     {
         MultiDB::findAndSetDbByCompanyKey($this->request['tags'][0]);
-        $this->company = Company::where('company_key', $this->request['tags'][0])->first();
+
+        $this->company = Company::query()->where('company_key', $this->request['tags'][0])->first();
 
         $this->invitation = $this->discoverInvitation($this->request['message-id']);
 
@@ -396,6 +400,8 @@ class ProcessBrevoWebhook implements ShouldQueue
 
     private function discoverInvitation(string $message_id)
     {
+        $message_id = str_replace(['<', '>'], '', $message_id);
+
         $invitation = false;
 
         if ($invitation = InvoiceInvitation::where('message_id', $message_id)->first()) {
@@ -421,10 +427,21 @@ class ProcessBrevoWebhook implements ShouldQueue
     public function getRawMessage(string $message_id)
     {
 
-        $brevo_secret = !empty($this->company->settings->brevo_secret) ? $this->company->settings->brevo_secret : config('services.brevo.key');
+        $brevo_secret = !empty($this->company->settings->brevo_secret) ? $this->company->settings->brevo_secret : config('services.brevo.secret');
 
         $brevo = new TransactionalEmailsApi(null, Configuration::getDefaultConfiguration()->setApiKey('api-key', $brevo_secret));
-        $messageDetail = $brevo->getTransacEmailContent($message_id);
+
+        $brevo_message_id = str_starts_with($message_id, '<') ? $message_id : '<' . $message_id . '>';
+
+        $list = $brevo->getTransacEmailsList(null, null, $brevo_message_id);
+
+        if (empty($list->getTransactionalEmails())) {
+            return null;
+        }
+
+        $uuid = $list->getTransactionalEmails()[0]->getUuid();
+
+        $messageDetail = $brevo->getTransacEmailContent($uuid);
         return $messageDetail;
 
     }
@@ -434,6 +451,10 @@ class ProcessBrevoWebhook implements ShouldQueue
     {
 
         $messageDetail = $this->getRawMessage($message_id);
+
+        if (!$messageDetail) {
+            return null;
+        }
 
         $event = collect($messageDetail->getEvents())->first(function ($event) {
 
@@ -456,6 +477,10 @@ class ProcessBrevoWebhook implements ShouldQueue
 
             $messageDetail = $this->getRawMessage($this->request['message-id']);
 
+            if (!$messageDetail) {
+                return $this->default_response;
+            }
+
             $recipient = array_key_exists("email", $this->request) ? $this->request["email"] : '';
             $server_ip = array_key_exists("sending_ip", $this->request) ? $this->request["sending_ip"] : '';
             $delivery_message = array_key_exists("reason", $this->request) ? $this->request["reason"] : '';
@@ -466,11 +491,11 @@ class ProcessBrevoWebhook implements ShouldQueue
                 return [
                     'bounce_id' => '',
                     'recipient' => $recipient,
-                    'status' => $event->name ?? '',
+                    'status' => $event->getName(),
                     'delivery_message' => $delivery_message, // TODO: @turbo124 this results in all cases for the history in the string, which may be incorrect
                     'server' => '',
                     'server_ip' => $server_ip,
-                    'date' => \Carbon\Carbon::parse($event->getTime())->format('Y-m-d H:i:s') ?? '',
+                    'date' => \Carbon\Carbon::parse($event->getTime())->format('Y-m-d H:i:s'),
                 ];
 
             })->toArray();

@@ -1,4 +1,5 @@
 <?php
+
 /**
  * Credit Ninja (https://creditninja.com).
  *
@@ -29,6 +30,8 @@ class CreditObserver
     public function created(Credit $credit)
     {
         $subscriptions = Webhook::where('company_id', $credit->company_id)
+                                    ->where('is_deleted', false)
+                                    ->whereNull('deleted_at')
                                     ->where('event_id', Webhook::EVENT_CREATE_CREDIT)
                                     ->exists();
 
@@ -56,6 +59,8 @@ class CreditObserver
         }
 
         $subscriptions = Webhook::where('company_id', $credit->company_id)
+                                    ->where('is_deleted', false)
+                                    ->whereNull('deleted_at')
                                     ->where('event_id', $event)
                                     ->exists();
 
@@ -77,6 +82,8 @@ class CreditObserver
         }
 
         $subscriptions = Webhook::where('company_id', $credit->company_id)
+                                    ->where('is_deleted', false)
+                                    ->whereNull('deleted_at')
                                     ->where('event_id', Webhook::EVENT_ARCHIVE_CREDIT)
                                     ->exists();
 

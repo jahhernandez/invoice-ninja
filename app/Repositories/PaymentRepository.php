@@ -1,16 +1,18 @@
 <?php
+
 /**
  * Invoice Ninja (https://invoiceninja.com).
  *
  * @link https://github.com/invoiceninja/invoiceninja source repository
  *
- * @copyright Copyright (c) 2024. Invoice Ninja LLC (https://invoiceninja.com)
+ * @copyright Copyright (c) 2026. Invoice Ninja LLC (https://invoiceninja.com)
  *
  * @license https://www.elastic.co/licensing/elastic-license
  */
 
 namespace App\Repositories;
 
+use App\Events\Payment\PaymentApplicationDateChanged;
 use App\Events\Payment\PaymentWasCreated;
 use App\Events\Payment\PaymentWasDeleted;
 use App\Jobs\Credit\ApplyCreditPayment;
@@ -20,11 +22,16 @@ use App\Models\Credit;
 use App\Models\Invoice;
 use App\Models\Payment;
 use App\Models\Paymentable;
+use App\Services\EDocument\Standards\France\FrancePaymentApplicationRecorder;
+use App\Services\Payment\PaymentApplicationDateResolver;
 use App\Utils\Ninja;
 use App\Utils\Traits\MakesHash;
 use App\Utils\Traits\SavesDocuments;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
 
 /**
  * PaymentRepository.
@@ -50,7 +57,123 @@ class PaymentRepository extends BaseRepository
      */
     public function save(array $data, Payment $payment): ?Payment
     {
-        return $this->applyPayment($data, $payment);
+        $tag_ids = $this->resolveTagIdsForSync($data, $payment);
+        $original_date = $payment->date;
+        $paymentables_to_move = $this->paymentablesDerivedFromDate($data, $payment, $original_date);
+        $new_date = isset($data['date']) ? (string) $data['date'] : null;
+        $defer_date_change = $original_date
+            && $new_date
+            && $new_date !== $original_date
+            && $paymentables_to_move->isNotEmpty();
+        $applied_data = $data;
+
+        if ($defer_date_change) {
+            $applied_data['date'] = $original_date;
+        }
+
+        $payment = $this->applyPayment($applied_data, $payment);
+        $moved_paymentables = $this->movePaymentableDates(
+            $payment,
+            $original_date,
+            $defer_date_change ? $new_date : null,
+            $paymentables_to_move,
+        );
+        $this->syncResolvedTags($payment, $tag_ids);
+
+        if ($original_date && $payment->date && $moved_paymentables->isNotEmpty()) {
+            PaymentApplicationDateChanged::dispatch(
+                $payment->id,
+                $payment->company->db,
+                $original_date,
+                $payment->date,
+                $moved_paymentables->pluck('id')->map(fn($id): int => (int) $id)->sort()->values()->all(),
+            );
+        }
+
+        return $payment;
+    }
+
+    /**
+     * Select existing application rows whose legacy business date was inherited
+     * from the payment date. Rows created by this save are intentionally excluded.
+     *
+     * @return Collection<int, Paymentable>
+     */
+    private function paymentablesDerivedFromDate(array $data, Payment $payment, ?string $original_date): Collection
+    {
+        if (! $payment->exists
+            || ! $original_date
+            || empty($data['date'])
+            || (string) $data['date'] === $original_date) {
+            return collect();
+        }
+
+        $timezone = $payment->company->timezone()?->name ?: config('app.timezone');
+
+        return Paymentable::withTrashed()
+            ->where('payment_id', $payment->id)
+            ->get()
+            ->filter(function (Paymentable $paymentable) use ($original_date, $timezone): bool {
+                return app(PaymentApplicationDateResolver::class)->resolve($paymentable, $timezone) === $original_date;
+            })
+            ->values();
+    }
+
+    /**
+     * @param Collection<int, Paymentable> $paymentables
+     */
+    private function movePaymentableDates(
+        Payment $payment,
+        ?string $original_date,
+        ?string $new_date,
+        Collection $paymentables,
+    ): Collection
+    {
+        if (! $original_date
+            || ! $new_date
+            || $new_date === $original_date
+            || $paymentables->isEmpty()) {
+            return collect();
+        }
+
+        $moved_paymentables = collect();
+        $timezone = $payment->company->timezone()?->name ?: config('app.timezone');
+        $application_timestamp = app(PaymentApplicationDateResolver::class)
+            ->encodeBusinessDate($new_date, $timezone);
+        $date_change_identity = Str::uuid()->toString();
+        $france_reporting_enabled = (bool) $payment->company->getSetting('france_reporting_enabled');
+
+        DB::transaction(function () use (
+            $payment,
+            $paymentables,
+            $application_timestamp,
+            $original_date,
+            $moved_paymentables,
+            $date_change_identity,
+            $new_date,
+            $france_reporting_enabled,
+        ): void {
+            $payment->date = $new_date;
+            $payment->saveQuietly();
+
+            foreach ($paymentables as $paymentable) {
+                if ($paymentable->paymentable_type === 'invoices' && $france_reporting_enabled) {
+                    app(FrancePaymentApplicationRecorder::class)->recordApplicationDateChange(
+                        $payment,
+                        $paymentable,
+                        $original_date,
+                        $new_date,
+                        $date_change_identity,
+                    );
+                }
+
+                $paymentable->created_at = $application_timestamp;
+                $paymentable->saveQuietly();
+                $moved_paymentables->push($paymentable);
+            }
+        }, attempts: 3);
+
+        return $moved_paymentables;
     }
 
     /**
@@ -59,7 +182,7 @@ class PaymentRepository extends BaseRepository
      * @param  Payment $payment The $payment entity
      * @return Payment          The updated/created payment object
      */
-    private function applyPayment(array $data, Payment $payment): ?Payment
+    private function applyPayment(array $data, Payment $payment): Payment
     {
         $is_existing_payment = true;
         $client = false;
@@ -75,41 +198,33 @@ class PaymentRepository extends BaseRepository
 
             $is_existing_payment = false;
 
-            \DB::connection(config('database.default'))->transaction(function () use ($data) {
-                $client = Client::query()->where('id', $data['client_id'])->withTrashed()->lockForUpdate()->first();
-
-                /*We only update the paid to date ONCE per payment*/
-                if (array_key_exists('invoices', $data) && is_array($data['invoices']) && count($data['invoices']) > 0) {
-                    if ($data['amount'] == '') {
-                        $data['amount'] = array_sum(array_column($data['invoices'], 'amount'));
-                    }
-
-                    $client->service()->updatePaidToDate($data['amount'])->save();
-                    $client->saveQuietly();
-                } else {
-                    //this fixes an edge case with unapplied payments
-                    $client->service()->updatePaidToDate($data['amount'])->save();
-                    // $client->paid_to_date += $data['amount'];
-                    $client->saveQuietly();
-                }
-
-                if (array_key_exists('credits', $data) && is_array($data['credits']) && count($data['credits']) > 0) {
-                    $_credit_totals = array_sum(array_column($data['credits'], 'amount'));
-
-                    $client->service()->updatePaidToDate($_credit_totals)->save();
-                    // $client->paid_to_date += $_credit_totals;
-                    $client->saveQuietly();
-                }
-            }, 1);
-
             $client = Client::query()->where('id', $data['client_id'])->withTrashed()->first();
+
+            /*We only update the paid to date ONCE per payment*/
+            if (array_key_exists('invoices', $data) && is_array($data['invoices']) && count($data['invoices']) > 0) {
+                if ($data['amount'] == '') {
+                    $data['amount'] = array_sum(array_column($data['invoices'], 'amount'));
+                }
+
+                $client->service()->updatePaidToDate($data['amount'])->save();
+            } else {
+                //this fixes an edge case with unapplied payments
+                $client->service()->updatePaidToDate($data['amount'])->save();
+            }
+
+            if (array_key_exists('credits', $data) && is_array($data['credits']) && count($data['credits']) > 0) {
+                $_credit_totals = array_sum(array_column($data['credits'], 'amount'));
+                $client->service()->updatePaidToDate($_credit_totals)->save();
+            }
+
+            $client->refresh();
 
         }
 
         /*Fill the payment*/
         $fill_data = $data;
 
-        if($this->import_mode && isset($fill_data['invoices'])) {
+        if ($this->import_mode && isset($fill_data['invoices'])) {
             unset($fill_data['invoices']);
         }
 
@@ -133,7 +248,7 @@ class PaymentRepository extends BaseRepository
         }
 
         /*Ensure payment number generated*/
-        if (! $payment->number || strlen($payment->number) == 0) {
+        if (! $payment->number || strlen($payment->number ?? '') == 0) { //@phpstan-ignore-line
             $payment->service()->applyNumber();
         }
 
@@ -153,19 +268,37 @@ class PaymentRepository extends BaseRepository
 
                 if ($invoice) {
 
-                    //25-06-2023
-
                     $paymentable = new Paymentable();
                     $paymentable->payment_id = $payment->id;
                     $paymentable->paymentable_id = $invoice->id;
                     $paymentable->paymentable_type = 'invoices';
                     $paymentable->amount = $paid_invoice['amount'];
+                    $timezone = $payment->company->timezone()?->name ?: config('app.timezone');
+                    $paymentable->created_at = $is_existing_payment
+                        ? now('UTC')->timestamp
+                        : app(PaymentApplicationDateResolver::class)->encodeBusinessDate($payment->date ?? now($timezone)->toDateString(), $timezone);
                     $paymentable->save();
 
                     $invoice = $invoice->service()
                                        ->markSent()
                                        ->applyPayment($payment, $paid_invoice['amount'])
                                        ->save();
+
+                    try {
+                        $invoice->loadMissing(['client.country', 'client.company']);
+
+                        if ($invoice->client->reportableFrTransaction()) {
+                            app(FrancePaymentApplicationRecorder::class)->recordMovement(
+                                payment: $payment,
+                                invoice: $invoice,
+                                paymentable: $paymentable,
+                                movementAmount: $paid_invoice['amount'],
+                                movementDate: $payment->date ?: now()->toDateString(),
+                            );
+                        }
+                    } catch (\Throwable $exception) {
+                        report($exception);
+                    }
                 }
             }
         } else {
@@ -190,6 +323,10 @@ class PaymentRepository extends BaseRepository
                     $paymentable->paymentable_id = $credit->id;
                     $paymentable->paymentable_type = Credit::class;
                     $paymentable->amount = $paid_credit['amount'];
+                    $timezone = $payment->company->timezone()?->name ?: config('app.timezone');
+                    $paymentable->created_at = $is_existing_payment
+                        ? now('UTC')->timestamp
+                        : app(PaymentApplicationDateResolver::class)->encodeBusinessDate($payment->date ?? now($timezone)->toDateString(), $timezone);
                     $paymentable->save();
 
                     $credit = $credit->service()->markSent()->save();
@@ -208,7 +345,7 @@ class PaymentRepository extends BaseRepository
             event(new PaymentWasCreated($payment, $payment->company, Ninja::eventVars(auth()->user() ? auth()->user()->id : null)));
         }
 
-        $payment->applied += ($invoice_totals - $credit_totals); //wont work because - check tests
+        $payment->applied += ($invoice_totals - $credit_totals);
 
         $payment->saveQuietly();
 

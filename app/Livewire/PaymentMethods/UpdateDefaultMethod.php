@@ -5,7 +5,7 @@
  *
  * @link https://github.com/invoiceninja/invoiceninja source repository
  *
- * @copyright Copyright (c) 2024. Invoice Ninja LLC (https://invoiceninja.com)
+ * @copyright Copyright (c) 2026. Invoice Ninja LLC (https://invoiceninja.com)
  *
  * @license https://www.elastic.co/licensing/elastic-license
  */
@@ -13,38 +13,50 @@
 namespace App\Livewire\PaymentMethods;
 
 use App\Libraries\MultiDB;
+use App\Models\ClientContact;
+use App\Models\ClientGatewayToken;
+use App\Models\Company;
+use Livewire\Attributes\Computed;
+use Livewire\Attributes\Locked;
 use Livewire\Component;
 
 class UpdateDefaultMethod extends Component
 {
-    /** @var \App\Models\Company */
-    public $company;
+    #[Locked]
+    public $db;
 
-    /** @var \App\Models\ClientGatewayToken */
-    public $token;
+    #[Locked]
+    public $token_id;
 
-    /** @var \App\Models\Client */
-    public $client;
-
-    public function mount()
+    #[Computed]
+    public function token()
     {
-        $this->company = $this->client->company;
+        $contact = auth()->guard('contact')->user();
+        abort_unless($contact instanceof ClientContact, 403);
 
-        MultiDB::setDb($this->company->db);
+        $company = $contact->company;
 
-        // $this->is_disabled = $this->token->is_default;
+        MultiDB::setDb($company->db);
+
+        return ClientGatewayToken::query()
+            ->where('client_id', $contact->client_id)
+            ->where('company_id', $contact->company_id)
+            ->where('is_deleted', false)
+            ->findOrFail($this->token_id);
     }
 
     public function makeDefault(): void
     {
-        if ($this->token->is_default) {
+        $token = $this->token();
+
+        if ($token->is_default) {
             return;
         }
 
-        $this->client->gateway_tokens()->update(['is_default' => 0]);
+        $token->client->gateway_tokens()->update(['is_default' => 0]);
 
-        $this->token->is_default = 1;
-        $this->token->save();
+        $token->is_default = 1;
+        $token->save();
 
         $this->dispatch('UpdateDefaultMethod::method-updated');
     }

@@ -5,7 +5,7 @@
  *
  * @link https://github.com/invoiceninja/invoiceninja source repository
  *
- * @copyright Copyright (c) 2024. Invoice Ninja LLC (https://invoiceninja.com)
+ * @copyright Copyright (c) 2026. Invoice Ninja LLC (https://invoiceninja.com)
  *
  * @license https://www.elastic.co/licensing/elastic-license
  */
@@ -15,12 +15,16 @@ namespace App\Http\Controllers\ClientPortal;
 use App\Events\Payment\Methods\MethodDeleted;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\ClientPortal\PaymentMethod\CreatePaymentMethodRequest;
-use App\Http\Requests\Request;
+use App\Http\Requests\ClientPortal\PaymentMethod\DestroyPaymentMethodRequest;
+use App\Http\Requests\ClientPortal\PaymentMethod\ShowPaymentMethodRequest;
+use App\Http\Requests\ClientPortal\PaymentMethod\StorePaymentMethodRequest;
+use App\Http\Requests\ClientPortal\PaymentMethod\VerifyPaymentMethodRequest;
 use App\Models\ClientGatewayToken;
 use App\Models\GatewayType;
 use App\Utils\Ninja;
 use App\Utils\Traits\MakesDates;
 use Exception;
+use Illuminate\Http\Request;
 use Illuminate\Contracts\View\Factory;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\View\View;
@@ -56,9 +60,10 @@ class PaymentMethodController extends Controller
 
         $data['gateway'] = $gateway;
 
-        /** @var \App\Models\ClientContact auth()->user() **/
-        $client_contact = auth()->user();
+        /** @var \App\Models\ClientContact auth()->guard('contact')->user() **/
+        $client_contact = auth()->guard('contact')->user();
         $data['client'] = $client_contact->client;
+        $data['contact_id'] = $client_contact->id;
 
         return $gateway
             ->driver($client_contact->client)
@@ -77,8 +82,8 @@ class PaymentMethodController extends Controller
     {
         $gateway = $this->getClientGateway();
 
-        /** @var \App\Models\ClientContact auth()->user() **/
-        $client_contact = auth()->user();
+        /** @var \App\Models\ClientContact auth()->guard('contact')->user() **/
+        $client_contact = auth()->guard('contact')->user();
 
         return $gateway
             ->driver($client_contact->client)
@@ -93,33 +98,32 @@ class PaymentMethodController extends Controller
      * @param ClientGatewayToken $payment_method
      * @return Factory|View
      */
-    public function show(ClientGatewayToken $payment_method)
+    public function show(ShowPaymentMethodRequest $request, ClientGatewayToken $payment_method)
     {
         return $this->render('payment_methods.show', [
             'payment_method' => $payment_method,
         ]);
     }
 
-    public function verify(ClientGatewayToken $payment_method)
+    public function verify(VerifyPaymentMethodRequest $request, ClientGatewayToken $payment_method)
     {
-
-        /** @var \App\Models\ClientContact auth()->user() **/
-        $client_contact = auth()->user();
+        /** @var \App\Models\ClientContact auth()->guard('contact')->user() **/
+        $client_contact = auth()->guard('contact')->user();
 
         return $payment_method->gateway
             ->driver($client_contact->client)
-            ->setPaymentMethod(request()->query('method'))
+            ->setPaymentMethod($request->query('method'))
             ->verificationView($payment_method);
     }
 
-    public function processVerification(Request $request, ClientGatewaytoken $payment_method)
+    public function processVerification(VerifyPaymentMethodRequest $request, ClientGatewayToken $payment_method)
     {
-        /** @var \App\Models\ClientContact auth()->user() **/
-        $client_contact = auth()->user();
+        /** @var \App\Models\ClientContact auth()->guard('contact')->user() **/
+        $client_contact = auth()->guard('contact')->user();
 
         return $payment_method->gateway
             ->driver($client_contact->client)
-            ->setPaymentMethod(request()->query('method'))
+            ->setPaymentMethod($request->query('method'))
             ->processVerification($request, $payment_method);
     }
 
@@ -127,12 +131,12 @@ class PaymentMethodController extends Controller
      * Remove the specified resource from storage.
      *
      * @param ClientGatewayToken $payment_method
-     * @return RedirectResponse
+     * @return \Illuminate\Http\RedirectResponse
      */
-    public function destroy(ClientGatewayToken $payment_method)
+    public function destroy(DestroyPaymentMethodRequest $request, ClientGatewayToken $payment_method)
     {
-        /** @var \App\Models\ClientContact auth()->user() **/
-        $client_contact = auth()->user();
+        /** @var \App\Models\ClientContact auth()->guard('contact')->user() **/
+        $client_contact = auth()->guard('contact')->user();
 
         if ($payment_method->gateway()->exists()) {
             $payment_method->gateway
@@ -145,8 +149,17 @@ class PaymentMethodController extends Controller
             event(new MethodDeleted($payment_method, auth()->guard('contact')->user()->company, Ninja::eventVars(auth()->guard('contact')->user()->id)));
 
             $payment_method->is_deleted = true;
+            $payment_method->is_default = false;
             $payment_method->delete();
             $payment_method->save();
+
+
+            $def_cgt = auth()->guard('contact')->user()->client->gateway_tokens()->orderBy('id', 'desc')->first();
+
+            if ($def_cgt) {
+                $def_cgt->is_default = true;
+                $def_cgt->save();
+            }
 
         } catch (Exception $e) {
             nlog($e->getMessage());
@@ -161,18 +174,18 @@ class PaymentMethodController extends Controller
 
     private function getClientGateway()
     {
-        /** @var \App\Models\ClientContact auth()->user() **/
-        $client_contact = auth()->user();
+        /** @var \App\Models\ClientContact auth()->guard('contact')->user() **/
+        $client_contact = auth()->guard('contact')->user();
 
-        if (request()->query('method') == GatewayType::CREDIT_CARD) {
+        if ((string) request()->query('method') === (string) GatewayType::CREDIT_CARD) {
             return $client_contact->client->getCreditCardGateway();
         }
-        if (request()->query('method') == GatewayType::BACS) {
+        if ((string) request()->query('method') === (string) GatewayType::BACS) {
             return $client_contact->client->getBACSGateway();
         }
 
         if (in_array(request()->query('method'), [GatewayType::BANK_TRANSFER, GatewayType::DIRECT_DEBIT, GatewayType::SEPA, GatewayType::ACSS])) {
-            return $client_contact->client->getBankTransferGateway();
+            return $client_contact->client->getBankTransferGateway(true); //Required to allow rotessa to be used when adding a payment method.
         }
 
         abort(404, 'Gateway not found.');

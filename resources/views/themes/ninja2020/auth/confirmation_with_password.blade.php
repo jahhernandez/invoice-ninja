@@ -5,13 +5,14 @@
     <div class="flex h-screen">
         <div class="m-auto md:w-1/3 lg:w-1/5">
             <div class="flex flex-col">
-                <img src="{{ asset('images/invoiceninja-black-logo-2.png') }}" class="border-b border-gray-100 h-18 pb-4" alt="Invoice Ninja logo">
+                <img src="{{ asset('images/blank.png') }}" class="border-b border-gray-100 h-18 pb-4" alt="Invoice Ninja logo">
                 <h1 class="text-center text-3xl mt-10">{{ ctrans('texts.set_password') }}</h1>
                 <span class="text-gray-900 text-sm text-center">{{ ctrans('texts.update_password_on_confirm') }}</span>
 
                 <form action="{{ url()->current() }}" method="post" class="mt-6">
                     @csrf
                     <input type="hidden" name="user_id" value="{{ $user_id }}">
+                    <input type="hidden" name="confirmation_code" value="{{ $confirmation_code }}">
                     @if(request()->has('react'))
                     <input type="hidden" name="react" value="true">
                     @endif

@@ -12,22 +12,29 @@
 
 namespace App\Livewire\BillingPortal;
 
+use App\Utils\Ninja;
+use Livewire\Component;
 use App\Libraries\MultiDB;
+use Illuminate\Support\Str;
+use Livewire\Attributes\On;
+use App\Models\Subscription;
+use App\Utils\Traits\MakesHash;
+use Livewire\Attributes\Computed;
+use Illuminate\Support\Facades\App;
+use App\Livewire\BillingPortal\Cart\Cart;
+use App\Livewire\BillingPortal\Payments\Methods;
 use App\Livewire\BillingPortal\Authentication\Login;
 use App\Livewire\BillingPortal\Authentication\Register;
 use App\Livewire\BillingPortal\Authentication\RegisterOrLogin;
-use App\Livewire\BillingPortal\Cart\Cart;
-use App\Livewire\BillingPortal\Payments\Methods;
-use App\Models\Subscription;
-use Livewire\Attributes\Computed;
-use Livewire\Attributes\On;
-use Livewire\Component;
-use Illuminate\Support\Str;
+use Livewire\Attributes\Locked;
 
 class Purchase extends Component
 {
-    public Subscription $subscription;
+    use MakesHash;
+    #[Locked]
+    public string $subscription_id;
 
+    #[Locked]
     public string $db;
 
     public array $request_data;
@@ -35,8 +42,6 @@ class Purchase extends Component
     public string $hash;
 
     public ?string $campaign;
-
-    // 
 
     public int $step = 0;
 
@@ -71,9 +76,6 @@ class Purchase extends Component
         $clone = $this->context;
 
         data_set($this->context, $property, $value);
-
-        // The following may not be needed, as we can pass arround $context.
-        // cache()->set($this->hash, $this->context);
 
         if ($clone !== $this->context) {
             $this->id = Str::uuid();
@@ -117,6 +119,12 @@ class Purchase extends Component
         return "summary-{$this->id}";
     }
 
+    #[Computed()]
+    public function subscription()
+    {
+        return Subscription::find($this->decodePrimaryKey($this->subscription_id))?->withoutRelations()?->makeHidden(['webhook_configuration','steps']);
+    }
+
     public static function defaultSteps()
     {
         return [
@@ -129,11 +137,25 @@ class Purchase extends Component
     {
         $classes = collect(self::$dependencies)->mapWithKeys(fn($dependency, $class) => [$dependency['id'] => $class])->toArray();
 
-        if ($this->subscription->steps) {
-            $steps = collect(explode(',', $this->subscription->steps))
+        MultiDB::setDb($this->db);
+
+        $sub = Subscription::find($this->decodePrimaryKey($this->subscription_id));
+
+
+        if (!$sub) {
+
+
+            session()->flash('title', __('texts.subscription_unavailable'));
+            session()->flash('notification', '');
+
+            return redirect()->route('client.error');
+
+        }
+
+        if ($sub->steps) {
+            $steps = collect(explode(',', $sub->steps))
                 ->map(fn($step) => $classes[$step])
                 ->toArray();
-
             $this->steps = [
                 Setup::class,
                 ...$steps,
@@ -153,13 +175,12 @@ class Purchase extends Component
 
         $this->id = Str::uuid();
 
-        MultiDB::setDb($this->db);
-
         $this
             ->handleContext('hash', $this->hash)
             ->handleContext('quantity', 1)
             ->handleContext('request_data', $this->request_data)
-            ->handleContext('campaign', $this->campaign);
+            ->handleContext('campaign', $this->campaign)
+            ->handleContext('subcription_id', $this->subscription_id);
     }
 
     public function render()

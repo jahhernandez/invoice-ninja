@@ -1,10 +1,11 @@
 <?php
+
 /**
  * Invoice Ninja (https://invoiceninja.com).
  *
  * @link https://github.com/invoiceninja/invoiceninja source repository
  *
- * @copyright Copyright (c) 2024. Invoice Ninja LLC (https://invoiceninja.com)
+ * @copyright Copyright (c) 2026. Invoice Ninja LLC (https://invoiceninja.com)
  *
  * @license https://www.elastic.co/licensing/elastic-license
  */
@@ -12,7 +13,6 @@
 namespace App\Mail;
 
 use App\Models\VendorContact;
-use App\Services\PdfMaker\Designs\Utilities\DesignHelpers;
 use App\Utils\Ninja;
 use App\Utils\VendorHtmlEngine;
 use Illuminate\Mail\Mailable;
@@ -69,25 +69,25 @@ class VendorTemplateEmail extends Mailable
 
     public function build()
     {
-        $template_name = 'email.template.'.$this->build_email->getTemplate();
+        $template_name = 'email.template.' . $this->build_email->getTemplate();
 
         if (in_array($this->build_email->getTemplate(), ['light', 'dark'])) {
             $template_name = 'email.template.client';
         }
-        
-        if($this->build_email->getTemplate() == 'premium') {
+
+        if ($this->build_email->getTemplate() == 'premium') {
             $template_name = 'email.template.client_premium';
         }
 
         if ($this->build_email->getTemplate() == 'custom') {
-            $this->build_email->setBody(str_replace('$body', $this->build_email->getBody().$this->buildLinksForCustomDesign(), $this->company->getSetting('email_style_custom')));
+            $this->build_email->setBody(str_replace('$body', $this->build_email->getBody() . $this->buildLinksForCustomDesign(), $this->company->getSetting('email_style_custom')));
         }
 
         $settings = $this->company->settings;
 
         if ($this->build_email->getTemplate() !== 'custom') {
             $this->build_email->setBody(
-                DesignHelpers::parseMarkdownToHtml($this->build_email->getBody())
+                \App\Services\Pdf\Markdown::parse($this->build_email->getBody())
             );
         }
 
@@ -110,7 +110,7 @@ class VendorTemplateEmail extends Mailable
 
             if (Ninja::isHosted()) {
 
-                if($this->company->account->isPaid()) {
+                if ($this->company->account->isPaid()) {
                     $bccs = explode(',', str_replace(' ', '', $settings->bcc_email));
                     $this->bcc(array_slice($bccs, 0, 5));
                 }
@@ -124,7 +124,7 @@ class VendorTemplateEmail extends Mailable
         $this->subject($this->build_email->getSubject())
             ->text('email.template.text', [
                 'text_body' => $this->build_email->getTextBody(),
-                'whitelabel' => $this->vendor->user->account->isPaid() ? true : false,
+                'whitelabel' => true,
                 'settings' => $settings,
             ])
             ->view($template_name, [
@@ -137,7 +137,7 @@ class VendorTemplateEmail extends Mailable
                 'signature' => $signature,
                 'settings' => $settings,
                 'company' => $this->company,
-                'whitelabel' => $this->vendor->user->account->isPaid() ? true : false,
+                'whitelabel' => true,
                 'logo' => $this->company->present()->logo($settings),
                 'links' => $this->build_email->getAttachmentLinks(),
             ]);

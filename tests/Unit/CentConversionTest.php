@@ -1,4 +1,5 @@
 <?php
+
 /**
  * Invoice Ninja (https://invoiceninja.com).
  *
@@ -14,11 +15,11 @@ namespace Tests\Unit;
 use Tests\TestCase;
 
 /**
- * @test
+ *
  */
 class CentConversionTest extends TestCase
 {
-    protected function setUp() :void
+    protected function setUp(): void
     {
         parent::setUp();
     }

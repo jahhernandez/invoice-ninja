@@ -1,10 +1,11 @@
 <?php
+
 /**
  * Invoice Ninja (https://invoiceninja.com).
  *
  * @link https://github.com/invoiceninja/invoiceninja source repository
  *
- * @copyright Copyright (c) 2024. Invoice Ninja LLC (https://invoiceninja.com)
+ * @copyright Copyright (c) 2026. Invoice Ninja LLC (https://invoiceninja.com)
  *
  * @license https://www.elastic.co/licensing/elastic-license
  */
@@ -20,6 +21,9 @@ use Illuminate\Validation\Rule;
 class StoreExpenseRequest extends Request
 {
     use MakesHash;
+
+    /** @var class-string */
+    protected ?string $tag_entity_type = Expense::class;
 
     /**
      * Determine if the user is authorized to make this request.
@@ -46,14 +50,19 @@ class StoreExpenseRequest extends Request
         }
 
         if ($this->client_id) {
-            $rules['client_id'] = 'bail|sometimes|exists:clients,id,company_id,'.$user->company()->id;
+            $rules['client_id'] = 'bail|sometimes|integer|exists:clients,id,company_id,' . $user->company()->id;
         }
 
-        $rules['category_id'] = 'bail|nullable|sometimes|exists:expense_categories,id,company_id,'.$user->company()->id.',is_deleted,0';
+        $rules['category_id'] = 'bail|nullable|sometimes|exists:expense_categories,id,company_id,' . $user->company()->id . ',is_deleted,0';
         $rules['payment_date'] = 'bail|nullable|sometimes|date:Y-m-d';
         $rules['date'] = 'bail|sometimes|date:Y-m-d';
         $rules['documents'] = 'bail|sometimes|array';
         $rules['amount'] = ['sometimes', 'bail', 'nullable', 'numeric', 'max:99999999999999'];
+
+        $rules['file'] = 'bail|sometimes|array';
+        $rules['file.*'] = $this->fileValidation();
+        $rules['documents'] = 'bail|sometimes|array';
+        $rules['documents.*'] = $this->fileValidation();
 
         return $this->globalRules($rules);
     }
@@ -67,7 +76,28 @@ class StoreExpenseRequest extends Request
 
         $input = $this->decodePrimaryKeys($input);
 
-        if (! array_key_exists('currency_id', $input) || strlen($input['currency_id']) == 0) {
+        if (isset($input['invoice_id'])) {
+            unset($input['invoice_id']);
+        }
+
+        if (!isset($input['date'])) {
+            $input['date'] = now()->addSeconds($user->company()->utc_offset())->format('Y-m-d');
+        }
+        
+
+        if ($this->file('documents') instanceof \Illuminate\Http\UploadedFile) {
+            $this->files->set('documents', [$this->file('documents')]);
+        }
+
+        if ($this->file('file') instanceof \Illuminate\Http\UploadedFile) {
+            $this->files->set('file', [$this->file('file')]);
+        }
+
+        if (!array_key_exists('amount', $input)) {
+            $input['amount'] = 0;
+        }
+
+        if (! array_key_exists('currency_id', $input) || strlen($input['currency_id'] ?? '') == 0) {
             $input['currency_id'] = (string) $user->company()->settings->currency_id;
         }
 

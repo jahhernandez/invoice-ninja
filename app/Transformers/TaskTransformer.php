@@ -1,10 +1,11 @@
 <?php
+
 /**
  * Invoice Ninja (https://invoiceninja.com).
  *
  * @link https://github.com/invoiceninja/invoiceninja source repository
  *
- * @copyright Copyright (c) 2024. Invoice Ninja LLC (https://invoiceninja.com)
+ * @copyright Copyright (c) 2026. Invoice Ninja LLC (https://invoiceninja.com)
  *
  * @license https://www.elastic.co/licensing/elastic-license
  */
@@ -67,7 +68,7 @@ class TaskTransformer extends EntityTransformer
     {
         $transformer = new UserTransformer($this->serializer);
 
-        if (!$task->user) {
+        if (!$task->user) { //@phpstan-ignore-line
             return null;
         }
 
@@ -111,8 +112,9 @@ class TaskTransformer extends EntityTransformer
     {
         $transformer = new ProjectTransformer($this->serializer);
 
-        if ($task->project) 
+        if ($task->project) {
             return $this->includeItem($task->project, $transformer, Project::class);
+        }
 
         return null;
     }
@@ -145,6 +147,11 @@ class TaskTransformer extends EntityTransformer
             'is_date_based' => (bool) $task->is_date_based,
             'status_order' => is_null($task->status_order) ? null : (int) $task->status_order,
             'date' => $task->calculated_start_date ?: '',
+            'due_date' => $task->due_date ?: '',
+            'estimated_duration' => is_null($task->estimated_duration) ? null : (int) $task->estimated_duration,
+            'meta' => $task->meta ?: new \stdClass(),
+            'tags' => $this->transformTags($task),
         ];
     }
+
 }

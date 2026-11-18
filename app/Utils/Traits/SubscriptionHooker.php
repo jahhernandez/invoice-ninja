@@ -1,10 +1,11 @@
 <?php
+
 /**
  * Invoice Ninja (https://invoiceninja.com).
  *
  * @link https://github.com/invoiceninja/invoiceninja source repository
  *
- * @copyright Copyright (c) 2024. Invoice Ninja LLC (https://invoiceninja.com)
+ * @copyright Copyright (c) 2026. Invoice Ninja LLC (https://invoiceninja.com)
  *
  * @license https://www.elastic.co/licensing/elastic-license
  */
@@ -48,8 +49,9 @@ trait SubscriptionHooker
                 RequestOptions::JSON => ['body' => $body], RequestOptions::ALLOW_REDIRECTS => false,
             ]);
 
-            if($response_body = json_decode($response->getBody(), true))
+            if ($response_body = json_decode($response->getBody(), true)) {
                 return array_merge($body, $response_body);
+            }
 
             return array_merge($body, ['message' => 'Success', 'status_code' => 200]);
 

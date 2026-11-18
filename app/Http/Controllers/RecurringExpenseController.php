@@ -1,10 +1,11 @@
 <?php
+
 /**
  * Invoice Ninja (https://invoiceninja.com).
  *
  * @link https://github.com/invoiceninja/invoiceninja source repository
  *
- * @copyright Copyright (c) 2024. Invoice Ninja LLC (https://invoiceninja.com)
+ * @copyright Copyright (c) 2026. Invoice Ninja LLC (https://invoiceninja.com)
  *
  * @license https://www.elastic.co/licensing/elastic-license
  */
@@ -15,6 +16,7 @@ use App\Events\RecurringExpense\RecurringExpenseWasCreated;
 use App\Events\RecurringExpense\RecurringExpenseWasUpdated;
 use App\Factory\RecurringExpenseFactory;
 use App\Filters\RecurringExpenseFilters;
+use App\Http\Requests\RecurringExpense\BulkRecurringExpenseRequest;
 use App\Http\Requests\RecurringExpense\CreateRecurringExpenseRequest;
 use App\Http\Requests\RecurringExpense\DestroyRecurringExpenseRequest;
 use App\Http\Requests\RecurringExpense\EditRecurringExpenseRequest;
@@ -35,7 +37,6 @@ use Illuminate\Http\Response;
 
 /**
  * Class RecurringExpenseController.
- * @covers App\Http\Controllers\RecurringExpenseController
  */
 class RecurringExpenseController extends BaseController
 {
@@ -97,11 +98,11 @@ class RecurringExpenseController extends BaseController
      *       ),
      *     )
      * @param RecurringExpenseFilters $filters
-     * @return Response|mixed
+     * @return Response| \Illuminate\Http\JsonResponse|mixed
      */
     public function index(RecurringExpenseFilters $filters)
     {
-        $recurring_expenses = RecurringExpense::filter($filters);
+        $recurring_expenses = RecurringExpense::filter($filters)->with('tags');
 
         return $this->listResponse($recurring_expenses);
     }
@@ -111,7 +112,7 @@ class RecurringExpenseController extends BaseController
      *
      * @param ShowRecurringExpenseRequest $request
      * @param RecurringExpense $recurring_expense
-     * @return Response
+     * @return Response| \Illuminate\Http\JsonResponse
      *
      *
      * @OA\Get(
@@ -165,7 +166,7 @@ class RecurringExpenseController extends BaseController
      *
      * @param EditRecurringExpenseRequest $request
      * @param RecurringExpense $recurring_expense
-     * @return Response
+     * @return Response| \Illuminate\Http\JsonResponse
      *
      *
      * @OA\Get(
@@ -219,7 +220,7 @@ class RecurringExpenseController extends BaseController
      *
      * @param UpdateRecurringExpenseRequest $request
      * @param RecurringExpense $recurring_expense
-     * @return Response
+     * @return Response| \Illuminate\Http\JsonResponse
      *
      *
      *
@@ -284,7 +285,7 @@ class RecurringExpenseController extends BaseController
      * Show the form for creating a new resource.
      *
      * @param CreateRecurringExpenseRequest $request
-     * @return Response
+     * @return Response| \Illuminate\Http\JsonResponse
      *
      *
      *
@@ -332,7 +333,7 @@ class RecurringExpenseController extends BaseController
      * Store a newly created resource in storage.
      *
      * @param StoreRecurringExpenseRequest $request
-     * @return Response
+     * @return Response| \Illuminate\Http\JsonResponse
      *
      *
      *
@@ -384,7 +385,7 @@ class RecurringExpenseController extends BaseController
      *
      * @param DestroyRecurringExpenseRequest $request
      * @param RecurringExpense $recurring_expense
-     * @return Response
+     * @return Response| \Illuminate\Http\JsonResponse
      *
      *
      * @throws \Exception
@@ -438,7 +439,7 @@ class RecurringExpenseController extends BaseController
     /**
      * Perform bulk actions on the list view.
      *
-     * @return Response
+     * @return Response| \Illuminate\Http\JsonResponse
      *
      *
      * @OA\Post(
@@ -485,15 +486,15 @@ class RecurringExpenseController extends BaseController
      *       ),
      *     )
      */
-    public function bulk()
+    public function bulk(BulkRecurringExpenseRequest $request)
     {
         /** @var \App\Models\User $user */
         $user = auth()->user();
 
-        $action = request()->input('action');
+        $action = $request->input('action');
 
-        $ids = request()->input('ids');
-        $recurring_expenses = RecurringExpense::withTrashed()->find($this->transformKeys($ids));
+        $ids = $request->input('ids');
+        $recurring_expenses = RecurringExpense::withTrashed()->company()->find($ids);
 
         $recurring_expenses->each(function ($recurring_expense, $key) use ($action, $user) {
             if ($user->can('edit', $recurring_expense)) {
@@ -501,7 +502,7 @@ class RecurringExpenseController extends BaseController
             }
         });
 
-        return $this->listResponse(RecurringExpense::withTrashed()->whereIn('id', $this->transformKeys($ids)));
+        return $this->listResponse(RecurringExpense::withTrashed()->company()->whereIn('id', $ids));
     }
 
     private function performAction(RecurringExpense $recurring_expense, string $action, $bulk = false)
@@ -557,7 +558,7 @@ class RecurringExpenseController extends BaseController
      *
      * @param UploadRecurringExpenseRequest $request
      * @param RecurringExpense $recurring_expense
-     * @return Response
+     * @return Response| \Illuminate\Http\JsonResponse
      *
      *
      *
@@ -609,7 +610,7 @@ class RecurringExpenseController extends BaseController
         }
 
         if ($request->has('documents')) {
-            $this->saveDocuments($request->file('documents'), $recurring_expense, $request->input('is_public', true));
+            $this->saveDocuments($request->file('documents'), $recurring_expense, $request->has('is_public') ? $request->boolean('is_public') : null);
         }
 
         return $this->itemResponse($recurring_expense->fresh());

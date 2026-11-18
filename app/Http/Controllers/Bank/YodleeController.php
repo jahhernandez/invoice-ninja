@@ -1,17 +1,17 @@
 <?php
+
 /**
  * Invoice Ninja (https://invoiceninja.com).
  *
  * @link https://github.com/invoiceninja/invoiceninja source repository
  *
- * @copyright Copyright (c) 2024. Invoice Ninja LLC (https://invoiceninja.com)
+ * @copyright Copyright (c) 2026. Invoice Ninja LLC (https://invoiceninja.com)
  *
  * @license https://www.elastic.co/licensing/elastic-license
  */
 
 namespace App\Http\Controllers\Bank;
 
-use App\Helpers\Bank\Yodlee\DTO\AccountSummary;
 use App\Helpers\Bank\Yodlee\Yodlee;
 use App\Http\Controllers\BaseController;
 use App\Http\Requests\Yodlee\YodleeAdminRequest;
@@ -53,6 +53,8 @@ class YodleeController extends BaseController
 
         $redirect_url = isset($request->getTokenContent()['is_react']) && $request->getTokenContent()['is_react'] ? config('ninja.react_url') : config('ninja.app_url');
 
+        $provider_id = isset($request->getTokenContent()['provider_id']) ? $request->getTokenContent()['provider_id'] : false;
+
         $data = [
             'access_token' => $yodlee->getAccessToken(),
             'fasttrack_url' => $yodlee->getFastTrackUrl(),
@@ -62,6 +64,7 @@ class YodleeController extends BaseController
             'account' => $company->account,
             'completed' => $request->has('window_closed') ? true : false,
             'redirect_url' => $redirect_url,
+            'provider_id' => $provider_id,
         ];
 
         return view('bank.yodlee.auth', $data);
@@ -74,32 +77,71 @@ class YodleeController extends BaseController
         $accounts = $yodlee->getAccounts();
 
         foreach ($accounts as $account) {
-            if (!BankIntegration::where('bank_account_id', $account['id'])->where('company_id', $company->id)->exists()) {
-                $bank_integration = new BankIntegration();
-                $bank_integration->company_id = $company->id;
-                $bank_integration->account_id = $company->account_id;
-                $bank_integration->user_id = $company->owner()->id;
-                $bank_integration->bank_account_id = $account['id'];
-                $bank_integration->bank_account_type = $account['account_type'];
-                $bank_integration->bank_account_name = $account['account_name'];
-                $bank_integration->bank_account_status = $account['account_status'];
-                $bank_integration->bank_account_number = $account['account_number'];
-                $bank_integration->provider_id = $account['provider_id'];
-                $bank_integration->provider_name = $account['provider_name'];
-                $bank_integration->nickname = $account['nickname'];
-                $bank_integration->balance = $account['current_balance'];
-                $bank_integration->currency = $account['account_currency'];
-                $bank_integration->from_date = now()->subYear();
-                $bank_integration->integration_type = BankIntegration::INTEGRATION_TYPE_YODLEE;
-                $bank_integration->auto_sync = true;
-
-                $bank_integration->save();
-            }
+            $this->upsertBankIntegration($company, $account);
         }
 
         $company->account->bank_integrations->where("integration_type", BankIntegration::INTEGRATION_TYPE_YODLEE)->where('auto_sync', true)->each(function ($bank_integration) use ($company) { // TODO: filter to yodlee only
-            ProcessBankTransactionsYodlee::dispatch($company->account->id, $bank_integration);
+            ProcessBankTransactionsYodlee::dispatch($company->account->bank_integration_account_id, $bank_integration);
         });
+    }
+
+    /**
+     * Creates or updates the BankIntegration for a single Yodlee account.
+     *
+     * Matching is always scoped to (company_id, bank_account_id): the same upstream
+     * account may legitimately back a separate integration per company sharing the
+     * account-level Yodlee login.
+     *
+     *  - A matching integration is reused — whether live, archived or deleted. Yodlee
+     *    returning the account is authoritative that it is connected, and reusing the
+     *    row preserves its transaction_id dedup scope (a new row would re-import the
+     *    entire history under a fresh, empty scope). A trashed row is revived
+     *    (is_deleted = 0, deleted_at = null). A properly-deleted account is removed at
+     *    Yodlee on delete, so it is not returned here in the first place.
+     *  - Otherwise a new integration is created.
+     *
+     * @param array<string, mixed> $account
+     */
+    private function upsertBankIntegration($company, array $account): void
+    {
+        $bank_integration = BankIntegration::withTrashed()
+            ->where('company_id', $company->id)
+            ->where("integration_type", BankIntegration::INTEGRATION_TYPE_YODLEE)  
+            ->where('bank_account_id', $account['id'])
+            ->orderByRaw('deleted_at IS NULL DESC') //prefer a live row when duplicates exist
+            ->first();
+
+        if ($bank_integration) {
+            $bank_integration->is_deleted = false;
+            $bank_integration->deleted_at = null;
+            $bank_integration->disabled_upstream = false;
+            $bank_integration->balance = $account['current_balance'];
+            $bank_integration->currency = $account['account_currency'];
+            $bank_integration->integration_type = BankIntegration::INTEGRATION_TYPE_YODLEE;
+            $bank_integration->save();
+
+            return;
+        }
+
+        $bank_integration = new BankIntegration();
+        $bank_integration->company_id = $company->id;
+        $bank_integration->account_id = $company->account_id;
+        $bank_integration->user_id = $company->owner()->id;
+        $bank_integration->bank_account_id = $account['id'];
+        $bank_integration->bank_account_type = $account['account_type'];
+        $bank_integration->bank_account_name = $account['account_name'];
+        $bank_integration->bank_account_status = $account['account_status'];
+        $bank_integration->bank_account_number = $account['account_number'];
+        $bank_integration->provider_id = $account['provider_account_id'] ?? $account['provider_id'];
+        $bank_integration->provider_name = $account['provider_name'];
+        $bank_integration->nickname = $account['nickname'];
+        $bank_integration->balance = $account['current_balance'];
+        $bank_integration->currency = $account['account_currency'];
+        $bank_integration->from_date = now()->subYear();
+        $bank_integration->integration_type = BankIntegration::INTEGRATION_TYPE_YODLEE;
+        $bank_integration->auto_sync = true;
+
+        $bank_integration->save();
     }
 
     /**
@@ -301,8 +343,6 @@ class YodleeController extends BaseController
 
         $summary = $yodlee->getAccountSummary($account_number);
 
-        //@todo remove laravel-data
-        // $transformed_summary = AccountSummary::from($summary[0]);
         $transformed_summary = $this->transformSummary($summary[0]);
 
         return response()->json($transformed_summary, 200);
@@ -310,7 +350,7 @@ class YodleeController extends BaseController
 
     private function transformSummary($summary): array
     {
-        $dto = new \stdClass;
+        $dto = new \stdClass();
         $dto->id = $summary['id'] ?? 0;
         $dto->account_type = $summary['CONTAINER'] ?? '';
 
@@ -324,7 +364,7 @@ class YodleeController extends BaseController
         $dto->current_balance = $summary['currentBalance']['amount'] ?? 0;
         $dto->account_currency = $summary['currentBalance']['currency'] ?? 0;
 
-        return (array)$dto;
+        return (array) $dto;
 
     }
 }

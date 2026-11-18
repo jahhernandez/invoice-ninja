@@ -39,7 +39,7 @@
 
         <!-- Title -->
         @auth('contact')
-            <title>@yield('meta_title', '') — {{ auth()->guard('contact')->user()->user->account->isPaid() ? auth()->guard('contact')->user()->company->present()->name() : 'Invoice Ninja' }}</title>
+            <title>@yield('meta_title', '') — {{ auth()->guard('contact')->user()->company->present()->name() }}</title>
         @endauth
 
         @guest
@@ -74,7 +74,7 @@
 
         <!-- Styles -->
         @vite('resources/sass/app.scss')
-        @if(auth()->guard('contact')->user() && !auth()->guard('contact')->user()->user->account->isPaid())
+        @if(false)
         {{-- <link href="{{ mix('favicon.png') }}" rel="shortcut icon" type="image/png"> --}}
         @endif
 

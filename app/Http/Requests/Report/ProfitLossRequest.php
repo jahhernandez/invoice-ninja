@@ -1,10 +1,11 @@
 <?php
+
 /**
  * Invoice Ninja (https://invoiceninja.com).
  *
  * @link https://github.com/invoiceninja/invoiceninja source repository
  *
- * @copyright Copyright (c) 2024. Invoice Ninja LLC (https://invoiceninja.com)
+ * @copyright Copyright (c) 2026. Invoice Ninja LLC (https://invoiceninja.com)
  *
  * @license https://www.elastic.co/licensing/elastic-license
  */
@@ -17,7 +18,6 @@ use Illuminate\Auth\Access\AuthorizationException;
 
 class ProfitLossRequest extends Request
 {
-
     private string $error_message = '';
 
     /**
@@ -51,22 +51,25 @@ class ProfitLossRequest extends Request
             $input['date_range'] = 'all';
         }
 
+        $input['user_id'] = auth()->user()->id;
+
+
         $this->replace($input);
     }
 
-        private function checkAuthority()
+    private function checkAuthority()
     {
         $this->error_message = ctrans('texts.authorization_failure');
 
         /** @var \App\Models\User $user */
         $user = auth()->user();
-        
-        if(Ninja::isHosted() && $user->account->isFreeHostedClient()){
+
+        if (Ninja::isHosted() && $user->account->isFreeHostedClient()) {
             $this->error_message = ctrans('texts.upgrade_to_view_reports');
             return false;
         }
 
-        return $user->isAdmin() || $user->hasPermission('view_reports');
+        return $user->isAdmin() || ($user->hasPermission('view_all') && $user->hasPermission('view_reports'));
 
     }
 

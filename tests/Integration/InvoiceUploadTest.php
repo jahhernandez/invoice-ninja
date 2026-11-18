@@ -1,4 +1,5 @@
 <?php
+
 /**
  * Invoice Ninja (https://invoiceninja.com).
  *
@@ -16,15 +17,15 @@ use Tests\MockAccountData;
 use Tests\TestCase;
 
 /**
- * @test
- * @covers App\Services\Invoice\GetInvoicePdf
+ *
+ *  App\Services\Invoice\GetInvoicePdf
  */
 class InvoiceUploadTest extends TestCase
 {
     use MockAccountData;
     use DatabaseTransactions;
 
-    protected function setUp() :void
+    protected function setUp(): void
     {
         parent::setUp();
 
@@ -33,6 +34,7 @@ class InvoiceUploadTest extends TestCase
 
     public function testInvoiceUploadWorks()
     {
+        $this->invoice->load('invitations', 'client.contacts', 'client.company');
         $this->assertNotNull($this->invoice->service()->getInvoicePdf($this->invoice->client->primary_contact()->first()));
     }
 }

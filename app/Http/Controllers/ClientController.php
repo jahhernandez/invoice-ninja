@@ -1,63 +1,67 @@
 <?php
+
 /**
  * Invoice Ninja (https://invoiceninja.com).
  *
  * @link https://github.com/invoiceninja/invoiceninja source repository
  *
- * @copyright Copyright (c) 2024. Invoice Ninja LLC (https://invoiceninja.com)
+ * @copyright Copyright (c) 2026. Invoice Ninja LLC (https://invoiceninja.com)
  *
  * @license https://www.elastic.co/licensing/elastic-license
  */
 
 namespace App\Http\Controllers;
 
-use App\Utils\Ninja;
-use App\Models\Quote;
-use App\Models\Client;
-use App\Models\Credit;
-use App\Models\Account;
-use App\Models\Company;
-use App\Models\Invoice;
-use App\Models\Document;
-use App\Models\SystemLog;
-use Postmark\PostmarkClient;
-use Illuminate\Http\Response;
-use App\Factory\ClientFactory;
-use App\Filters\ClientFilters;
-use App\Utils\Traits\MakesHash;
-use App\Utils\Traits\Uploadable;
-use App\Utils\Traits\BulkOptions;
-use App\Jobs\Client\UpdateTaxData;
-use App\Utils\Traits\SavesDocuments;
-use App\Repositories\ClientRepository;
 use App\Events\Client\ClientWasCreated;
 use App\Events\Client\ClientWasUpdated;
-use App\Transformers\ClientTransformer;
-use Illuminate\Support\Facades\Storage;
-use App\Services\Template\TemplateAction;
-use App\Jobs\PostMark\ProcessPostmarkWebhook;
+use App\Factory\ClientFactory;
+use App\Filters\ClientFilters;
+use App\Http\Controllers\BaseController;
 use App\Http\Requests\Client\BulkClientRequest;
-use App\Http\Requests\Client\EditClientRequest;
-use App\Http\Requests\Client\ShowClientRequest;
-use App\Http\Requests\Client\PurgeClientRequest;
-use App\Http\Requests\Client\StoreClientRequest;
+use App\Http\Requests\Client\ClientDocumentsRequest;
 use App\Http\Requests\Client\CreateClientRequest;
+use App\Http\Requests\Client\DestroyClientRequest;
+use App\Http\Requests\Client\EditClientRequest;
+use App\Http\Requests\Client\MergeClientRequest;
+use App\Http\Requests\Client\PurgeClientRequest;
+use App\Http\Requests\Client\ReactivateClientEmailRequest;
+use App\Http\Requests\Client\ShowClientRequest;
+use App\Http\Requests\Client\StoreClientRequest;
 use App\Http\Requests\Client\UpdateClientRequest;
 use App\Http\Requests\Client\UploadClientRequest;
-use App\Http\Requests\Client\DestroyClientRequest;
-use App\Http\Requests\Client\ClientDocumentsRequest;
-use App\Http\Requests\Client\ReactivateClientEmailRequest;
+use App\Jobs\Client\CheckVat;
+use App\Jobs\Client\UpdateTaxData;
+use App\Jobs\PostMark\ProcessPostmarkWebhook;
+use App\Models\Account;
+use App\Models\Client;
+use App\Models\Company;
+use App\Models\Credit;
+use App\Models\Document;
 use App\Models\Expense;
+use App\Models\Invoice;
 use App\Models\Payment;
 use App\Models\Project;
+use App\Models\Quote;
 use App\Models\RecurringExpense;
 use App\Models\RecurringInvoice;
+use App\Models\SystemLog;
 use App\Models\Task;
+use App\Repositories\ClientRepository;
+use App\Services\Template\TemplateAction;
+use App\Transformers\ClientTransformer;
 use App\Transformers\DocumentTransformer;
+use App\Utils\Ninja;
+use App\Utils\Traits\BulkOptions;
+use App\Utils\Traits\MakesHash;
+use App\Utils\Traits\SavesDocuments;
+use App\Utils\Traits\Uploadable;
+use Illuminate\Http\Response;
+use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\Storage;
+use Postmark\PostmarkClient;
 
 /**
  * Class ClientController.
- * @covers App\Http\Controllers\ClientController
  */
 class ClientController extends BaseController
 {
@@ -89,14 +93,14 @@ class ClientController extends BaseController
     /**
      *
      * @param ClientFilters $filters
-     * @return Response
+     * @return Response| \Illuminate\Http\JsonResponse
      *
      */
     public function index(ClientFilters $filters)
     {
         set_time_limit(45);
 
-        $clients = Client::filter($filters);
+        $clients = Client::filter($filters)->with('tags');
 
         return $this->listResponse($clients);
     }
@@ -106,11 +110,18 @@ class ClientController extends BaseController
      *
      * @param ShowClientRequest $request
      * @param Client $client
-     * @return Response
+     * @return Response| \Illuminate\Http\JsonResponse
      *
      */
     public function show(ShowClientRequest $request, Client $client)
     {
+
+        if (auth()->user()->hasExcludedPermissions($this->client_excludable_permissions, $this->client_excludable_overrides)) {
+            foreach ($this->client_exclusion_fields as $field) {
+                $client->{$field} = null;
+            }
+        }
+
         return $this->itemResponse($client);
     }
 
@@ -119,11 +130,19 @@ class ClientController extends BaseController
      *
      * @param EditClientRequest $request
      * @param Client $client
-     * @return Response
+     * @return Response| \Illuminate\Http\JsonResponse
      *
      */
     public function edit(EditClientRequest $request, Client $client)
     {
+
+        if (auth()->user()->hasExcludedPermissions($this->client_excludable_permissions, $this->client_excludable_overrides)) {
+            foreach ($this->client_exclusion_fields as $field) {
+                $client->{$field} = null;
+            }
+        }
+
+
         return $this->itemResponse($client);
     }
 
@@ -132,7 +151,7 @@ class ClientController extends BaseController
      *
      * @param UpdateClientRequest $request
      * @param Client $client
-     * @return Response
+     * @return Response| \Illuminate\Http\JsonResponse
      *
      */
     public function update(UpdateClientRequest $request, Client $client)
@@ -141,7 +160,7 @@ class ClientController extends BaseController
             return $request->disallowUpdate();
         }
 
-        /** @var \App\Models\User $user */
+        /** @var ?\App\Models\User $user */
         $user = auth()->user();
 
         $client = $this->client_repo->save($request->all(), $client);
@@ -157,7 +176,7 @@ class ClientController extends BaseController
      * Show the form for creating a new resource.
      *
      * @param CreateClientRequest $request
-     * @return Response
+     * @return Response| \Illuminate\Http\JsonResponse
      *
      */
     public function create(CreateClientRequest $request)
@@ -174,7 +193,7 @@ class ClientController extends BaseController
      * Store a newly created resource in storage.
      *
      * @param StoreClientRequest $request
-     * @return Response
+     * @return Response| \Illuminate\Http\JsonResponse
      *
      */
     public function store(StoreClientRequest $request)
@@ -203,7 +222,7 @@ class ClientController extends BaseController
      *
      * @param DestroyClientRequest $request
      * @param Client $client
-     * @return Response
+     * @return Response| \Illuminate\Http\JsonResponse
      *
      * @throws \Exception
      */
@@ -217,7 +236,7 @@ class ClientController extends BaseController
     /**
      * Perform bulk actions on the list view.
      *
-     * @return Response
+     * @return Response| \Illuminate\Http\JsonResponse
      *
      */
     public function bulk(BulkClientRequest $request)
@@ -232,7 +251,7 @@ class ClientController extends BaseController
                          ->whereIn('id', $request->ids)
                          ->get();
 
-        if($action == 'template' && $user->can('view', $clients->first())) {
+        if ($action == 'template' && $user->can('view', $clients->first())) {
 
             $hash_or_response = $request->boolean('send_email') ? 'email sent' : \Illuminate\Support\Str::uuid();
 
@@ -250,22 +269,22 @@ class ClientController extends BaseController
             return response()->json(['message' => $hash_or_response], 200);
         }
 
-        if($action == 'assign_group' && $user->can('edit', $clients->first())){
+        if ($action == 'assign_group' && $user->can('edit', $clients->first())) {
 
             $this->client_repo->assignGroup($clients, $request->group_settings_id);
-            
+
             return $this->listResponse(Client::query()->withTrashed()->company()->whereIn('id', $request->ids));
 
         }
 
-        if($action == 'bulk_update' && $user->can('edit', $clients->first())){
+        if ($action == 'bulk_update' && $user->can('edit', $clients->first())) {
 
             $clients = Client::withTrashed()
                     ->company()
                     ->whereIn('id', $request->ids);
 
             $this->client_repo->bulkUpdate($clients, $request->column, $request->new_value);
-            
+
             return $this->listResponse(Client::query()->withTrashed()->company()->whereIn('id', $request->ids));
 
         }
@@ -284,7 +303,7 @@ class ClientController extends BaseController
      *
      * @param UploadClientRequest $request
      * @param Client $client
-     * @return Response
+     * @return Response| \Illuminate\Http\JsonResponse
      *
      */
     public function upload(UploadClientRequest $request, Client $client)
@@ -294,7 +313,7 @@ class ClientController extends BaseController
         }
 
         if ($request->has('documents')) {
-            $this->saveDocuments($request->file('documents'), $client, $request->input('is_public', true));
+            $this->saveDocuments($request->file('documents'), $client, $request->has('is_public') ? $request->boolean('is_public') : null);
         }
 
         return $this->itemResponse($client->fresh());
@@ -305,7 +324,7 @@ class ClientController extends BaseController
      *
      * @param PurgeClientRequest $request
      * @param Client $client
-     * @return \Illuminate\Http\JsonResponse
+     * @return \Illuminate\Http\JsonResponse|\Illuminate\Http\Response
      *
      */
     public function purge(PurgeClientRequest $request, Client $client)
@@ -313,8 +332,8 @@ class ClientController extends BaseController
         //delete all documents
         $client->documents->each(function ($document) {
             try {
-                Storage::disk(config('filesystems.default'))->delete($document->url);
-            } catch(\Exception $e) {
+                Storage::disk($document->disk)->delete($document->url);
+            } catch (\Exception $e) {
                 nlog($e->getMessage());
             }
         });
@@ -330,14 +349,14 @@ class ClientController extends BaseController
     /**
          * Update the specified resource in storage.
          *
-         * @param PurgeClientRequest $request
+         * @param MergeClientRequest $request
          * @param Client $client
          * @param string $mergeable_client
-         * @return \Illuminate\Http\JsonResponse
+         * @return \Illuminate\Http\JsonResponse|\Illuminate\Http\Response
          *
          */
 
-    public function merge(PurgeClientRequest $request, Client $client, string $mergeable_client)
+    public function merge(MergeClientRequest $request, Client $client, string $mergeable_client)
     {
         /** @var \App\Models\User $user */
         $user = auth()->user();
@@ -351,9 +370,10 @@ class ClientController extends BaseController
             return response()->json(['message' => "Client not found"], 400);
         }
 
-        if($m_client->id == $client->id) 
+        if ($m_client->id == $client->id) {
             return response()->json(['message' => "Attempting to merge the same client is not possible."], 400);
-        
+        }
+
         $merged_client = $client->service()->merge($m_client)->save();
 
         return $this->itemResponse($merged_client);
@@ -362,13 +382,13 @@ class ClientController extends BaseController
     /**
      * Updates the client's tax data
      *
-     * @param  PurgeClientRequest $request
+     * @param  MergeClientRequest $request
      * @param  Client $client
-     * @return \Illuminate\Http\JsonResponse
+     * @return \Illuminate\Http\JsonResponse|\Illuminate\Http\Response
      */
-    public function updateTaxData(PurgeClientRequest $request, Client $client)
+    public function updateTaxData(MergeClientRequest $request, Client $client)
     {
-        if($client->company->account->isPaid()) {
+        if ($client->company->account->isPaid()) {
             (new UpdateTaxData($client, $client->company))->handle();
         }
 
@@ -380,16 +400,16 @@ class ClientController extends BaseController
      *
      * @param  ReactivateClientEmailRequest $request
      * @param  string $bounce_id //could also be the invitationId
-     * @return \Illuminate\Http\JsonResponse
+     * @return \Illuminate\Http\JsonResponse|\Illuminate\Http\Response
      */
     public function reactivateEmail(ReactivateClientEmailRequest $request, string $bounce_id)
     {
         /** @var \App\Models\User $user */
         $user = auth()->user();
 
-        if(stripos($bounce_id, '-') !== false) {
-            $log =
-                SystemLog::query()
+        if (stripos($bounce_id, '-') !== false) {
+            $log
+                = SystemLog::query()
                 ->where('company_id', $user->company()->id)
                 ->where('type_id', SystemLog::TYPE_WEBHOOK_RESPONSE)
                 ->where('category_id', SystemLog::CATEGORY_MAIL)
@@ -397,18 +417,21 @@ class ClientController extends BaseController
                 ->orderBy('id', 'desc')
                 ->first();
 
+            if (!$log) 
+                return response()->json(['message' => 'Bounce ID not found'], 400);
+
             $resolved_bounce_id = false;
 
-            if($log && ($log?->log['ID'] ?? false)) {
+            if (($log?->log['ID'] ?? false)) {
                 $resolved_bounce_id = $log->log['ID'] ?? false;
             }
 
-            if(!$resolved_bounce_id) {
-                $ppwebhook = new ProcessPostmarkWebhook([]);
+            if (!$resolved_bounce_id) {
+                $ppwebhook = new ProcessPostmarkWebhook([], config('services.postmark.token'));
                 $resolved_bounce_id = $ppwebhook->getBounceId($bounce_id);
             }
 
-            if(!$resolved_bounce_id) {
+            if (!$resolved_bounce_id) {
                 return response()->json(['message' => 'Bounce ID not found'], 400);
             }
 
@@ -416,6 +439,17 @@ class ClientController extends BaseController
 
             $record = $log->log;
             $record['ID'] = '';
+
+            //2025-01-15 15:00:00 - unset the bounce ID here.
+            $events = $record['history']['events'];
+
+            foreach ($events as &$event) {
+                $event['bounce_id'] = "";
+            }
+            unset($event);
+
+            $record['history']['events'] = $events;
+
             $log->log = $record;
             $log->save();
 
@@ -426,17 +460,16 @@ class ClientController extends BaseController
         try {
 
             /** @var \Postmark\Models\DynamicResponseModel $response */
-            $response = $postmark->activateBounce((int)$bounce_id);
+            $response = $postmark->activateBounce((int) $bounce_id);
 
-            if($response && $response?->Message == 'OK' && !$response->Bounce->Inactive && $response->Bounce->Email) {
+            // if ($response && $response?->Message == 'OK' && !$response->Bounce->Inactive && $response->Bounce->Email) { // @phpstan-ignore-line
 
-                $email =  $response->Bounce->Email;
-                //remove email from quarantine. //@TODO
-            }
+            //     $email =  $response->Bounce->Email;
+            // }
 
             return response()->json(['message' => 'Success'], 200);
 
-        } catch(\Exception $e) {
+        } catch (\Exception $e) {
 
             return response()->json(['message' => $e->getMessage(), 400]);
 
@@ -458,9 +491,54 @@ class ClientController extends BaseController
             })
             ->orWhereHasMorph('documentable', [Client::class], function ($query) use ($client) {
                 $query->where('id', $client->id);
+            })
+            ->when(strlen($request->input('filter') ?? '') > 1, function ($query) use ($request) {
+                $query->where('name', 'like', '%' . $request->input('filter', '') . '%');
+            })
+            ->when(strlen($request->input('sort') ?? '') > 1, function ($query) use ($request) {
+
+                $sort_col = explode('|', $request->input('sort'));
+
+                if (!is_array($sort_col) || count($sort_col) != 2 || !in_array($sort_col[0], \Illuminate\Support\Facades\Schema::getColumnListing($query->getModel()->getTable()))) {
+                    return $query;
+                }
+
+                $dir = ($sort_col[1] == 'asc') ? 'asc' : 'desc';
+                return $query->orderBy($sort_col[0], $dir);
+
             });
 
         return $this->listResponse($documents);
 
+    }
+
+    public function showSettings(ShowClientRequest $request, Client $client)
+    {
+        return response()->json($client->service()->showSettingsMap(), 200);
+    }
+
+    public function peppolDiscovery(ShowClientRequest $request, Client $client)
+    {
+        return response()->json($client->service()->peppolDiscovery(), 200);
+    }
+
+    public function checkVat(ShowClientRequest $request, Client $client)
+    {
+        Cache::put('vat_status_'.$client->client_hash, 'pending', 3600);
+
+        CheckVat::dispatch($client, $client->company);
+
+        return response()->json(['message' => 'success'], 200);
+    }
+
+    public function vatStatus(ShowClientRequest $request, Client $client)
+    {
+        $status = Cache::get('vat_status_'.$client->client_hash);
+
+        if($status != 'pending'){
+            Cache::forget('vat_status_'.$client->client_hash);
+        }
+
+        return response()->json(['message' => $status], 200);
     }
 }

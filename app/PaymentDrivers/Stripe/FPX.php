@@ -5,7 +5,7 @@
  *
  * @link https://github.com/invoiceninja/invoiceninja source repository
  *
- * @copyright Copyright (c) 2024. Invoice Ninja LLC (https://invoiceninja.com)
+ * @copyright Copyright (c) 2026. Invoice Ninja LLC (https://invoiceninja.com)
  *
  * @license https://www.elastic.co/licensing/elastic-license
  */
@@ -13,15 +13,16 @@
 namespace App\PaymentDrivers\Stripe;
 
 use App\Exceptions\PaymentFailed;
-use App\Jobs\Mail\PaymentFailureMailer;
+
 use App\Jobs\Util\SystemLogger;
 use App\Models\GatewayType;
 use App\Models\Payment;
 use App\Models\PaymentType;
 use App\Models\SystemLog;
+use App\PaymentDrivers\Common\LivewireMethodInterface;
 use App\PaymentDrivers\StripePaymentDriver;
 
-class FPX
+class FPX implements LivewireMethodInterface
 {
     /** @var StripePaymentDriver */
     public StripePaymentDriver $stripe;
@@ -37,6 +38,88 @@ class FPX
     }
 
     public function paymentView(array $data)
+    {
+        $data = $this->paymentData($data);
+
+        return render('gateways.stripe.fpx.pay', $data);
+    }
+
+    private function buildReturnUrl(): string
+    {
+        return route('client.payments.response', [
+            'company_gateway_id' => $this->stripe->company_gateway->id,
+            'payment_hash' => $this->stripe->payment_hash->hash,
+            'payment_method_id' => GatewayType::FPX,
+        ]);
+    }
+
+    public function paymentResponse($request)
+    {
+        $this->stripe->payment_hash->data = array_merge((array) $this->stripe->payment_hash->data, $request->all());
+        $this->stripe->payment_hash->save();
+
+        if (in_array($request->redirect_status, ['succeeded','pending'])) {
+            return $this->processSuccessfulPayment($request->payment_intent);
+        }
+
+        $error = "FPX payment failed with status: {$request->redirect_status}";
+
+        return $this->processUnsuccessfulPayment($error);
+    }
+
+    public function processSuccessfulPayment(string $payment_intent)
+    {
+        /* @todo: https://github.com/invoiceninja/invoiceninja/pull/3789/files#r436175798 */
+
+        $this->stripe->init();
+
+        $data = [
+            'payment_method' => $payment_intent,
+            'payment_type' => PaymentType::FPX,
+            'amount' => $this->stripe->convertFromStripeAmount($this->stripe->payment_hash->data->stripe_amount, $this->stripe->client->currency()->precision, $this->stripe->client->currency()),
+            'transaction_reference' => $payment_intent,
+            'gateway_type_id' => GatewayType::FPX,
+        ];
+
+        $payment = $this->stripe->createPayment($data, Payment::STATUS_PENDING);
+
+        SystemLogger::dispatch(
+            ['response' => $this->stripe->payment_hash->data, 'data' => $data],
+            SystemLog::CATEGORY_GATEWAY_RESPONSE,
+            SystemLog::EVENT_GATEWAY_SUCCESS,
+            SystemLog::TYPE_STRIPE,
+            $this->stripe->client,
+            $this->stripe->client->company,
+        );
+
+        return redirect()->route('client.payments.show', ['payment' => $payment->hashed_id]);
+
+    }
+
+    public function processUnsuccessfulPayment(string $error = '')
+    {
+        $server_response = $this->stripe->payment_hash->data;
+
+        $this->stripe->sendFailureMail($error ?: 'FPX payment was not successful');
+
+        $message = [
+            'server_response' => $server_response,
+            'data' => $this->stripe->payment_hash->data,
+        ];
+
+        SystemLogger::dispatch(
+            $message,
+            SystemLog::CATEGORY_GATEWAY_RESPONSE,
+            SystemLog::EVENT_GATEWAY_FAILURE,
+            SystemLog::TYPE_STRIPE,
+            $this->stripe->client,
+            $this->stripe->client->company,
+        );
+
+        throw new PaymentFailed('Failed to process the payment.', 400);
+    }
+
+    public function paymentData(array $data): array
     {
         $this->stripe->init();
 
@@ -64,83 +147,11 @@ class FPX
         $this->stripe->payment_hash->data = array_merge((array) $this->stripe->payment_hash->data, ['stripe_amount' => $data['stripe_amount']]);
         $this->stripe->payment_hash->save();
 
-        return render('gateways.stripe.fpx.pay', $data);
+        return $data;
     }
 
-    private function buildReturnUrl(): string
+    public function livewirePaymentView(array $data): string
     {
-        return route('client.payments.response', [
-            'company_gateway_id' => $this->stripe->company_gateway->id,
-            'payment_hash' => $this->stripe->payment_hash->hash,
-            'payment_method_id' => GatewayType::FPX,
-        ]);
-    }
-
-    public function paymentResponse($request)
-    {
-        $this->stripe->payment_hash->data = array_merge((array) $this->stripe->payment_hash->data, $request->all());
-        $this->stripe->payment_hash->save();
-
-        if (in_array($request->redirect_status, ['succeeded','pending'])) {
-            return $this->processSuccessfulPayment($request->payment_intent);
-        }
-
-        return $this->processUnsuccessfulPayment();
-    }
-
-    public function processSuccessfulPayment(string $payment_intent)
-    {
-        /* @todo: https://github.com/invoiceninja/invoiceninja/pull/3789/files#r436175798 */
-
-        $this->stripe->init();
-
-        $data = [
-            'payment_method' => $payment_intent,
-            'payment_type' => PaymentType::FPX,
-            'amount' => $this->stripe->convertFromStripeAmount($this->stripe->payment_hash->data->stripe_amount, $this->stripe->client->currency()->precision, $this->stripe->client->currency()),
-            'transaction_reference' => $payment_intent,
-            'gateway_type_id' => GatewayType::FPX,
-        ];
-
-        $this->stripe->createPayment($data, Payment::STATUS_PENDING);
-
-        SystemLogger::dispatch(
-            ['response' => $this->stripe->payment_hash->data, 'data' => $data],
-            SystemLog::CATEGORY_GATEWAY_RESPONSE,
-            SystemLog::EVENT_GATEWAY_SUCCESS,
-            SystemLog::TYPE_STRIPE,
-            $this->stripe->client,
-            $this->stripe->client->company,
-        );
-
-        return redirect()->route('client.payments.index');
-    }
-
-    public function processUnsuccessfulPayment()
-    {
-        $server_response = $this->stripe->payment_hash->data;
-
-        PaymentFailureMailer::dispatch(
-            $this->stripe->client,
-            $server_response,
-            $this->stripe->client->company,
-            $this->stripe->convertFromStripeAmount($this->stripe->payment_hash->data->stripe_amount, $this->stripe->client->currency()->precision, $this->stripe->client->currency())
-        );
-
-        $message = [
-            'server_response' => $server_response,
-            'data' => $this->stripe->payment_hash->data,
-        ];
-
-        SystemLogger::dispatch(
-            $message,
-            SystemLog::CATEGORY_GATEWAY_RESPONSE,
-            SystemLog::EVENT_GATEWAY_FAILURE,
-            SystemLog::TYPE_STRIPE,
-            $this->stripe->client,
-            $this->stripe->client->company,
-        );
-
-        throw new PaymentFailed('Failed to process the payment.', 400);
+        return 'gateways.stripe.fpx.pay_livewire';
     }
 }

@@ -12,18 +12,22 @@
 
 namespace App\Livewire\BillingPortal\Authentication;
 
-use Illuminate\Support\Facades\Validator;
 use Livewire\Component;
 use App\Models\Subscription;
 use App\Models\ClientContact;
+use App\Utils\Traits\MakesHash;
 use App\Jobs\Mail\NinjaMailerJob;
+use Livewire\Attributes\Computed;
 use App\Mail\Subscription\OtpCode;
 use App\Jobs\Mail\NinjaMailerObject;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\Validator;
 
 class RegisterOrLogin extends Component
 {
-    public Subscription $subscription;
+    use MakesHash;
+
+    public string $subscription_id;
 
     public array $context;
 
@@ -32,6 +36,8 @@ class RegisterOrLogin extends Component
     public ?string $password;
 
     public ?int $otp;
+
+    public array $formData = [];
 
     public array $state = [
         'otp' => false, // Use as preference. E-mail/password or OTP.
@@ -45,11 +51,34 @@ class RegisterOrLogin extends Component
 
     public array $additional_fields = [];
 
+    #[Computed]
+    public function subscription()
+    {
+        return Subscription::find($this->decodePrimaryKey($this->subscription_id));
+    }
+
     public function initial()
     {
         $this->validateOnly('email', ['email' => 'required|bail|email:rfc']);
 
         $this->state['initial_completed'] = true;
+
+
+        if (!$this->subscription()->registration_required) {
+
+            $service = new ClientRegisterService(
+                company: $this->subscription()->company,
+                additional: $this->additional_fields,
+            );
+
+            $client = $service->createClient([]);
+            $contact = $service->createClientContact(['email' => $this->email], $client);
+            auth()->guard('contact')->loginUsingId($contact->id, true);
+            $this->dispatch('update-csrf', token: csrf_token());
+            $this->dispatch('purchase.next');
+            return;
+
+        }
 
         if ($this->state['otp']) {
             return $this->withOtp();
@@ -61,7 +90,7 @@ class RegisterOrLogin extends Component
     public function withPassword()
     {
         $contact = ClientContact::where('email', $this->email)
-            ->where('company_id', $this->subscription->company_id)
+            ->where('company_id', $this->subscription()->company_id)
             ->first();
 
         if ($contact) {
@@ -82,11 +111,14 @@ class RegisterOrLogin extends Component
         $attempt = auth()->guard('contact')->attempt([
             'email' => $this->email,
             'password' => $this->password,
-            'company_id' => $this->subscription->company_id,
+            'company_id' => $this->subscription()->company_id,
         ]);
 
         if ($attempt) {
+            $this->dispatch('update-csrf', token: csrf_token());
             $this->dispatch('purchase.next');
+
+            return;
         }
 
         session()->flash('message', 'These credentials do not match our records.');
@@ -95,12 +127,11 @@ class RegisterOrLogin extends Component
     public function withOtp(): void
     {
         $contact = ClientContact::where('email', $this->email)
-            ->where('company_id', $this->subscription->company_id)
+            ->where('company_id', $this->subscription()->company_id)
             ->first();
 
         if ($contact === null) {
             $this->registerForm();
-
             return;
         }
 
@@ -113,10 +144,10 @@ class RegisterOrLogin extends Component
         $cc->email = $this->email;
 
         $nmo = new NinjaMailerObject();
-        $nmo->mailable = new OtpCode($this->subscription->company, $this->context['contact'] ?? null, $code);
-        $nmo->company = $this->subscription->company;
-        $nmo->settings = $this->subscription->company->settings;
-        $nmo->to_user = $cc;
+        $nmo->mailable = new OtpCode($this->subscription()->company, $contact, $code);
+        $nmo->company = $this->subscription()->company;
+        $nmo->settings = $this->subscription()->company->settings;
+        $nmo->to_user = $contact;
 
         NinjaMailerJob::dispatch($nmo);
 
@@ -143,13 +174,14 @@ class RegisterOrLogin extends Component
         }
 
         $contact = ClientContact::where('email', $this->email)
-            ->where('company_id', $this->subscription->company_id)
+            ->where('company_id', $this->subscription()->company_id)
             ->first();
 
         if ($contact) {
             auth()->guard('contact')->loginUsingId($contact->id, true);
+            $this->dispatch('update-csrf', token: csrf_token());
 
-            $this->dispatch('purchase.context', property: 'contact', value: $contact);
+            // $this->dispatch('purchase.context', property: 'contact', value: $contact);
             $this->dispatch('purchase.next');
 
             return;
@@ -161,8 +193,14 @@ class RegisterOrLogin extends Component
 
     public function register(array $data): void
     {
+
+        $data = array_merge($data, [
+            'country_id' => $this->formData['country_id'] ?? null,
+            'shipping_country_id' => $this->formData['shipping_country_id'] ?? null,
+        ]);
+
         $service = new ClientRegisterService(
-            company: $this->subscription->company,
+            company: $this->subscription()->company,
             additional: $this->additional_fields,
         );
 
@@ -173,40 +211,38 @@ class RegisterOrLogin extends Component
         $contact = $service->createClientContact($data, $client);
 
         auth()->guard('contact')->loginUsingId($contact->id, true);
+        $this->dispatch('update-csrf', token: csrf_token());
 
-        $this->dispatch('purchase.context', property: 'contact', value: $contact);
+        // $this->dispatch('purchase.context', property: 'contact', value: $contact);
         $this->dispatch('purchase.next');
     }
 
     public function registerForm()
     {
-        $count = collect($this->subscription->company->client_registration_fields ?? [])
+        $count = collect($this->subscription()->company->client_registration_fields ?? [])
             ->filter(fn($field) => $field['required'] === true || $field['visible'] === true)
             ->count();
 
         if ($count === 0) {
             $service = new ClientRegisterService(
-                company: $this->subscription->company,
+                company: $this->subscription()->company,
             );
 
             $client = $service->createClient([]);
             $contact = $service->createClientContact(['email' => $this->email], $client);
 
             auth()->guard('contact')->loginUsingId($contact->id, true);
+            $this->dispatch('update-csrf', token: csrf_token());
 
-            $this->dispatch('purchase.context', property: 'contact', value: $contact);
+            // $this->dispatch('purchase.context', property: 'contact', value: $contact);
             $this->dispatch('purchase.next');
 
             return;
         }
 
-        $this->register_fields = [...collect($this->subscription->company->client_registration_fields ?? [])->toArray()];
+        $this->register_fields = [...collect($this->subscription()->company->client_registration_fields ?? [])->toArray()];
 
-        // if ($this->subscription->company->settings->client_portal_terms || $this->subscription->company->settings->client_portal_privacy_policy) {
-        //     $this->register_fields[] = ['key' => 'terms', 'required' => true, 'visible' => 'true'];
-        // }
-
-        $first_gateway = collect($this->subscription->company->company_gateways)
+        $first_gateway = collect($this->subscription()->company->company_gateways()->withoutTrashed()->get())
             ->sortBy('sort_order')
             ->first();
 
@@ -220,7 +256,7 @@ class RegisterOrLogin extends Component
                     return;
                 }
 
-                $i = collect($this->register_fields)->search(fn ($field) => $field['key'] == $mapping);
+                $i = collect($this->register_fields)->search(fn($field) => $field['key'] == $mapping);
 
                 if ($i !== false) {
                     $this->register_fields[$i]['visible'] = true;
@@ -246,17 +282,19 @@ class RegisterOrLogin extends Component
 
     public function mount()
     {
-        if (auth()->guard('contact')->check()) {
-            $this->dispatch('purchase.context', property: 'contact', value: auth()->guard('contact')->user());
-            $this->dispatch('purchase.next');
 
+        if (auth()->guard('contact')->check()) {
+            $this->dispatch('purchase.next');
             return;
         }
+
     }
 
     public function render()
     {
-        $countries = Cache::get('countries');
+
+        /** @var \Illuminate\Support\Collection<\App\Models\Country> */
+        $countries = app('countries');
 
         return view('billing-portal.v3.authentication.register-or-login', [
             'countries' => $countries,

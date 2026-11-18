@@ -1,10 +1,11 @@
 <?php
+
 /**
  * Invoice Ninja (https://invoiceninja.com).
  *
  * @link https://github.com/invoiceninja/invoiceninja source repository
  *
- * @copyright Copyright (c) 2024. Invoice Ninja LLC (https://invoiceninja.com)
+ * @copyright Copyright (c) 2026. Invoice Ninja LLC (https://invoiceninja.com)
  *
  * @license https://www.elastic.co/licensing/elastic-license
  */
@@ -21,9 +22,7 @@ use stdClass;
 
 class QuoteExpiredObject
 {
-    public function __construct(public Quote $quote, public Company $company, public bool $use_react_url)
-    {
-    }
+    public function __construct(public Quote $quote, public Company $company) {}
 
     public function build()
     {
@@ -75,21 +74,21 @@ class QuoteExpiredObject
         $content = ctrans(
             'texts.notification_quote_expired',
             [
-                    'amount' => $this->getAmount(),
-                    'client' => $this->quote->client->present()->name(),
-                    'invoice' => $this->quote->number,
-                ]
+                'amount' => $this->getAmount(),
+                'client' => $this->quote->client->present()->name(),
+                'invoice' => $this->quote->number,
+            ]
         );
 
         $data = [
             'title' => $this->getSubject(),
             'content' => $content,
-            'url' => $this->quote->invitations->first()->getAdminLink($this->use_react_url),
-            'button' => $this->use_react_url ? ctrans('texts.view_quote') : ctrans('texts.login'),
+            'url' => $this->quote->invitations->first()->getAdminLink(),
+            'button' => ctrans('texts.view_quote'),
             'signature' => $settings->email_signature,
             'logo' => $this->company->present()->logo(),
             'settings' => $settings,
-            'whitelabel' => $this->company->account->isPaid() ? true : false,
+            'whitelabel' => true,
             'text_body' => $content,
             'template' => $this->company->account->isPremium() ? 'email.template.admin_premium' : 'email.template.admin',
 

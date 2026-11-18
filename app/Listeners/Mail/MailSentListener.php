@@ -1,10 +1,11 @@
 <?php
+
 /**
  * Invoice Ninja (https://invoiceninja.com).
  *
  * @link https://github.com/invoiceninja/invoiceninja source repository
  *
- * @copyright Copyright (c) 2024. Invoice Ninja LLC (https://invoiceninja.com)
+ * @copyright Copyright (c) 2026. Invoice Ninja LLC (https://invoiceninja.com)
  *
  * @license https://www.elastic.co/licensing/elastic-license
  */
@@ -23,16 +24,14 @@ use App\Models\RecurringInvoiceInvitation;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Symfony\Component\Mime\MessageConverter;
 
-class MailSentListener implements ShouldQueue
+class MailSentListener
 {
     /**
      * Create the event listener.
      *
      * @return void
      */
-    public function __construct()
-    {
-    }
+    public function __construct() {}
 
     /**
      * Handle the event.
@@ -44,12 +43,17 @@ class MailSentListener implements ShouldQueue
     {
 
         try {
+
             $message_id = $event->sent->getMessageId();
 
-            $message = MessageConverter::toEmail($event->sent->getOriginalMessage());
+            $message = MessageConverter::toEmail($event->sent->getOriginalMessage()); //@phpstan-ignore-line
 
             if (!$message->getHeaders()->get('x-invitation')) {
                 return;
+            }
+
+            if ($message->getHeaders()->get('x-message-id')) {
+                $message_id = $message->getHeaders()->get('x-message-id')->getValue();
             }
 
             $invitation_key = $message->getHeaders()->get('x-invitation')->getValue();
@@ -61,6 +65,7 @@ class MailSentListener implements ShouldQueue
                     return;
                 }
 
+                $invitation->sent_date = now();
                 $invitation->message_id = str_replace(["<",">"], "", $message_id);
                 $invitation->save();
             }

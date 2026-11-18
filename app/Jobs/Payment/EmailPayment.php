@@ -1,10 +1,11 @@
 <?php
+
 /**
  * Invoice Ninja (https://invoiceninja.com).
  *
  * @link https://github.com/invoiceninja/invoiceninja source repository
  *
- * @copyright Copyright (c) 2024. Invoice Ninja LLC (https://invoiceninja.com)
+ * @copyright Copyright (c) 2026. Invoice Ninja LLC (https://invoiceninja.com)
  *
  * @license https://www.elastic.co/licensing/elastic-license
  */
@@ -58,41 +59,46 @@ class EmailPayment implements ShouldQueue
      */
     public function handle()
     {
-        if ($this->company->is_disabled || (!$this->contact?->email ?? false)) {
-            nlog("company disabled - or - contact email not found");
-            return;
-        }
 
         MultiDB::setDb($this->company->db);
 
         $this->payment->load('invoices');
 
         if (!$this->contact) {
-            $this->contact = $this->payment->client->contacts()->orderBy('is_primary', 'desc')->first();
+            $this->contact = $this->payment->client->contacts()->orderBy('is_primary', 'desc')->orderBy('send_email', 'desc')->first();
+        }
+
+        if (!$this->contact) {
+            return;
+        }
+
+        if ($this->company->is_disabled) {
+            nlog("company disabled");
+            return;
         }
 
         $this->contact->load('client');
 
-        $email_builder = (new PaymentEmailEngine($this->payment, $this->contact))->build();
-
-        if($this->payment->client->getSetting('payment_email_all_contacts') && $this->payment->invoices && $this->payment->invoices->count() >= 1) {
-            $this->emailAllContacts($email_builder);
+        if ($this->payment->client->getSetting('payment_email_all_contacts') && $this->payment->invoices->count() >= 1) {
+            $this->emailAllContacts();
             return;
         }
+
+        $email_builder = (new PaymentEmailEngine($this->payment, $this->contact))->build();
 
         $invitation = null;
 
         $nmo = new NinjaMailerObject();
 
-        if ($this->payment->invoices && $this->payment->invoices->count() >= 1) {
+        if ($this->payment->invoices->isNotEmpty()) {
 
-            if($this->contact) {
-                $invitation = $this->payment->invoices->first()->invitations()->where('client_contact_id', $this->contact->id)->first();
-            } else {
+            $invitation = $this->payment->invoices->first()->invitations()->where('client_contact_id', $this->contact->id)->first();
+
+            if (!$invitation) {
                 $invitation = $this->payment->invoices->first()->invitations()->first();
             }
 
-            if($invitation) {
+            if ($invitation) {
                 $nmo->invitation = $invitation;
             }
         }
@@ -102,6 +108,9 @@ class EmailPayment implements ShouldQueue
         $nmo->settings = $this->settings;
         $nmo->company = $this->company;
         $nmo->entity = $this->payment;
+        $nmo->cc = collect($this->payment->client->cc_contacts())
+        ->map(fn($address) => $address->address)
+        ->toArray();
 
         (new NinjaMailerJob($nmo))->handle();
 
@@ -109,28 +118,51 @@ class EmailPayment implements ShouldQueue
 
     }
 
-    private function emailAllContacts($email_builder): void
+    private function emailAllContacts(): void
     {
 
         $invoice = $this->payment->invoices->first();
 
-        $invoice->invitations->each(function ($invite) use ($email_builder) {
-
-            
-            $cloned_mailable = unserialize(serialize($email_builder));
-
-            $nmo = new NinjaMailerObject();
-            $nmo->mailable = new TemplateEmail($cloned_mailable, $invite->contact, $invite);
-            $nmo->to_user = $invite->contact;
-            $nmo->settings = $this->settings;
-            $nmo->company = $this->company;
-            $nmo->entity = $this->payment;
-            (new NinjaMailerJob($nmo))->handle();
-            $nmo = null;
-
-            event(new PaymentWasEmailed($this->payment, $this->payment->company, $invite->contact, Ninja::eventVars(auth()->user() ? auth()->user()->id : null)));
-
+        $validInvitations = $invoice->invitations->filter(function ($invite) {
+            return $invite->contact->send_email && filter_var($invite->contact->email, FILTER_VALIDATE_EMAIL) !== false;
         });
+
+        if ($validInvitations->isEmpty()) {
+            return;
+        }
+
+        $primaryInvite = $validInvitations->first();
+
+        /** Contacts who have an invite and need a copy of the receipt */
+        $ccEmails = $validInvitations->slice(1)->map(function ($invite) {
+            return $invite->contact->email;
+        })->values()->all();
+
+        /** Merge in the CC only contacts who DON'T have an invite */
+        $ccOnlyEmails = collect($this->payment->client->cc_contacts())
+            ->map(fn($address) => $address->address)
+            ->toArray();
+
+        $ccEmails = array_unique(array_merge($ccEmails, $ccOnlyEmails));
+
+        $email_builder = (new PaymentEmailEngine($this->payment, $primaryInvite->contact))->build();
+
+        $nmo = new NinjaMailerObject();
+        $mailable = new TemplateEmail($email_builder, $primaryInvite->contact, $primaryInvite);
+
+        if (!empty($ccEmails)) {
+            $mailable->cc($ccEmails);
+        }
+
+        $nmo->mailable = $mailable;
+        $nmo->to_user = $primaryInvite->contact;
+        $nmo->settings = $this->settings;
+        $nmo->company = $this->company;
+        $nmo->entity = $this->payment;
+
+        (new NinjaMailerJob($nmo))->handle();
+
+        event(new PaymentWasEmailed($this->payment, $this->payment->company, $primaryInvite->contact, Ninja::eventVars(auth()->user() ? auth()->user()->id : null)));
 
     }
 }

@@ -1,10 +1,11 @@
 <?php
+
 /**
  * Invoice Ninja (https://invoiceninja.com).
  *
  * @link https://github.com/invoiceninja/invoiceninja source repository
  *
- * @copyright Copyright (c) 2024. Invoice Ninja LLC (https://invoiceninja.com)
+ * @copyright Copyright (c) 2026. Invoice Ninja LLC (https://invoiceninja.com)
  *
  * @license https://www.elastic.co/licensing/elastic-license
  */
@@ -15,6 +16,7 @@ use App\Http\Controllers\Controller;
 use App\Http\Requests\ClientPortal\RegisterRequest;
 use App\Livewire\BillingPortal\Authentication\ClientRegisterService;
 use App\Models\Company;
+use App\Services\ClientPortal\CustomFieldService;
 use App\Utils\Ninja;
 use App\Utils\Traits\GeneratesCounter;
 use Illuminate\Support\Facades\App;
@@ -44,13 +46,39 @@ class ContactRegisterController extends Controller
         $t = app('translator');
         $t->replace(Ninja::transformTranslations($company->settings));
 
-        return render('auth.register', ['register_company' => $company, 'account' => $company->account, 'submitsForm' => false]);
+        $domain_name = request()->getHost();
+
+        $show_turnstile = false;
+
+        if (config('ninja.cloudflare.turnstile.site_key') && strpos($domain_name, config('ninja.app_domain')) !== false) {
+            $show_turnstile = true;
+        }
+
+        $service = app(CustomFieldService::class);
+
+        $data = [
+            'formed_disabled' => $company->account->isFreeHostedClient(),
+            'register_company' => $company,
+            'account' => $company->account,
+            'submitsForm' => false,
+            'show_turnstile' => $show_turnstile,
+            'custom_field_definitions' => collect($service->buildFields($company))->keyBy('key')->all(),
+        ];
+
+        return render('auth.register', $data);
     }
 
     public function register(RegisterRequest $request)
     {
+
+        $company = $request->company();
+
+        if (! $company->client_can_register || $company->account->isFreeHostedClient()) {
+            abort(403, 'This page is restricted');
+        }
+
         $request->merge(['company' => $request->company()]);
-        
+
         $service = new ClientRegisterService(
             company: $request->company(),
         );

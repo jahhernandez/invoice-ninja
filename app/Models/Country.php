@@ -1,10 +1,11 @@
 <?php
+
 /**
  * Invoice Ninja (https://invoiceninja.com).
  *
  * @link https://github.com/invoiceninja/invoiceninja source repository
  *
- * @copyright Copyright (c) 2024. Invoice Ninja LLC (https://invoiceninja.com)
+ * @copyright Copyright (c) 2026. Invoice Ninja LLC (https://invoiceninja.com)
  *
  * @license https://www.elastic.co/licensing/elastic-license
  */
@@ -57,6 +58,7 @@ namespace App\Models;
  * @method static \Illuminate\Database\Eloquent\Builder|Country whereThousandSeparator($value)
  * @mixin \Eloquent
  */
+#[\AllowDynamicProperties]
 class Country extends StaticModel
 {
     public $timestamps = false;
@@ -79,7 +81,7 @@ class Country extends StaticModel
      */
     public function getName(): string
     {
-        return trans('texts.country_'.$this->name);
+        return trans('texts.country_' . $this->name);
     }
     public function getID(): string
     {

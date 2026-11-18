@@ -1,34 +1,38 @@
 <?php
+
 /**
  * Invoice Ninja (https://invoiceninja.com).
  *
  * @link https://github.com/invoiceninja/invoiceninja source repository
  *
- * @copyright Copyright (c) 2024. Invoice Ninja LLC (https://invoiceninja.com)
+ * @copyright Copyright (c) 2026. Invoice Ninja LLC (https://invoiceninja.com)
  *
  * @license https://www.elastic.co/licensing/elastic-license
  */
 
 namespace App\Jobs\Import;
 
-use App\Factory\ClientContactFactory;
-use App\Factory\VendorContactFactory;
+use App\Models\Client;
+use App\Models\Vendor;
+use App\Models\Company;
+use App\Libraries\MultiDB;
+use Illuminate\Support\Str;
 use App\Import\Providers\Csv;
-use App\Import\Providers\Freshbooks;
-use App\Import\Providers\Invoice2Go;
-use App\Import\Providers\Invoicely;
+use Illuminate\Bus\Queueable;
 use App\Import\Providers\Wave;
 use App\Import\Providers\Zoho;
-use App\Libraries\MultiDB;
-use App\Models\Client;
-use App\Models\Company;
-use App\Models\Vendor;
-use Illuminate\Bus\Queueable;
+use App\Import\Providers\QBBackup;
+use App\Import\Providers\Invoicely;
+use App\Import\Providers\Freshbooks;
+use App\Import\Providers\Invoice2Go;
+use App\Factory\ClientContactFactory;
+use App\Factory\VendorContactFactory;
+use Illuminate\Queue\SerializesModels;
+use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
-use Illuminate\Queue\InteractsWithQueue;
-use Illuminate\Queue\SerializesModels;
-use Illuminate\Support\Str;
+use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Support\LazyCollection;
 
 class CSVIngest implements ShouldQueue
 {
@@ -51,6 +55,8 @@ class CSVIngest implements ShouldQueue
 
     public $tries = 1;
 
+    public $timeout = 10800;
+
     public function __construct(array $request, Company $company)
     {
         $this->company = $company;
@@ -58,9 +64,9 @@ class CSVIngest implements ShouldQueue
         $this->hash = $request['hash'];
         $this->import_type = $request['import_type'];
         $this->skip_header = $request['skip_header'] ?? null;
-        $this->column_map =
-            ! empty($request['column_map']) ?
-                array_combine(array_keys($request['column_map']), array_column($request['column_map'], 'mapping')) : null;
+        $this->column_map
+            = ! empty($request['column_map'])
+                ? array_combine(array_keys($request['column_map']), array_column($request['column_map'], 'mapping')) : null;
     }
 
     /**
@@ -77,7 +83,7 @@ class CSVIngest implements ShouldQueue
 
         $engine = $this->bootEngine();
 
-        foreach (['client', 'product', 'invoice', 'payment', 'vendor', 'expense', 'quote', 'bank_transaction', 'recurring_invoice', 'task'] as $entity) {
+        foreach (['client', 'product', 'invoice', 'payment', 'vendor', 'purchase_order', 'expense', 'quote', 'bank_transaction', 'recurring_invoice', 'task'] as $entity) {
             $engine->import($entity);
         }
 
@@ -108,17 +114,28 @@ class CSVIngest implements ShouldQueue
             $new_contact->save();
         }
 
-        Client::with('contacts')->where('company_id', $this->company->id)->cursor()->each(function ($client) {
-            $contact = $client->contacts()->first();
-            $contact->is_primary = true;
-            $contact->save();
+        $this->streamQuery(Client::with('contacts')->where('company_id', $this->company->id))->each(function (Client $client): void {
+            $contact = $client->contacts->first();
+
+            if ($contact) {
+                $contact->is_primary = true;
+                $contact->save();
+            }
         });
 
-        Vendor::with('contacts')->where('company_id', $this->company->id)->cursor()->each(function ($vendor) {
-            $contact = $vendor->contacts()->first();
-            $contact->is_primary = true;
-            $contact->save();
+        $this->streamQuery(Vendor::with('contacts')->where('company_id', $this->company->id))->each(function (Vendor $vendor): void {
+            $contact = $vendor->contacts->first();
+
+            if ($contact) {
+                $contact->is_primary = true;
+                $contact->save();
+            }
         });
+    }
+
+    private function streamQuery(Builder $query): LazyCollection
+    {
+        return (clone $query)->lazy(500);
     }
 
     private function bootEngine()
@@ -136,6 +153,8 @@ class CSVIngest implements ShouldQueue
                 return new Zoho($this->request, $this->company);
             case 'freshbooks':
                 return new Freshbooks($this->request, $this->company);
+            case 'quickbooks':
+                return new QBBackup($this->request, $this->company);
             default:
                 nlog("could not return provider");
                 break;

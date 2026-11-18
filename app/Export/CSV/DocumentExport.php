@@ -1,10 +1,11 @@
 <?php
+
 /**
  * Invoice Ninja (https://invoiceninja.com).
  *
  * @link https://github.com/invoiceninja/invoiceninja source repository
  *
- * @copyright Copyright (c) 2024. Invoice Ninja LLC (https://invoiceninja.com)
+ * @copyright Copyright (c) 2026. Invoice Ninja LLC (https://invoiceninja.com)
  *
  * @license https://www.elastic.co/licensing/elastic-license
  */
@@ -52,8 +53,10 @@ class DocumentExport extends BaseExport
             return ['identifier' => $key, 'display_value' => $headerdisplay[$value]];
         })->toArray();
 
-        $report = $query->cursor()
+        $report = $this->streamQuery($query)
                 ->map(function ($document) {
+
+                    /** @var \App\Models\Document $document */
                     $row = $this->buildRow($document);
                     return $this->processMetaData($row, $document);
                 })->toArray();
@@ -61,7 +64,7 @@ class DocumentExport extends BaseExport
         return array_merge(['columns' => $header], $report);
     }
 
-    private function init(): Builder
+    public function init(): Builder
     {
 
         MultiDB::setDb($this->company->db);
@@ -76,9 +79,11 @@ class DocumentExport extends BaseExport
 
         $query = Document::query()->where('company_id', $this->company->id);
 
-        $query = $this->addDateRange($query);
+        $query = $this->addDateRange($query, 'documents');
 
-        if($this->input['document_email_attachment'] ?? false) {
+        $query = $this->filterByUserPermissions($query);
+
+        if ($this->input['document_email_attachment'] ?? false) {
             $this->queueDocuments($query);
         }
 
@@ -91,21 +96,22 @@ class DocumentExport extends BaseExport
         $query = $this->init();
 
         //load the CSV document from a string
-        $this->csv = Writer::createFromString();
+        $this->csv = Writer::fromString();
         \League\Csv\CharsetConverter::addTo($this->csv, 'UTF-8', 'UTF-8');
 
         //insert the header
         $this->csv->insertOne($this->buildHeader());
 
-        $query->cursor()
+        $this->streamQuery($query)
               ->each(function ($entity) {
+                  /** @var mixed $entity */
                   $this->csv->insertOne($this->buildRow($entity));
               });
 
         return $this->csv->toString();
     }
 
-    private function buildRow(Document $document): array
+    protected function buildRow(Document $document): array
     {
         $transformed_entity = $this->entity_transformer->transform($document);
 
@@ -128,6 +134,10 @@ class DocumentExport extends BaseExport
     {
         if (in_array('record_type', $this->input['report_keys'])) {
             $entity['record_type'] = class_basename($document->documentable);
+        }
+
+        if (in_array('created_at', $this->input['report_keys'])) {
+            $entity['created_at'] = \Carbon\Carbon::createFromTimestamp($document->created_at)->format('Y-m-d H:i:s');
         }
 
         // if(in_array('record_name', $this->input['report_keys']))

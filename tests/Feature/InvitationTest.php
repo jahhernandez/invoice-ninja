@@ -1,4 +1,5 @@
 <?php
+
 /**
  * Invoice Ninja (https://invoiceninja.com).
  *
@@ -26,8 +27,8 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
 
 /**
- * @test
- * @covers App\Models\InvoiceInvitation
+ *
+ *  App\Models\InvoiceInvitation
  */
 class InvitationTest extends TestCase
 {
@@ -35,11 +36,10 @@ class InvitationTest extends TestCase
     use DatabaseTransactions;
     // use RefreshDatabase;
 
-    protected function setUp() :void
+    protected function setUp(): void
     {
         parent::setUp();
 
-        $this->faker = \Faker\Factory::create();
     }
 
     public function testInvoiceCreationAfterInvoiceMarkedSent()
@@ -52,7 +52,7 @@ class InvitationTest extends TestCase
         $account->default_company_id = $company->id;
         $account->save();
 
-        $fake_email = $this->faker->email();
+        $fake_email = uniqid('testuser') . '@gmail.com';
 
         $user = User::where('email', $fake_email)->first();
 

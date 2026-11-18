@@ -1,18 +1,20 @@
 <?php
+
 /**
  * Invoice Ninja (https://invoiceninja.com).
  *
  * @link https://github.com/invoiceninja/invoiceninja source repository
  *
- * @copyright Copyright (c) 2024. Invoice Ninja LLC (https://invoiceninja.com)
+ * @copyright Copyright (c) 2026. Invoice Ninja LLC (https://invoiceninja.com)
  *
  * @license https://www.elastic.co/licensing/elastic-license
  */
 
 namespace App\DataMapper;
 
-use App\Utils\Traits\MakesHash;
 use stdClass;
+use App\Utils\Ninja;
+use App\Utils\Traits\MakesHash;
 
 /**
  * CompanySettings.
@@ -29,7 +31,7 @@ class CompanySettings extends BaseSettings
 
     public $besr_id = ''; //@implemented
 
-    public $lock_invoices = 'off'; //off,when_sent,when_paid //@implemented
+    public $lock_invoices = 'off'; //off,when_sent,when_paid,end_of_month //@implemented
 
     public $enable_client_portal_tasks = false; //@ben to implement
 
@@ -229,7 +231,7 @@ class CompanySettings extends BaseSettings
     public $require_quote_signature = false;  //@TODO ben to confirm
 
     //email settings
-    public $email_sending_method = 'default'; //enum 'default','gmail','office365' 'client_postmark', 'client_mailgun', 'mailgun', 'client_brevo' //@implemented
+    public $email_sending_method = 'default'; //enum 'default','gmail','office365' 'client_postmark', 'client_mailgun', 'mailgun', 'client_brevo', 'client_ses', 'ses' //@implemented
 
     public $gmail_sending_user_id = '0'; //@implemented
 
@@ -477,13 +479,19 @@ class CompanySettings extends BaseSettings
 
     public $sync_invoice_quote_columns = true;
 
-    public $e_invoice_type = 'EN16931';
+    public $e_invoice_type = 'EN16931'; //verifactu
 
     public $e_quote_type = 'OrderX_Comfort';
 
     public $default_expense_payment_type_id = '0';
 
     public $enable_e_invoice = false;
+
+    public $e_invoice_forward_email = '';
+
+    public $e_expense_forward_email = '';
+
+    public $skip_automatic_email_with_peppol = false;
 
     public $delivery_note_design_id = '';
 
@@ -507,7 +515,63 @@ class CompanySettings extends BaseSettings
 
     public int $task_round_to_nearest = 1;
 
+    public bool $merge_e_invoice_to_pdf = false;
+
+    /** quote reminders */
+    public $email_quote_template_reminder1 = '';
+    public $email_quote_subject_reminder1 = '';
+    public $enable_quote_reminder1 = false;
+    public $quote_num_days_reminder1 = 0;
+    public $quote_schedule_reminder1 = ''; //before_valid_until_date,after_valid_until_date,after_quote_date
+    public $quote_late_fee_amount1 = 0;
+    public $quote_late_fee_percent1 = 0;
+
+    public string $payment_flow = 'smooth'; //smooth
+
+    public string $email_subject_payment_failed = '';
+    public string $email_template_payment_failed = '';
+
+    public bool $enable_client_profile_update = true;
+    public bool $preference_product_notes_for_html_view = true;
+
+    public bool $unlock_invoice_documents_after_payment = false;
+
+    public string $ses_secret_key = '';
+    public string $ses_access_key = '';
+    public string $ses_region = '';
+    public string $ses_topic_arn = '';
+    public string $ses_from_address = '';
+
+    public bool $france_reporting_enabled = false;
+    public string $france_reporting_schedule = 'ten_day'; //ten_day, monthly
+
+    public bool $global_tag_inheritance = false;
+    public bool $documents_public_by_default = true;
+    
+
     public static $casts = [
+        'documents_public_by_default' => 'bool',
+        'global_tag_inheritance' => 'bool',
+        'france_reporting_enabled' => 'bool',
+        'france_reporting_schedule' => 'string',
+        'e_expense_forward_email' => 'string',
+        'ses_from_address' => 'string',
+        'ses_topic_arn' => 'string',
+        'ses_secret_key' => 'string',
+        'ses_access_key' => 'string',
+        'ses_region' => 'string',
+        'unlock_invoice_documents_after_payment' => 'bool',
+        'preference_product_notes_for_html_view' => 'bool',
+        'enable_client_profile_update'       => 'bool',
+        'merge_e_invoice_to_pdf'             => 'bool',
+        'payment_flow'                       => 'string',
+        'enable_quote_reminder1'             => 'bool',
+        'quote_num_days_reminder1'           => 'int',
+        'quote_schedule_reminder1'           => 'string',
+        'quote_late_fee_amount1'             => 'float',
+        'quote_late_fee_percent1'            => 'float',
+        'email_quote_template_reminder1'     => 'string',
+        'email_quote_subject_reminder1'      => 'string',
         'task_round_up'                      => 'bool',
         'task_round_to_nearest'              => 'int',
         'e_quote_type'                       => 'string',
@@ -523,6 +587,8 @@ class CompanySettings extends BaseSettings
         'classification'                     => 'string',
         'default_expense_payment_type_id'    => 'string',
         'e_invoice_type'                     => 'string',
+        'e_invoice_forward_email'            => 'string',
+        'skip_automatic_email_with_peppol'   => 'bool',
         'mailgun_endpoint'                   => 'string',
         'client_initiated_payments'          => 'bool',
         'client_initiated_payments_minimum'  => 'float',
@@ -750,6 +816,8 @@ class CompanySettings extends BaseSettings
         'portal_custom_js' => 'string',
         'client_portal_enable_uploads' => 'bool',
         'purchase_order_number_counter' => 'integer',
+        'email_template_payment_failed'      => 'string',
+        'email_subject_payment_failed'       => 'string',
     ];
 
     public static $free_plan_casts = [
@@ -895,7 +963,10 @@ class CompanySettings extends BaseSettings
     {
         $notification = new stdClass();
         $notification->email = [];
-        $notification->email = ['invoice_sent_all', 'payment_success_all', 'payment_manual_all'];
+
+        if (Ninja::isSelfHost()) {
+            $notification->email = ['invoice_sent_all', 'payment_success_all', 'payment_manual_all'];
+        }
 
         return $notification;
     }
@@ -912,6 +983,7 @@ class CompanySettings extends BaseSettings
     {
         $variables = [
             'client_details' => [
+                '$client.location_name',
                 '$client.name',
                 '$client.number',
                 '$client.vat_number',
@@ -962,6 +1034,7 @@ class CompanySettings extends BaseSettings
                 '$invoice.due_date',
                 '$invoice.total',
                 '$invoice.balance_due',
+                '$invoice.project',
             ],
             'quote_details' => [
                 '$quote.number',
@@ -969,10 +1042,12 @@ class CompanySettings extends BaseSettings
                 '$quote.date',
                 '$quote.valid_until',
                 '$quote.total',
+                '$quote.project',
             ],
             'credit_details' => [
                 '$credit.number',
                 '$credit.po_number',
+                '$credit.valid_until',
                 '$credit.date',
                 '$credit.balance',
                 '$credit.total',
@@ -1039,12 +1114,18 @@ class CompanySettings extends BaseSettings
             ],
             'statement_details' => [
                 '$statement_date',
-                '$balance'
+                '$balance',
             ],
             'delivery_note_columns' => [
                 '$product.item',
                 '$product.description',
                 '$product.quantity',
+            ],
+            'statement_unapplied_columns' => [
+                '$payment.number',
+                '$payment.date',
+                '$payment.amount',
+                '$payment.payment_balance',
             ],
         ];
 

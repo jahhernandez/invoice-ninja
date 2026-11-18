@@ -1,10 +1,11 @@
 <?php
+
 /**
  * Invoice Ninja (https://invoiceninja.com).
  *
  * @link https://github.com/invoiceninja/invoiceninja source repository
  *
- * @copyright Copyright (c) 2024. Invoice Ninja LLC (https://invoiceninja.com)
+ * @copyright Copyright (c) 2026. Invoice Ninja LLC (https://invoiceninja.com)
  *
  * @license https://www.elastic.co/licensing/elastic-license
  */
@@ -118,12 +119,18 @@ class ContactForgotPasswordController extends Controller
                                     })->first();
         }
 
-        $response = false;
+        // $response = false;
 
         if ($contact) {
             /* Update all instances of the client */
-            $token = Str::random(60);
-            ClientContact::where('email', $contact->email)->update(['token' => $token]);
+            $expires_at = now()
+                ->addMinutes((int) config('auth.passwords.contacts.expire'))
+                ->timestamp;
+            $token = $expires_at . '.' . Str::random(49);
+
+            ClientContact::where('email', $contact->email)
+                ->where('company_id', $contact->company_id)
+                ->update(['token' => $token]);
             $contact->sendPasswordResetNotification($token);
             $response = Password::RESET_LINK_SENT;
         } else {
@@ -131,16 +138,16 @@ class ContactForgotPasswordController extends Controller
         }
 
         if ($request->ajax()) {
-            if ($response == Password::RESET_THROTTLED) {
+            if ($response == Password::RESET_THROTTLED) { // @phpstan-ignore-line
                 return response()->json(['message' => ctrans('passwords.throttled'), 'status' => false], 429);
             }
 
-            return $response == Password::RESET_LINK_SENT
+            return $response == Password::RESET_LINK_SENT // @phpstan-ignore-line
                 ? response()->json(['message' => 'Reset link sent to your email.', 'status' => true], 201)
                 : response()->json(['message' => 'Email not found', 'status' => false], 401);
         }
 
-        return $response == Password::RESET_LINK_SENT
+        return $response == Password::RESET_LINK_SENT // @phpstan-ignore-line
             ? $this->sendResetLinkResponse($request, $response)
             : $this->sendResetLinkFailedResponse($request, $response);
     }

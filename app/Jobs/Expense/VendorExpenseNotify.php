@@ -1,10 +1,11 @@
 <?php
+
 /**
  * Invoice Ninja (https://invoiceninja.com).
  *
  * @link https://github.com/invoiceninja/invoiceninja source repository
  *
- * @copyright Copyright (c) 2024. Invoice Ninja LLC (https://invoiceninja.com)
+ * @copyright Copyright (c) 2026. Invoice Ninja LLC (https://invoiceninja.com)
  *
  * @license https://www.elastic.co/licensing/elastic-license
  */
@@ -12,6 +13,7 @@
 namespace App\Jobs\Expense;
 
 use App\Libraries\MultiDB;
+use App\Models\Account;
 use App\Models\Activity;
 use App\Models\Expense;
 use App\Models\VendorContact;
@@ -37,15 +39,13 @@ class VendorExpenseNotify implements ShouldQueue
 
     public $tries = 1;
 
-    public function __construct(private Expense $expense, private string $db)
-    {
-    }
+    public function __construct(private Expense $expense, private string $db) {}
 
     public function handle()
     {
         MultiDB::setDB($this->db);
 
-        if(!$this->expense->vendor) {
+        if (!$this->expense->vendor) {
             return;
         }
 
@@ -58,6 +58,11 @@ class VendorExpenseNotify implements ShouldQueue
 
     private function notify(VendorContact $contact)
     {
+
+        \Illuminate\Support\Facades\App::forgetInstance('translator');
+        $t = app('translator');
+        $t->replace(\App\Utils\Ninja::transformTranslations($this->expense->company->settings));
+        \Illuminate\Support\Facades\App::setLocale($this->expense->vendor->locale());
 
         $mo = new EmailObject();
         $mo->contact = $contact;
@@ -88,6 +93,10 @@ class VendorExpenseNotify implements ShouldQueue
             'transaction_reference' => $this->expense->transaction_reference ?? '',
             'number' => $this->expense->number,
         ];
+
+        if ($this->expense->company->settings->document_email_attachment && $this->expense->company->account->hasFeature(Account::FEATURE_DOCUMENTS)) {
+            $mo->documents = $this->expense->documents()->where('is_public', true)->pluck('id')->toArray();
+        }
 
         Email::dispatch($mo, $this->expense->company);
 

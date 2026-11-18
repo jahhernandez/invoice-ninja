@@ -1,10 +1,11 @@
 <?php
+
 /**
  * Invoice Ninja (https://invoiceninja.com).
  *
  * @link https://github.com/invoiceninja/invoiceninja source repository
  *
- * @copyright Copyright (c) 2024. Invoice Ninja LLC (https://invoiceninja.com)
+ * @copyright Copyright (c) 2026. Invoice Ninja LLC (https://invoiceninja.com)
  *
  * @license https://www.elastic.co/licensing/elastic-license
  */
@@ -12,19 +13,22 @@
 namespace App\Http\Requests\Client;
 
 use App\DataMapper\ClientSettings;
+use App\DataMapper\CompanySettings;
 use App\Http\Requests\Request;
-use App\Http\ValidationRules\Client\CountryCodeExistsRule;
+use App\Http\ValidationRules\EInvoice\ValidClientScheme;
 use App\Http\ValidationRules\Ninja\CanStoreClientsRule;
 use App\Http\ValidationRules\ValidClientGroupSettingsRule;
 use App\Models\Client;
 use App\Models\GroupSetting;
 use App\Utils\Traits\MakesHash;
-use Illuminate\Support\Facades\Cache;
 use Illuminate\Validation\Rule;
 
 class StoreClientRequest extends Request
 {
     use MakesHash;
+
+    /** @var class-string */
+    protected ?string $tag_entity_type = Client::class;
 
     /**
      * Determine if the user is authorized to make this request.
@@ -44,20 +48,12 @@ class StoreClientRequest extends Request
         /** @var  \App\Models\User $user */
         $user = auth()->user();
 
-        if ($this->file('documents') && is_array($this->file('documents'))) {
-            $rules['documents.*'] = $this->fileValidation();
-        } elseif ($this->file('documents')) {
-            $rules['documents'] = $this->fileValidation();
-        }
-        else {
-            $rules['documents'] = 'bail|sometimes|array';
-        }
-
-        if ($this->file('file') && is_array($this->file('file'))) {
-            $rules['file.*'] = $this->fileValidation();
-        } elseif ($this->file('file')) {
-            $rules['file'] = $this->fileValidation();
-        }
+        $rules['name'] = 'bail|sometimes|nullable|string';
+        $rules['file'] = 'bail|sometimes|array';
+        $rules['file.*'] = $this->fileValidation();
+        $rules['documents'] = 'bail|sometimes|array';
+        $rules['documents.*'] = $this->fileValidation();
+        $rules['e_invoice'] = ['sometimes','nullable', new ValidClientScheme()];
 
         /* Ensure we have a client name, and that all emails are unique*/
         //$rules['name'] = 'required|min:1';
@@ -81,13 +77,57 @@ class StoreClientRequest extends Request
         }
 
         $rules['number'] = ['bail', 'nullable', Rule::unique('clients')->where('company_id', $user->company()->id)];
+        $rules['size_id'] = ['bail', 'nullable', 'sometimes', 'exists:sizes,id'];
+        $rules['industry_id'] = ['bail', 'nullable', 'sometimes', 'exists:industries,id'];
         $rules['id_number'] = ['bail', 'nullable', Rule::unique('clients')->where('company_id', $user->company()->id)];
         $rules['classification'] = 'bail|sometimes|nullable|in:individual,business,company,partnership,trust,charity,government,other';
         $rules['shipping_country_id'] = 'integer|nullable|exists:countries,id';
         $rules['number'] = ['sometimes', 'nullable', 'bail', Rule::unique('clients')->where('company_id', $user->company()->id)];
         $rules['country_id'] = 'integer|nullable|exists:countries,id';
+        $rules['group_settings_id'] = ['bail','nullable','sometimes', Rule::exists('group_settings', 'id')->where('company_id', $user->company()->id)];
+        
+        $rules['custom_value1'] = ['bail','nullable','sometimes',function ($attribute, $value, $fail) {
+            if (is_array($value)) {
+                $fail("The $attribute must not be an array.");
+            }
+        }];
+        $rules['custom_value2'] = ['bail','nullable','sometimes',function ($attribute, $value, $fail) {
+            if (is_array($value)) {
+                $fail("The $attribute must not be an array.");
+            }
+        }];
+        $rules['custom_value3'] = ['bail','nullable','sometimes',function ($attribute, $value, $fail) {
+            if (is_array($value)) {
+                $fail("The $attribute must not be an array.");
+            }
+        }];
+        $rules['custom_value4'] = ['bail','nullable','sometimes',function ($attribute, $value, $fail) {
+            if (is_array($value)) {
+                $fail("The $attribute must not be an array.");
+            }
+        }];
 
-        return $rules;
+        $rules['settings.currency_id'] = 'required|exists:currencies,id';
+
+        return $this->globalRules($rules);
+    }
+
+    public function withValidator($validator)
+    {
+        if ($validator->errors()->isNotEmpty()) {
+            return;
+        }
+        
+        $validator->after(function ($validator) {
+
+            $user = auth()->user();
+            $company = $user->company();
+
+            if (isset($this->settings['lock_invoices']) && $company->verifactuEnabled() && $this->settings['lock_invoices'] != 'when_sent') {
+                $validator->errors()->add('settings.lock_invoices', 'Locked Invoices Cannot Be Disabled');
+            }
+
+        });
     }
 
     public function prepareForValidation()
@@ -96,14 +136,22 @@ class StoreClientRequest extends Request
         /** @var \App\Models\User $user */
         $user = auth()->user();
 
+        if ($this->file('documents') instanceof \Illuminate\Http\UploadedFile) {
+            $this->files->set('documents', [$this->file('documents')]);
+        }
+
+        if ($this->file('file') instanceof \Illuminate\Http\UploadedFile) {
+            $this->files->set('file', [$this->file('file')]);
+        }
+
         /* Default settings */
-        $settings = (array)ClientSettings::defaults();
+        $settings = (array) ClientSettings::defaults();
 
         /* Stub settings if they don't exist */
-        if (!array_key_exists('settings', $input)) {
+        if (!array_key_exists('settings', $input) || is_null($input['settings'])) {
             $input['settings'] = [];
         } elseif (is_object($input['settings'])) {
-            $input['settings'] = (array)$input['settings'];
+            $input['settings'] = (array) $input['settings'];
         }
 
         /* Merge default into base settings */
@@ -133,11 +181,9 @@ class StoreClientRequest extends Request
             } else {
                 $input['settings']['currency_id'] = (string) $user->company()->settings->currency_id;
             }
-        } 
-        elseif (! array_key_exists('currency_id', $input['settings'])) {
+        } elseif (! array_key_exists('currency_id', $input['settings'])) {
             $input['settings']['currency_id'] = (string) $user->company()->settings->currency_id;
-        }
-        elseif (empty($input['settings']['currency_id']) ?? true) {
+        } elseif (empty($input['settings']['currency_id']) ?? true) {
             $input['settings']['currency_id'] = (string) $user->company()->settings->currency_id;
         }
 
@@ -170,12 +216,16 @@ class StoreClientRequest extends Request
         }
 
         // prevent xss injection
-        if (array_key_exists('name', $input)) {
+        if (array_key_exists('name', $input) && is_string($input['name'])) {
             $input['name'] = strip_tags($input['name']);
         }
 
         //If you want to validate, the prop must be set.
         $input['id'] = null;
+
+        if (array_key_exists('settings', $input)) {
+            $input['settings'] = $this->filterSaveableSettings($input['settings']);
+        }
 
         $this->replace($input);
     }
@@ -188,48 +238,73 @@ class StoreClientRequest extends Request
         ];
     }
 
-    private function getLanguageId($language_code)
+    /**
+     * @param  mixed $settings
+     * @return array $settings
+     */
+    private function filterSaveableSettings($settings): array
     {
-        $languages = Cache::get('languages');
+        /** @var \App\Models\User $user */
+        $user = auth()->user();
 
-        $language = $languages->filter(function ($item) use ($language_code) {
-            return $item->locale == $language_code;
-        })->first();
+        $settings = is_array($settings) ? (object) $settings : $settings;
+        unset($settings->pdf_variables);
 
-        if ($language) {
-            return (string) $language->id;
+        if (! $user->company()->account->isFreeHostedClient()) {
+            return (array) $settings;
         }
 
-        return '';
+        $saveable_casts = CompanySettings::$free_plan_casts;
+
+        foreach ($settings as $key => $value) {
+            if (! array_key_exists($key, $saveable_casts)) {
+                unset($settings->{$key});
+            }
+        }
+
+        return (array) $settings;
     }
 
-    private function getCountryCode($country_code)
+    private function getLanguageId(string $language_code)
     {
-        $countries = Cache::get('countries');
+        /** @var \Illuminate\Support\Collection<\App\Models\Language> */
+        $languages = app('languages');
 
-        $country = $countries->filter(function ($item) use ($country_code) {
+        $language = $languages->firstWhere('locale', $language_code);
+
+        return $language ? (string) $language->id : '';
+
+    }
+
+    private function getCountryCode(string $country_code)
+    {
+
+        /** @var \Illuminate\Support\Collection<\App\Models\Country> */
+        $countries = app('countries');
+
+        $country_code = strtoupper($country_code);
+
+        $country = $countries->first(function ($item) use ($country_code) {
             return $item->iso_3166_2 == $country_code || $item->iso_3166_3 == $country_code;
-        })->first();
+        });
 
-        if ($country) {
-            return (string) $country->id;
-        }
+        return $country ? (string) $country->id : '';
 
-        return '';
     }
 
     private function getCurrencyCode($code)
     {
-        $currencies = Cache::get('currencies');
 
-        $currency = $currencies->filter(function ($item) use ($code) {
+        /** @var \Illuminate\Support\Collection<\App\Models\Currency> */
+        $currencies = app('currencies');
+
+        $code = strtoupper($code);
+
+        $currency = $currencies->first(function ($item) use ($code) {
             return $item->code == $code;
-        })->first();
+        });
 
-        if ($currency) {
-            return (string) $currency->id;
-        }
+        return  $currency ? (string) $currency->id : '';
 
-        return '';
     }
 }

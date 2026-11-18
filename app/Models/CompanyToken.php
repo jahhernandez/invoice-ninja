@@ -1,10 +1,11 @@
 <?php
+
 /**
  * Invoice Ninja (https://invoiceninja.com).
  *
  * @link https://github.com/invoiceninja/invoiceninja source repository
  *
- * @copyright Copyright (c) 2024. Invoice Ninja LLC (https://invoiceninja.com)
+ * @copyright Copyright (c) 2026. Invoice Ninja LLC (https://invoiceninja.com)
  *
  * @license https://www.elastic.co/licensing/elastic-license
  */
@@ -59,6 +60,13 @@ class CompanyToken extends BaseModel
         'user',
     ];
 
+    protected $casts = [
+        'is_system' => 'boolean',
+        'updated_at' => 'timestamp',
+        'created_at' => 'timestamp',
+        'deleted_at' => 'timestamp',
+    ];
+
     protected $touches = [];
 
     public function getEntityType()
@@ -83,9 +91,7 @@ class CompanyToken extends BaseModel
 
     public function company_user(): \Illuminate\Database\Eloquent\Relations\HasOne
     {
-        return $this->hasOne(CompanyUser::class, 'user_id', 'user_id')
-                    ->where('company_id', $this->company_id)
-                    ->where('user_id', $this->user_id);
+        return $this->hasOne(CompanyUser::class, ['user_id', 'company_id'], ['user_id', 'company_id']);
     }
 
     /**
@@ -93,8 +99,23 @@ class CompanyToken extends BaseModel
      */
     public function cu()
     {
-        return $this->hasOne(CompanyUser::class, 'user_id', 'user_id')
-            ->where('company_id', $this->company_id)
-            ->where('user_id', $this->user_id);
+        return $this->hasOne(CompanyUser::class, ['user_id', 'company_id'], ['user_id', 'company_id']);
     }
+
+    // public function company_user(): \Illuminate\Database\Eloquent\Relations\HasOne
+    // {
+    //     return $this->hasOne(CompanyUser::class, 'user_id', 'user_id')
+    //                 ->where('company_id', $this->company_id)
+    //                 ->where('user_id', $this->user_id);
+    // }
+
+    // /**
+    //  * @return \Awobaz\Compoships\Database\Eloquent\Relations\HasOne
+    //  */
+    // public function cu()
+    // {
+    //     return $this->hasOne(CompanyUser::class, 'user_id', 'user_id')
+    //         ->where('company_id', $this->company_id)
+    //         ->where('user_id', $this->user_id);
+    // }
 }

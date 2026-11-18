@@ -1,4 +1,5 @@
 <?php
+
 /**
  * Invoice Ninja (https://invoiceninja.com).
  *
@@ -20,13 +21,12 @@ use App\Models\Company;
 use App\Models\CompanyToken;
 use App\Models\Invoice;
 use App\Models\Payment;
-use App\Models\Paymentable;
 use App\Models\User;
 use Illuminate\Routing\Middleware\ThrottleRequests;
 use Tests\TestCase;
 
 /**
- * @test
+ *
  */
 class CheckDataTest extends TestCase
 {
@@ -43,10 +43,10 @@ class CheckDataTest extends TestCase
      *
      * No method can guarantee against false positives.
      */
-    protected function setUp() :void
+    protected function setUp(): void
     {
         parent::setUp();
-        
+
         $this->faker = \Faker\Factory::create();
 
         $this->withoutMiddleware(
@@ -68,7 +68,7 @@ class CheckDataTest extends TestCase
         $this->user = User::factory()->create([
             'account_id' => $this->account->id,
             'confirmation_code' => 'xyz123',
-            'email' => $this->faker->unique()->safeEmail(),
+            'email' => \Illuminate\Support\Str::random(32)."@gmail.com",
         ]);
 
         $settings = CompanySettings::defaults();
@@ -91,7 +91,7 @@ class CheckDataTest extends TestCase
 
         $this->token = \Illuminate\Support\Str::random(64);
 
-        $company_token = new CompanyToken;
+        $company_token = new CompanyToken();
         $company_token->user_id = $this->user->id;
         $company_token->company_id = $this->company->id;
         $company_token->account_id = $this->account->id;
@@ -133,23 +133,34 @@ class CheckDataTest extends TestCase
             'company_id' => $this->company->id,
         ]);
 
-        Invoice::where('status_id', 2)->cursor()->each(function ($i) {
+        Invoice::where('company_id', $this->company->id)
+            ->where('status_id', 2)
+            ->cursor()
+            ->each(function ($i) {
+                $i->service()->markPaid()->save();
+            });
 
-            $i->service()->markPaid()->save();
+        $payments = Payment::with('paymentables')
+            ->where('company_id', $this->company->id)
+            ->get();
 
-        });
+        $this->assertNotEmpty($payments);
 
-        Payment::with('paymentables')->cursor()->each(function ($payment) {
+        $payments->each(function ($payment) {
             $this->assertNotNull($payment->paymentables()->where('paymentable_type', \App\Models\Credit::class)->get()
-            ->sum(\DB::raw('amount')->getValue(\DB::connection()->getQueryGrammar())));
-        });
-     
-        Payment::with('paymentables')->cursor()->each(function ($payment) {
-            $this->assertNotNull($payment->paymentables()->where('paymentable_type', \App\Models\Credit::class)->get()
-            ->sum('amount'));
+                ->sum(\DB::raw('amount')->getValue(\DB::connection()->getQueryGrammar())));
         });
 
-        $amount = Paymentable::first()->payment->paymentables()->where('paymentable_type', 'invnoices')->get()->sum('amount');
+        $payments->each(function ($payment) {
+            $this->assertNotNull($payment->paymentables()->where('paymentable_type', \App\Models\Credit::class)->get()
+                ->sum('amount'));
+        });
+
+        $amount = $payments->first()
+            ->paymentables()
+            ->where('paymentable_type', 'invoices')
+            ->get()
+            ->sum('amount');
 
         $this->assertNotNull($amount);
 
@@ -182,12 +193,12 @@ class CheckDataTest extends TestCase
 
         User::factory()->create([
             'account_id' => $this->account->id,
-            'email' => $this->faker->unique()->safeEmail(),
+            'email' => \Illuminate\Support\Str::random(32)."@gmail.com",
         ]);
-        
+
         User::factory()->create([
             'account_id' => $this->account->id,
-            'email' => $this->faker->unique()->safeEmail(),
+            'email' => \Illuminate\Support\Str::random(32)."@gmail.com",
         ]);
 
         $user_hash = 'a';
@@ -215,7 +226,7 @@ class CheckDataTest extends TestCase
             SELECT count(clients.id) as count
             FROM clients
         ")->getValue(\DB::connection()->getQueryGrammar()));
-    
+
 
         $refactored = \DB::select("
             SELECT count(clients.id) as count
@@ -261,7 +272,7 @@ class CheckDataTest extends TestCase
                 AND payments.is_deleted = 0
                 AND payments.client_id = ?;
                 ")->getValue(\DB::connection()->getQueryGrammar()), ['invoices', $this->client->id]);
-            
+
         $refactored = \DB::select("
                 SELECT 
                 SUM(payments.amount) as amount

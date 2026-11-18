@@ -1,10 +1,11 @@
 <?php
+
 /**
  * Invoice Ninja (https://invoiceninja.com).
  *
  * @link https://github.com/invoiceninja/invoiceninja source repository
  *
- * @copyright Copyright (c) 2024. Invoice Ninja LLC (https://invoiceninja.com)
+ * @copyright Copyright (c) 2026. Invoice Ninja LLC (https://invoiceninja.com)
  *
  * @license https://www.elastic.co/licensing/elastic-license
  */
@@ -67,10 +68,12 @@ class SwissQrGenerator
         // Add creditor information
         // Who will receive the payment and to which bank account?
         $qrBill->setCreditor(
-            QrBill\DataGroup\Element\CombinedAddress::create(
-                $this->company->present()->name(),
-                $this->company->present()->address1(),
-                $this->company->present()->getCompanyCityState(),
+            QrBill\DataGroup\Element\StructuredAddress::createWithStreet(
+                substr($this->company->present()->name(), 0, 70),
+                $this->company->settings->address1 ? substr($this->company->settings->address1, 0, 70) : ' ',
+                $this->company->settings->address2 ? substr($this->company->settings->address2, 0, 16) : ' ',
+                $this->company->settings->postal_code ? substr($this->company->settings->postal_code, 0, 16) : ' ',
+                $this->company->settings->city ? substr($this->company->settings->city, 0, 35) : ' ',
                 'CH'
             )
         );
@@ -102,18 +105,18 @@ class SwissQrGenerator
         $qrBill->setPaymentAmountInformation(
             QrBill\DataGroup\Element\PaymentAmountInformation::create(
                 'CHF',
-                $this->calcDueAmount()
+                round($this->calcDueAmount(), 2)
             )
         );
 
         // Add payment reference
         // This is what you will need to identify incoming payments.
 
-        if (stripos($this->invoice->number, "Live") === 0) {
+        if (stripos($this->invoice->number ?? '', "Live") === 0) {
             // we're currently in preview status. Let's give a dummy reference for now
             $invoice_number = "123456789";
         } else {
-            $tempInvoiceNumber = $this->invoice->number;
+            $tempInvoiceNumber = $this->invoice->number ?? '';
             $tempInvoiceNumber = preg_replace('/[^A-Za-z0-9]/', '', $tempInvoiceNumber);
             // $tempInvoiceNumber = substr($tempInvoiceNumber, 1);
 
@@ -136,9 +139,11 @@ class SwissQrGenerator
             $invoice_number = $calcInvoiceNumber;
         }
 
-        if (strlen($this->company->present()->besr_id()) > 1) {
+        // if (strlen($this->company->present()->besr_id()) > 1) {
+        if($this->isQrIban($this->company->present()->qr_iban())) {
             $referenceNumber = QrBill\Reference\QrPaymentReferenceGenerator::generate(
-                $this->company->present()->besr_id() ?: '',  // You receive this number from your bank (BESR-ID). Unless your bank is PostFinance, in that case use NULL.
+                null, // BESR-ID
+                // $this->company->present()->besr_id() ?: '',  // You receive this number from your bank (BESR-ID). Unless your bank is PostFinance, in that case use NULL.
                 $invoice_number// A number to match the payment with your internal data, e.g. an invoice number
             );
 
@@ -169,26 +174,38 @@ class SwissQrGenerator
             $output = new QrBill\PaymentPart\Output\HtmlOutput\HtmlOutput($qrBill, $this->resolveLanguage());
 
             $html = $output
-                ->setPrintable(false)
                 ->getPaymentPart();
 
-            return $html;
-        } catch (\Exception $e) {
+            return htmlspecialchars($html);
+        } catch (\Throwable $e) {
 
-            if(is_iterable($qrBill->getViolations())) {
+            // if (is_iterable($qrBill->getViolations())) {
 
-                foreach ($qrBill->getViolations() as $key => $violation) {
-                    // nlog("qr");
-                    // nlog($violation);
-                }
+            //     foreach ($qrBill->getViolations() as $key => $violation) {
+            //         nlog("qr");
+            //         nlog($violation);
+            //     }
 
-            }
+            // }
 
             // nlog($e->getMessage());
 
             return '';
             // return $e->getMessage();
         }
+    }
+
+    private function isQrIban(string $iban): bool
+    {
+        $iban = strtoupper(preg_replace('/\s+/', '', $iban));
+    
+        if (!in_array(substr($iban, 0, 2), ['CH', 'LI'], true)) {
+            return false;
+        }
+    
+        $iid = (int) substr($iban, 4, 5);
+    
+        return $iid >= 30000 && $iid <= 31999;
     }
 
     private function resolveLanguage(): string

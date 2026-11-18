@@ -1,10 +1,11 @@
 <?php
+
 /**
  * Invoice Ninja (https://invoiceninja.com).
  *
  * @link https://github.com/invoiceninja/invoiceninja source repository
  *
- * @copyright Copyright (c) 2024. Invoice Ninja LLC (https://invoiceninja.com)
+ * @copyright Copyright (c) 2026. Invoice Ninja LLC (https://invoiceninja.com)
  *
  * @license https://www.elastic.co/licensing/elastic-license
  */
@@ -14,23 +15,21 @@ namespace App\Services\Quote;
 use App\Models\Quote;
 use App\Utils\Traits\GeneratesCounter;
 use Illuminate\Database\QueryException;
-
+use App\Models\Client;
 class ApplyNumber
 {
     use GeneratesCounter;
 
-    private $client;
-
     private bool $completed = true;
 
-    public function __construct($client)
+    public function __construct(private Client $client)
     {
-        $this->client = $client;
     }
 
     public function run($quote)
     {
-        if ($quote->number != '') {
+
+        if (trim((string)$quote->number) !== '') {
             return $quote;
         }
 
@@ -39,7 +38,7 @@ class ApplyNumber
                 $quote = $this->trySaving($quote);
                 break;
             case 'when_sent':
-                if ($quote->status_id == Quote::STATUS_SENT) {
+                if (in_array($quote->status_id, [Quote::STATUS_SENT, Quote::STATUS_APPROVED])) {
                     $quote = $this->trySaving($quote);
                 }
                 break;

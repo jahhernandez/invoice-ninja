@@ -1,10 +1,11 @@
 <?php
+
 /**
  * Invoice Ninja (https://invoiceninja.com).
  *
  * @link https://github.com/invoiceninja/invoiceninja source repository
  *
- * @copyright Copyright (c) 2024. Invoice Ninja LLC (https://invoiceninja.com)
+ * @copyright Copyright (c) 2026. Invoice Ninja LLC (https://invoiceninja.com)
  *
  * @license https://www.elastic.co/licensing/elastic-license
  */
@@ -12,9 +13,10 @@
 namespace App\Http\Controllers\VendorPortal;
 
 use App\Http\Controllers\Controller;
+use App\Http\Requests\VendorPortal\EditVendorContactRequest;
+use App\Http\Requests\VendorPortal\UpdateVendorContactRequest;
 use App\Models\VendorContact;
 use App\Utils\Traits\MakesHash;
-use App\Utils\TranslationHelper;
 
 class VendorContactController extends Controller
 {
@@ -50,22 +52,27 @@ class VendorContactController extends Controller
 
     public const MODULE_PURCHASE_ORDERS = 16384;
 
-    public function edit(VendorContact $vendor_contact)
+    public function edit(EditVendorContactRequest $request, VendorContact $vendor_contact)
     {
+
+        if (!$vendor_contact->vendor->country_id) {
+            $vendor_contact->vendor->country_id = auth()->guard('vendor')->user()->company->country()->id ?? 840;
+        }
+
         return $this->render('vendor_profile.edit', [
             'contact' => $vendor_contact,
             'vendor' => $vendor_contact->vendor,
             'settings' => $vendor_contact->vendor->company->settings,
             'company' => $vendor_contact->vendor->company,
             'sidebar' => $this->sidebarMenu(),
-            'countries' => TranslationHelper::getCountries(),
+            'countries' => app('countries'),
         ]);
     }
 
-    public function update(VendorContact $vendor_contact)
+    public function update(UpdateVendorContactRequest $request, VendorContact $vendor_contact)
     {
-        $vendor_contact->fill(request()->all());
-        $vendor_contact->vendor->fill(request()->all());
+        $vendor_contact->fill($request->only(['first_name', 'last_name', 'email', 'phone']));
+        $vendor_contact->vendor->fill($request->only(['address1', 'address2', 'city', 'state', 'postal_code', 'country_id', 'public_notes']));
         $vendor_contact->push();
 
         return back()->withSuccess(ctrans('texts.profile_updated_successfully'));
@@ -76,15 +83,9 @@ class VendorContactController extends Controller
         $enabled_modules = auth()->guard('vendor')->user()->company->enabled_modules;
         $data = [];
 
-        // TODO: Enable dashboard once it's completed.
-        // $this->settings->enable_client_portal_dashboard
-        // $data[] = [ 'title' => ctrans('texts.dashboard'), 'url' => 'client.dashboard', 'icon' => 'activity'];
-
         if (self::MODULE_PURCHASE_ORDERS & $enabled_modules) {
-            $data[] = ['title' => ctrans('texts.purchase_orders'), 'url' => 'vendor.purchase_orders.index', 'icon' => 'file-text'];
+            $data[] = ['title' => ctrans('texts.purchase_orders'), 'url' => 'vendor.purchase_orders.index', 'icon' => 'file-text', 'id' => 'purchase_orders'];
         }
-
-        // $data[] = ['title' => ctrans('texts.documents'), 'url' => 'client.documents.index', 'icon' => 'download'];
 
         return $data;
     }

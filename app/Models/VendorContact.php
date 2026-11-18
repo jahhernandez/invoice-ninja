@@ -1,27 +1,30 @@
 <?php
+
 /**
  * Invoice Ninja (https://invoiceninja.com).
  *
  * @link https://github.com/invoiceninja/invoiceninja source repository
  *
- * @copyright Copyright (c) 2024. Invoice Ninja LLC (https://invoiceninja.com)
+ * @copyright Copyright (c) 2026. Invoice Ninja LLC (https://invoiceninja.com)
  *
  * @license https://www.elastic.co/licensing/elastic-license
  */
 
 namespace App\Models;
 
+use App\Utils\AppLink;
+use Elastic\ScoutDriverPlus\Searchable;
+use App\Utils\Traits\MakesHash;
+use Illuminate\Support\Facades\Cache;
+use Illuminate\Database\Eloquent\Model;
+use Illuminate\Notifications\Notifiable;
+use Laracasts\Presenter\PresentableTrait;
+use Illuminate\Database\Eloquent\SoftDeletes;
 use App\Models\Presenters\VendorContactPresenter;
 use App\Notifications\ClientContactResetPassword;
-use App\Utils\Traits\MakesHash;
-use Illuminate\Contracts\Translation\HasLocalePreference;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
-use Illuminate\Database\Eloquent\Model;
-use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Foundation\Auth\User as Authenticatable;
-use Illuminate\Notifications\Notifiable;
-use Illuminate\Support\Facades\Cache;
-use Laracasts\Presenter\PresentableTrait;
+use Illuminate\Contracts\Translation\HasLocalePreference;
 
 /**
  * App\Models\VendorContact
@@ -43,6 +46,7 @@ use Laracasts\Presenter\PresentableTrait;
  * @property string|null $custom_value3
  * @property string|null $custom_value4
  * @property bool $send_email
+ * @property bool $cc_only
  * @property string|null $email_verified_at
  * @property string|null $confirmation_code
  * @property bool $confirmed
@@ -58,6 +62,7 @@ use Laracasts\Presenter\PresentableTrait;
  * @property string $password
  * @property string|null $token
  * @property bool $is_locked
+ * @property bool $can_sign
  * @property string|null $contact_key
  * @property string|null $remember_token
  * @property-read \App\Models\Company $company
@@ -85,6 +90,7 @@ class VendorContact extends Authenticatable implements HasLocalePreference
     use PresentableTrait;
     use SoftDeletes;
     use HasFactory;
+    use Searchable;
 
     /* Used to authenticate a vendor */
     protected $guard = 'vendor';
@@ -121,12 +127,48 @@ class VendorContact extends Authenticatable implements HasLocalePreference
         'is_primary',
         'vendor_id',
         'send_email',
+        'cc_only',
+        'can_sign',
     ];
 
-    public function avatar()
+    public function searchableAs(): string
     {
-        if ($this->avatar) {
-            return $this->avatar;
+        return 'vendor_contacts';
+    }
+
+    public function toSearchableArray(): array
+    {
+        
+        return [
+            'id' => $this->company->db . ":" . $this->id,
+            'name' => $this->present()->search_display(),
+            'hashed_id' => $this->hashed_id,
+            'email' => (string) $this->email,
+            'first_name' => (string) $this->first_name,
+            'last_name' => (string) $this->last_name,
+            'phone' => (string) $this->phone,
+            'custom_value1' => (string) $this->custom_value1,
+            'custom_value2' => (string) $this->custom_value2,
+            'custom_value3' => (string) $this->custom_value3,
+            'custom_value4' => (string) $this->custom_value4,
+            'company_key' => $this->company->company_key,
+            'vendor_id' => $this->vendor->hashed_id,
+            'user_id'          => (string) $this->vendor->user_id,
+            'assigned_user_id' => (string) $this->vendor->assigned_user_id,
+        ];
+    }
+
+    public function getScoutKey()
+    {
+        return $this->company->db . ":" . $this->id;
+    }
+
+    public function avatarUrl(): string
+    {
+        $avatar = $this->attributes['avatar'] ?? '';
+
+        if ($avatar) {
+            return $avatar;
         }
 
         return asset('images/svg/user.svg');
@@ -135,7 +177,7 @@ class VendorContact extends Authenticatable implements HasLocalePreference
     public function setAvatarAttribute($value)
     {
         if (! filter_var($value, FILTER_VALIDATE_URL) && $value) {
-            $this->attributes['avatar'] = url('/').$value;
+            $this->attributes['avatar'] = url('/') . $value;
         } else {
             $this->attributes['avatar'] = $value;
         }
@@ -183,11 +225,19 @@ class VendorContact extends Authenticatable implements HasLocalePreference
 
     public function preferredLocale()
     {
-        $languages = Cache::get('languages');
+        return once(function () {
 
-        return $languages->filter(function ($item) {
-            return $item->id == $this->company->getSetting('language_id');
-        })->first()->locale;
+            /** @var \Illuminate\Support\Collection<\App\Models\Language> */
+            $languages = app('languages');
+
+            $language_id = $this->company->getSetting('language_id');
+
+            return $languages->first(function ($item) use ($language_id) {
+                return $item->id == $language_id;
+            })->locale ?? 'en';
+
+        });
+
     }
 
     /**
@@ -201,7 +251,6 @@ class VendorContact extends Authenticatable implements HasLocalePreference
     {
         return $this
             ->withTrashed()
-            // ->company()
             ->where('id', $this->decodePrimaryKey($value))
             ->firstOrFail();
     }
@@ -213,8 +262,13 @@ class VendorContact extends Authenticatable implements HasLocalePreference
 
     public function getLoginLink()
     {
-        $domain = isset($this->company->portal_domain) ? $this->company->portal_domain : $this->company->domain();
+        $domain = $this->company->portal_domain ?? $this->company->domain();
 
-        return $domain.'/vendor/key_login/'.$this->contact_key;
+        return $domain . '/vendor/key_login/' . $this->contact_key;
+    }
+
+    public function getAdminLink(): string
+    {
+        return AppLink::forRecord('vendors', $this->vendor);
     }
 }

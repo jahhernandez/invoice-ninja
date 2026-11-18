@@ -1,10 +1,11 @@
 <?php
+
 /**
  * Invoice Ninja (https://invoiceninja.com).
  *
  * @link https://github.com/invoiceninja/invoiceninja source repository
  *
- * @copyright Copyright (c) 2024. Invoice Ninja LLC (https://invoiceninja.com)
+ * @copyright Copyright (c) 2026. Invoice Ninja LLC (https://invoiceninja.com)
  *
  * @license https://www.elastic.co/licensing/elastic-license
  */
@@ -36,22 +37,16 @@ class CompanyUserController extends BaseController
      *
      * @return void
      */
-    public function index()
-    {
-    }
+    public function index() {}
 
     /**
      * Show the form for creating a new resource.
      *
      * @return void
      */
-    public function create()
-    {
-    }
+    public function create() {}
 
-    public function store()
-    {
-    }
+    public function store() {}
 
     /**
      * Display the specified resource.
@@ -107,7 +102,7 @@ class CompanyUserController extends BaseController
      *     )
      * @param UpdateCompanyUserRequest $request
      * @param User $user
-     * @return Response|mixed|void
+     * @return Response| \Illuminate\Http\JsonResponse|mixed|void
      */
     public function update(UpdateCompanyUserRequest $request, User $user)
     {
@@ -119,17 +114,20 @@ class CompanyUserController extends BaseController
 
         if (! $company_user) {
             throw new ModelNotFoundException(ctrans('texts.company_user_not_found'));
-
-            return;
         }
 
-        if ($auth_user->isAdmin()) {
-            $company_user->fill($request->input('company_user'));
+        $company_user_input = $request->input('company_user');
+
+        if ($auth_user->isOwner()) {
+            $company_user->fill($company_user_input);
+        } elseif ($auth_user->isAdmin()) {
+            unset($company_user_input['is_owner']);
+            $company_user->fill($company_user_input);
         } else {
             $company_user->settings = $request->input('company_user')['settings'];
             $company_user->notifications = $request->input('company_user')['notifications'];
 
-            if(isset($request->input('company_user')['react_settings'])) {
+            if (isset($request->input('company_user')['react_settings'])) {
                 $company_user->react_settings = $request->input('company_user')['react_settings'];
             }
 
@@ -152,7 +150,6 @@ class CompanyUserController extends BaseController
 
         if (! $company_user) {
             throw new ModelNotFoundException(ctrans('texts.company_user_not_found'));
-            return;
         }
 
         $this->entity_type = User::class;

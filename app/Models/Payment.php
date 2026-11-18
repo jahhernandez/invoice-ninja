@@ -1,26 +1,29 @@
 <?php
+
 /**
  * Invoice Ninja (https://invoiceninja.com).
  *
  * @link https://github.com/invoiceninja/invoiceninja source repository
  *
- * @copyright Copyright (c) 2024. Invoice Ninja LLC (https://invoiceninja.com)
+ * @copyright Copyright (c) 2026. Invoice Ninja LLC (https://invoiceninja.com)
  *
  * @license https://www.elastic.co/licensing/elastic-license
  */
 
 namespace App\Models;
 
-use App\Events\Payment\PaymentWasRefunded;
-use App\Events\Payment\PaymentWasVoided;
-use App\Services\Ledger\LedgerService;
-use App\Services\Payment\PaymentService;
+use App\Utils\AppLink;
 use App\Utils\Ninja;
 use App\Utils\Number;
-use App\Utils\Traits\Inviteable;
-use App\Utils\Traits\MakesDates;
+use App\DataMapper\PaymentSync;
 use App\Utils\Traits\MakesHash;
+use App\Utils\Traits\Inviteable;
+use App\Services\Ledger\LedgerService;
+use App\Events\Payment\PaymentWasVoided;
+use App\Services\Payment\PaymentService;
 use App\Utils\Traits\Payment\Refundable;
+use App\Events\Payment\PaymentWasRefunded;
+use App\Models\Traits\HasTags;
 use Illuminate\Database\Eloquent\SoftDeletes;
 
 /**
@@ -58,13 +61,14 @@ use Illuminate\Database\Eloquent\SoftDeletes;
  * @property int|null $exchange_currency_id
  * @property \App\Models\Paymentable $paymentable
  * @property object|null $meta
- * @property object|null $refund_meta
+ * @property array|null $refund_meta
  * @property string|null $custom_value1
  * @property string|null $custom_value2
  * @property string|null $custom_value3
  * @property string|null $custom_value4
  * @property int|null $transaction_id
  * @property string|null $idempotency_key
+ * @property PaymentSync|null $sync
  * @property-read \App\Models\User|null $assigned_user
  * @property-read \App\Models\Client $client
  * @property-read \App\Models\Company $company
@@ -91,16 +95,18 @@ use Illuminate\Database\Eloquent\SoftDeletes;
  * @property-read \Illuminate\Database\Eloquent\Collection<int, \App\Models\Document> $documents
  * @property-read \Illuminate\Database\Eloquent\Collection<int, \App\Models\Invoice> $invoices
  * @property \Illuminate\Database\Eloquent\Collection<int, \App\Models\Payment>|\Illuminate\Support\Collection $paymentables
+ * @property-read \Illuminate\Database\Eloquent\Collection<int, \App\Models\Activity> $activities
+ * @property-read \Illuminate\Database\Eloquent\Collection<int, \App\Models\Tag> $tags
  * @mixin \Eloquent
  */
 class Payment extends BaseModel
 {
     use MakesHash;
     use Filterable;
-    use MakesDates;
     use SoftDeletes;
     use Refundable;
     use Inviteable;
+    use HasTags;
 
     public const STATUS_PENDING = 1;
 
@@ -170,6 +176,7 @@ class Payment extends BaseModel
         'is_deleted' => 'bool',
         'meta' => 'object',
         'refund_meta' => 'array',
+        'sync' => PaymentSync::class,
     ];
 
     protected $with = [
@@ -193,6 +200,11 @@ class Payment extends BaseModel
         return $this->belongsTo(CompanyGateway::class)->withTrashed();
     }
 
+    public function payment_hash(): \Illuminate\Database\Eloquent\Relations\HasOne
+    {
+        return $this->hasOne(PaymentHash::class);
+    }
+
     public function company(): \Illuminate\Database\Eloquent\Relations\BelongsTo
     {
         return $this->belongsTo(Company::class);
@@ -200,7 +212,7 @@ class Payment extends BaseModel
 
     public function contact(): \Illuminate\Database\Eloquent\Relations\BelongsTo
     {
-        return $this->belongsTo(ClientContact::class);
+        return $this->belongsTo(ClientContact::class)->withTrashed();
     }
 
     public function user(): \Illuminate\Database\Eloquent\Relations\BelongsTo
@@ -218,8 +230,13 @@ class Payment extends BaseModel
         return $this->morphMany(Document::class, 'documentable');
     }
 
+    public function activities(): \Illuminate\Database\Eloquent\Relations\HasMany
+    {
+        return $this->hasMany(Activity::class)->where('company_id', $this->company_id)->take(50)->orderBy('id', 'desc');
+    }
+
     /**
-     * @return \Illuminate\Database\Eloquent\Relations\MorphToMany<Paymentable>
+     * @return \Illuminate\Database\Eloquent\Relations\MorphToMany<\App\Models\Invoice, $this>
      */
     public function invoices(): \Illuminate\Database\Eloquent\Relations\MorphToMany
     {
@@ -227,7 +244,7 @@ class Payment extends BaseModel
     }
 
     /**
-     * @return \Illuminate\Database\Eloquent\Relations\MorphToMany<Paymentable>
+     * @return \Illuminate\Database\Eloquent\Relations\MorphToMany
      */
     public function credits(): \Illuminate\Database\Eloquent\Relations\MorphToMany
     {
@@ -235,7 +252,7 @@ class Payment extends BaseModel
     }
 
     /**
-     * @return \Illuminate\Database\Eloquent\Relations\MorphMany<CompanyLedger>
+     * @return \Illuminate\Database\Eloquent\Relations\MorphMany
      */
     public function company_ledger(): \Illuminate\Database\Eloquent\Relations\MorphMany
     {
@@ -308,32 +325,36 @@ class Payment extends BaseModel
         if (! $this->date) {
             return '';
         }
-
+     
         $date_format = DateFormat::find($this->client->getSetting('date_format_id'));
 
-        return $this->createClientDate($this->date, $this->client->timezone()->name)->format($date_format->format);
+        return $this->translateDate($this->date, $date_format->format, $this->client->locale());
+
+        // return $this->createClientDate($this->date, $this->client->timezone()->name)->format($date_format->format);
     }
 
     public function badgeForStatus(): string
     {
         switch ($this->status_id) {
             case self::STATUS_PENDING:
-                return '<h6><span class="badge badge-secondary">'.ctrans('texts.payment_status_1').'</span></h6>';
+                return '<h6><span class="badge badge-secondary">' . ctrans('texts.payment_status_1') . '</span></h6>';
             case self::STATUS_CANCELLED:
-                return '<h6><span class="badge badge-warning text-white">'.ctrans('texts.payment_status_2').'</span></h6>';
+                return '<h6><span class="badge badge-warning text-white">' . ctrans('texts.payment_status_2') . '</span></h6>';
             case self::STATUS_FAILED:
-                return '<h6><span class="badge badge-danger">'.ctrans('texts.payment_status_3').'</span></h6>';
+                return '<h6><span class="badge badge-danger">' . ctrans('texts.payment_status_3') . '</span></h6>';
             case self::STATUS_COMPLETED:
 
-                if($this->amount > $this->applied) {
+                if ($this->applied == 0) {
+                    return '<h6><span class="badge badge-info">' . ctrans('texts.unapplied') . '</span></h6>';
+                } elseif ($this->amount > $this->applied) {
                     return '<h6><span class="badge badge-info">' . ctrans('texts.partially_unapplied') . '</span></h6>';
                 }
 
-                return '<h6><span class="badge badge-info">'.ctrans('texts.payment_status_4').'</span></h6>';
+                return '<h6><span class="badge badge-info">' . ctrans('texts.payment_status_4') . '</span></h6>';
             case self::STATUS_PARTIALLY_REFUNDED:
-                return '<h6><span class="badge badge-success">'.ctrans('texts.payment_status_5').'</span></h6>';
+                return '<h6><span class="badge badge-success">' . ctrans('texts.payment_status_5') . '</span></h6>';
             case self::STATUS_REFUNDED:
-                return '<h6><span class="badge badge-primary">'.ctrans('texts.payment_status_6').'</span></h6>';
+                return '<h6><span class="badge badge-primary">' . ctrans('texts.payment_status_6') . '</span></h6>';
             default:
                 return '';
         }
@@ -466,25 +487,10 @@ class Payment extends BaseModel
         if (Ninja::isHosted()) {
             $domain = $this->company->domain();
         } else {
-            $domain = strlen($this->company->portal_domain) > 5 ? $this->company->portal_domain : config('ninja.app_url');
+            $domain = strlen($this->company->portal_domain ?? '') > 5 ? $this->company->portal_domain : config('ninja.app_url');
         }
 
-        return $domain.'/client/payment/'.$this->client->contacts()->first()->contact_key.'/'.$this->hashed_id.'?next=/client/payments/'.$this->hashed_id;
-    }
-
-    public function transaction_event()
-    {
-        $payment = $this->fresh();
-
-        return [
-            'payment_id' => $payment->id,
-            'payment_amount' => $payment->amount ?: 0,
-            'payment_applied' => $payment->applied ?: 0,
-            'payment_refunded' => $payment->refunded ?: 0,
-            'payment_status' => $payment->status_id ?: 1,
-            'paymentables' => $payment->paymentables->toArray(),
-            'payment_request' => [],
-        ];
+        return $domain . '/client/payment/' . $this->client->contacts()->first()->contact_key . '/' . $this->hashed_id . '?next=/client/payments/' . $this->hashed_id;
     }
 
     public function translate_entity(): string
@@ -492,9 +498,9 @@ class Payment extends BaseModel
         return ctrans('texts.payment');
     }
 
-    public function portalUrl($use_react_url): string
+    public function portalUrl(): string
     {
-        return $use_react_url ? config('ninja.react_url')."/#/payments/{$this->hashed_id}/edit" : config('ninja.app_url');
+        return AppLink::forRecord('payments', $this);
     }
 
     public function setRefundMeta(array $data)

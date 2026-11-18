@@ -1,10 +1,11 @@
 <?php
+
 /**
  * Invoice Ninja (https://invoiceninja.com).
  *
  * @link https://github.com/invoiceninja/invoiceninja source repository
  *
- * @copyright Copyright (c) 2024. Invoice Ninja LLC (https://invoiceninja.com)
+ * @copyright Copyright (c) 2026. Invoice Ninja LLC (https://invoiceninja.com)
  *
  * @license https://www.elastic.co/licensing/elastic-license
  */
@@ -16,9 +17,7 @@ use App\Models\PurchaseOrder;
 
 class PurchaseOrderInventory
 {
-    public function __construct(private PurchaseOrder $purchase_order)
-    {
-    }
+    public function __construct(private PurchaseOrder $purchase_order) {}
 
     public function run()
     {
@@ -35,7 +34,7 @@ class PurchaseOrderInventory
                 $p->vendor_id = $this->purchase_order->vendor_id;
                 $p->product_key = $item->product_key;
                 $p->notes = $item->notes ?? '';
-                $p->price = $item->cost ?? 0;
+                $p->cost = $item->cost ?? 0;
                 $p->quantity = $item->quantity ?? 0;
                 $p->custom_value1 = $item->custom_value1 ?? '';
                 $p->custom_value2 = $item->custom_value2 ?? '';

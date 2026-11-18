@@ -1,4 +1,5 @@
 <?php
+
 /**
  * Invoice Ninja (https://invoiceninja.com).
  *
@@ -50,7 +51,7 @@ class FeesAndLimitsTest extends TestCase
         $new_arr = [];
 
         foreach ($fees_and_limits as $key => $value) {
-            $fal = new FeesAndLimits;
+            $fal = new FeesAndLimits();
             // $fal->{$key} = $value;
 
             foreach ($value as $k => $v) {

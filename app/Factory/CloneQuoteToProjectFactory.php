@@ -1,4 +1,5 @@
 <?php
+
 /**
  * Project Ninja (https://invoiceninja.com).
  *
@@ -33,7 +34,7 @@ class CloneQuoteToProjectFactory
         $project->custom_value2 = '';
         $project->custom_value3 = '';
         $project->custom_value4 = '';
-        $project->is_deleted = 0;
+        $project->is_deleted = false;
 
         return $project;
     }

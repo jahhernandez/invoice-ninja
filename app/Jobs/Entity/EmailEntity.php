@@ -1,10 +1,11 @@
 <?php
+
 /**
  * Invoice Ninja (https://invoiceninja.com).
  *
  * @link https://github.com/invoiceninja/invoiceninja source repository
  *
- * @copyright Copyright (c) 2024. Invoice Ninja LLC (https://invoiceninja.com)
+ * @copyright Copyright (c) 2026. Invoice Ninja LLC (https://invoiceninja.com)
  *
  * @license https://www.elastic.co/licensing/elastic-license
  */
@@ -59,18 +60,17 @@ class EmailEntity implements ShouldQueue
 
     public $tries = 1;
 
+    public string $db;
     /**
      * EmailEntity constructor.
      *
-     *
      * @param mixed $invitation
-     * @param Company    $company
      * @param ?string    $reminder_template
      * @param array      $template_data
      */
-    public function __construct($invitation, Company $company, ?string $reminder_template = null, $template_data = null)
+    public function __construct($invitation, string $db, ?string $reminder_template = null, $template_data = null)
     {
-        $this->company = $company;
+        $this->db = $db;
 
         $this->invitation = $invitation;
 
@@ -95,15 +95,16 @@ class EmailEntity implements ShouldQueue
      */
     public function handle(): void
     {
+
+        /* Set DB */
+        MultiDB::setDB($this->db);
+
         /* Don't fire emails if the company is disabled */
-        if ($this->company->is_disabled) {
+        if ($this->invitation->company->is_disabled) {
             return;
         }
 
         $this->email_entity_builder = $this->resolveEmailBuilder();
-
-        /* Set DB */
-        MultiDB::setDB($this->company->db);
 
         App::forgetInstance('translator');
         $t = app('translator');
@@ -115,13 +116,20 @@ class EmailEntity implements ShouldQueue
 
         $nmo = new NinjaMailerObject();
         $nmo->mailable = new TemplateEmail($this->email_entity_builder, $this->invitation->contact->withoutRelations(), $this->invitation->withoutRelations());
-        $nmo->company = $this->company->withoutRelations();
+        $nmo->company = $this->invitation->company->withoutRelations();
         $nmo->settings = $this->settings;
         $nmo->to_user = $this->invitation->contact->withoutRelations();
         $nmo->entity_string = $this->entity_string;
         $nmo->invitation = $this->invitation->withoutRelations();
         $nmo->reminder_template = $this->reminder_template;
         $nmo->entity = $this->entity->withoutRelations();
+
+        /* CC-only contacts receive one copy only — attached to the first invitation for this entity */
+        if ($this->isFirstInvitation() && (Ninja::isSelfHost() || $this->invitation->company->account->isPremium())) {
+            if ($this->entity->client ?? null) {
+                $nmo->cc = $this->entity->client->cc_contacts();
+            }
+        }
 
         NinjaMailerJob::dispatch($nmo);
 
@@ -152,10 +160,19 @@ class EmailEntity implements ShouldQueue
         return '';
     }
 
+    /**
+     * Determines if this invitation is the first for its parent entity.
+     * Used to ensure cc_only contacts are only CC'd once per entity send.
+     */
+    private function isFirstInvitation(): bool
+    {
+        return $this->entity->invitations()->orderBy('id')->first()?->id === $this->invitation->id;
+    }
+
     /* Builds the email builder object */
     private function resolveEmailBuilder()
     {
-        $class = 'App\Mail\Engine\\'.ucfirst(Str::camel($this->entity_string)).'EmailEngine';
+        $class = 'App\Mail\Engine\\' . ucfirst(Str::camel($this->entity_string)) . 'EmailEngine';
 
         return (new $class($this->invitation, $this->reminder_template, $this->template_data))->build();
     }

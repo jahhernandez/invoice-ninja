@@ -1,10 +1,11 @@
 <?php
+
 /**
  * Invoice Ninja (https://invoiceninja.com).
  *
  * @link https://github.com/invoiceninja/invoiceninja source repository
  *
- * @copyright Copyright (c) 2024. Invoice Ninja LLC (https://invoiceninja.com)
+ * @copyright Copyright (c) 2026. Invoice Ninja LLC (https://invoiceninja.com)
  *
  * @license https://www.elastic.co/licensing/elastic-license
  */
@@ -28,7 +29,7 @@ class EmailStats
      */
     public static function inc($company_key)
     {
-        Cache::increment("email_quota".self::EMAIL.$company_key);
+        Cache::increment("email_quota" . self::EMAIL . $company_key);
     }
 
     /**
@@ -39,7 +40,7 @@ class EmailStats
      */
     public static function count($company_key)
     {
-        return Cache::get(self::EMAIL.$company_key);
+        return Cache::get(self::EMAIL . $company_key);
     }
 
     /**
@@ -50,7 +51,7 @@ class EmailStats
      */
     public static function clear($company_key)
     {
-        Cache::forget(self::EMAIL.$company_key);
+        Cache::forget(self::EMAIL . $company_key);
     }
 
     /**

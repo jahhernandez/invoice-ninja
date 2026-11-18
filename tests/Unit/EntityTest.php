@@ -1,4 +1,5 @@
 <?php
+
 /**
  * Invoice Ninja (https://invoiceninja.com).
  *
@@ -29,20 +30,19 @@ use App\Models\Vendor;
 use Illuminate\Foundation\Testing\DatabaseTransactions;
 
 /**
- * @test
+ *
  */
 class EntityTest extends TestCase
 {
     use MockAccountData;
     use DatabaseTransactions;
-
     public $invoice;
 
     public $invoice_calc;
 
     public $settings;
 
-    protected function setUp() :void
+    protected function setUp(): void
     {
         parent::setUp();
 
@@ -66,6 +66,8 @@ class EntityTest extends TestCase
         $this->assertEquals('InvoiceInvitation', class_basename($entity_type));
 
         $this->assertEquals('InvoiceInvitation', class_basename($invitation));
+
+        $this->invoice->forceDelete();
     }
 
     public function testDocumentRelationExists()
@@ -83,5 +85,10 @@ class EntityTest extends TestCase
         $this->assertTrue(method_exists(Project::class, 'documents'));
         $this->assertTrue(method_exists(Task::class, 'documents'));
 
+    }
+
+    protected function tearDown(): void
+    {
+        parent::tearDown();
     }
 }

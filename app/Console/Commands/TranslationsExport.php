@@ -1,10 +1,11 @@
 <?php
+
 /**
  * Invoice Ninja (https://invoiceninja.com).
  *
  * @link https://github.com/invoiceninja/invoiceninja source repository
  *
- * @copyright Copyright (c) 2024. Invoice Ninja LLC (https://invoiceninja.com)
+ * @copyright Copyright (c) 2026. Invoice Ninja LLC (https://invoiceninja.com)
  *
  * @license https://www.elastic.co/licensing/elastic-license
  */
@@ -35,6 +36,7 @@ class TranslationsExport extends Command
     protected $log = '';
 
     private array $langs = [
+        'af_ZA',
         'ar',
         'bg',
         'ca',
@@ -55,6 +57,7 @@ class TranslationsExport extends Command
         'he',
         'hr',
         'hu',
+        'id_ID',
         'it',
         'ja',
         'km_KH',
@@ -76,6 +79,7 @@ class TranslationsExport extends Command
         'sv',
         'th',
         'tr_TR',
+        'vi',
         'zh_TW',
     ];
 
@@ -114,7 +118,7 @@ class TranslationsExport extends Command
         foreach ($this->langs as $lang) {
             $import_file = "textsphp_{$lang}.php";
             $dir = $this->option('path') ?? storage_path('lang_import/');
-            $path = $dir.$import_file;
+            $path = $dir . $import_file;
 
             if (file_exists($path)) {
                 $this->logMessage($path);
@@ -138,7 +142,7 @@ class TranslationsExport extends Command
             Storage::disk('local')->makeDirectory("lang/{$lang}");
 
             $translations = Lang::getLoader()->load($lang, 'texts');
-            foreach($translations as $key => $value) {
+            foreach ($translations as $key => $value) {
                 $translations[$key] = html_entity_decode($value);
             }
 
@@ -148,8 +152,8 @@ class TranslationsExport extends Command
 
     private function logMessage($str)
     {
-        $str = date('Y-m-d h:i:s').' '.$str;
+        $str = date('Y-m-d h:i:s') . ' ' . $str;
         $this->info($str);
-        $this->log .= $str."\n";
+        $this->log .= $str . "\n";
     }
 }

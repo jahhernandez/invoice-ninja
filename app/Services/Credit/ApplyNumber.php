@@ -1,10 +1,11 @@
 <?php
+
 /**
  * Invoice Ninja (https://invoiceninja.com).
  *
  * @link https://github.com/invoiceninja/invoiceninja source repository
  *
- * @copyright Copyright (c) 2024. Invoice Ninja LLC (https://invoiceninja.com)
+ * @copyright Copyright (c) 2026. Invoice Ninja LLC (https://invoiceninja.com)
  *
  * @license https://www.elastic.co/licensing/elastic-license
  */
@@ -21,27 +22,31 @@ class ApplyNumber extends AbstractService
 {
     use GeneratesCounter;
 
-    private $client;
-
-    private $credit;
-
     private bool $completed = true;
 
-    public function __construct(Client $client, Credit $credit)
+    public function __construct(private Client $client, private Credit $credit)
     {
-        $this->client = $client;
-
-        $this->credit = $credit;
     }
 
     public function run()
     {
-        if ($this->credit->number != '') {
+        if (trim((string)$this->credit->number) !== '') {
             return $this->credit;
         }
 
-        $this->trySaving();
-        // $this->credit->number = $this->getNextCreditNumber($this->client, $this->credit);
+        switch ($this->client->getSetting('counter_number_applied')) {
+            case 'when_saved':
+                $this->trySaving();
+                break;
+            case 'when_sent':
+                if ($this->credit->status_id >= Credit::STATUS_SENT) {
+                    $this->trySaving();
+                }
+                break;
+
+            default:
+                break;
+        }
 
         return $this->credit;
     }

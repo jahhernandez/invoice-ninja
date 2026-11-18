@@ -1,41 +1,45 @@
 <?php
+
 /**
  * Invoice Ninja (https://invoiceninja.com).
  *
  * @link https://github.com/invoiceninja/invoiceninja source repository
  *
- * @copyright Copyright (c) 2024. Invoice Ninja LLC (https://invoiceninja.com)
+ * @copyright Copyright (c) 2026. Invoice Ninja LLC (https://invoiceninja.com)
  *
  * @license https://www.elastic.co/licensing/elastic-license
  */
 
 namespace App\Exceptions;
 
+use Throwable;
+use PDOException;
 use App\Utils\Ninja;
+use Sentry\State\Scope;
+use Illuminate\Support\Arr;
+use Illuminate\Http\Request;
+use InvalidArgumentException;
+use Sentry\Laravel\Integration;
+use Illuminate\Support\Facades\Schema;
 use Aws\Exception\CredentialsException;
+use Illuminate\Database\QueryException;
 use GuzzleHttp\Exception\ConnectException;
-use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Auth\AuthenticationException;
-use Illuminate\Database\Eloquent\ModelNotFoundException as ModelNotFoundException;
+use League\Flysystem\UnableToCreateDirectory;
+use Illuminate\Session\TokenMismatchException;
+use Illuminate\Validation\ValidationException;
+use Illuminate\Encryption\MissingAppKeyException;
+use Illuminate\Auth\Access\AuthorizationException;
+use Illuminate\Queue\MaxAttemptsExceededException;
+use Elastic\Transport\Exception\NoNodeAvailableException;
+use Illuminate\Http\Exceptions\ThrottleRequestsException;
+use Symfony\Component\Process\Exception\RuntimeException;
 use Illuminate\Database\Eloquent\RelationNotFoundException;
 use Illuminate\Foundation\Exceptions\Handler as ExceptionHandler;
-use Illuminate\Http\Exceptions\ThrottleRequestsException;
-use Illuminate\Http\Request;
-use Illuminate\Queue\MaxAttemptsExceededException;
-use Illuminate\Session\TokenMismatchException;
-use Illuminate\Support\Arr;
-use Illuminate\Support\Facades\Schema;
-use Illuminate\Validation\ValidationException;
-use InvalidArgumentException;
-use League\Flysystem\UnableToCreateDirectory;
-use PDOException;
-use Sentry\Laravel\Integration;
-use Sentry\State\Scope;
 use Symfony\Component\Console\Exception\CommandNotFoundException;
-use Symfony\Component\HttpKernel\Exception\MethodNotAllowedHttpException;
 use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
-use Symfony\Component\Process\Exception\RuntimeException;
-use Throwable;
+use Symfony\Component\HttpKernel\Exception\MethodNotAllowedHttpException;
+use Illuminate\Database\Eloquent\ModelNotFoundException as ModelNotFoundException;
 
 class Handler extends ExceptionHandler
 {
@@ -51,6 +55,8 @@ class Handler extends ExceptionHandler
         ValidationException::class,
         // ModelNotFoundException::class,
         NotFoundHttpException::class,
+        RelationNotFoundException::class,
+        NoNodeAvailableException::class,
     ];
 
     protected $selfHostDontReport = [
@@ -64,14 +70,18 @@ class Handler extends ExceptionHandler
         RuntimeException::class,
         InvalidArgumentException::class,
         CredentialsException::class,
+        RelationNotFoundException::class,
+        QueryException::class,
     ];
 
     protected $hostedDontReport = [
-        MaxAttemptsExceededException::class,
+        // MaxAttemptsExceededException::class,
         CommandNotFoundException::class,
         ValidationException::class,
         ModelNotFoundException::class,
         NotFoundHttpException::class,
+        RelationNotFoundException::class,
+        StripeConnectFailure::class,
     ];
 
     /**
@@ -94,27 +104,18 @@ class Handler extends ExceptionHandler
      */
     public function report(Throwable $exception)
     {
-        if (! Schema::hasTable('accounts')) {
-            info('account table not found');
-            return;
-        }
-
         if (Ninja::isHosted()) {
-
-            // if($exception instanceof ThrottleRequestsException && class_exists(\Modules\Admin\Events\ThrottledExceptionRaised::class)) {
-            // $uri = urldecode(request()->getRequestUri());
-            // event(new \Modules\Admin\Events\ThrottledExceptionRaised(auth()->user()?->account?->key, $uri, request()->ip()));
-            // }
 
             Integration::configureScope(function (Scope $scope): void {
                 $name = 'hosted@invoiceninja.com';
 
-                if (auth()->guard('contact') && auth()->guard('contact')->user()) {
-                    $name = 'Contact = '.auth()->guard('contact')->user()->email;
+                if (auth()->guard('contact') && auth()->guard('contact')->user()) { // @phpstan-ignore-line
+                    $name = 'Contact = ' . auth()->guard('contact')->user()->email;
                     $key = auth()->guard('contact')->user()->company->account->key;
-                } elseif (auth()->guard('user') && auth()->guard('user')->user()) {
-                    $name = 'Admin = '.auth()->guard('user')->user()->email;
-                    $key = auth()->user()->account->key;
+                } elseif (auth()->guard('user') && auth()->guard('user')->user()) { // @phpstan-ignore-line
+
+                    $name = 'Admin = ' . auth()->guard('user')->user()->email;
+                    $key = auth()->guard('user')->user()->account->key;
                 } else {
                     $key = 'Anonymous';
                 }
@@ -131,15 +132,16 @@ class Handler extends ExceptionHandler
             }
         } elseif (app()->bound('sentry')) {
             Integration::configureScope(function (Scope $scope): void {
-                if (auth()->guard('contact') && auth()->guard('contact')->user() && auth()->guard('contact')->user()->company->account->report_errors) {
+                if (auth()->guard('contact') && auth()->guard('contact')->user() && auth()->guard('contact')->user()->company->account->report_errors) {// @phpstan-ignore-line
+
                     $scope->setUser([
                         'id'    => auth()->guard('contact')->user()->company->account->key,
                         'email' => 'anonymous@example.com',
                         'name'  => 'Anonymous User',
                     ]);
-                } elseif (auth()->guard('user') && auth()->guard('user')->user() && auth()->user()->companyIsSet() && auth()->user()->company()->account->report_errors) {
+                } elseif (auth()->guard('user') && auth()->guard('user')->user() && auth()->guard('user')->user()->companyIsSet() && auth()->guard('user')->user()->company()->account->report_errors) {// @phpstan-ignore-line
                     $scope->setUser([
-                        'id'    => auth()->user()->account->key,
+                        'id'    => auth()->guard('user')->user()->account->key,
                         'email' => 'anonymous@example.com',
                         'name'  => 'Anonymous User',
                     ]);
@@ -152,6 +154,10 @@ class Handler extends ExceptionHandler
         }
 
         parent::report($exception);
+
+        if (Ninja::isSelfHost() && $exception instanceof MissingAppKeyException) {
+            nlog('To setup the app run: cp .env.example .env');
+        }
     }
 
     private function validException($exception)
@@ -198,7 +204,7 @@ class Handler extends ExceptionHandler
             $dontReport = array_merge($this->selfHostDontReport, $this->internalDontReport);
         }
 
-        return is_null(Arr::first($dontReport, fn ($type) => $e instanceof $type));
+        return is_null(Arr::first($dontReport, fn($type) => $e instanceof $type));
     }
 
     /**

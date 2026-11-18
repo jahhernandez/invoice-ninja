@@ -1,10 +1,11 @@
 <?php
+
 /**
  * Invoice Ninja (https://invoiceninja.com).
  *
  * @link https://github.com/invoiceninja/invoiceninja source repository
  *
- * @copyright Copyright (c) 2024. Invoice Ninja LLC (https://invoiceninja.com)
+ * @copyright Copyright (c) 2026. Invoice Ninja LLC (https://invoiceninja.com)
  *
  * @license https://www.elastic.co/licensing/elastic-license
  */
@@ -12,11 +13,19 @@
 namespace App\Http\Requests\Company;
 
 use App\DataMapper\CompanySettings;
+use App\Http\Requests\EInvoice\Peppol\AddTaxIdentifierRequest;
 use App\Http\Requests\Request;
+use App\Http\ValidationRules\Company\ValidExpenseMailbox;
 use App\Http\ValidationRules\Company\ValidSubdomain;
+use App\Http\ValidationRules\EInvoice\ValidCompanyScheme;
 use App\Http\ValidationRules\ValidSettingsRule;
+use App\Rules\CommaSeparatedEmails;
+use App\Rules\EInvoice\FranceReportingEnabled;
+use App\Services\EDocument\Standards\France\ReportingProfile;
+use App\Services\Pdf\Purify;
 use App\Utils\Ninja;
 use App\Utils\Traits\MakesHash;
+use Illuminate\Validation\Rule;
 
 class UpdateCompanyRequest extends Request
 {
@@ -25,9 +34,7 @@ class UpdateCompanyRequest extends Request
     private array $protected_input = [
         'client_portal_privacy_policy',
         'client_portal_terms',
-        'portal_custom_footer',
         'portal_custom_css',
-        'portal_custom_head'
     ];
 
     /**
@@ -42,8 +49,12 @@ class UpdateCompanyRequest extends Request
         return $user->can('edit', $this->company);
     }
 
-    public function rules()
+    public function rules(): array
     {
+
+        /** @var \App\Models\User $user */
+        $user = auth()->user();
+
         $input = $this->all();
 
         $rules = [];
@@ -64,19 +75,56 @@ class UpdateCompanyRequest extends Request
         $rules['smtp_local_domain'] = 'sometimes|string|nullable';
         // $rules['smtp_verify_peer'] = 'sometimes|string';
 
-        
+        $rules['e_invoice'] = ['sometimes', 'nullable', new ValidCompanyScheme()];
+
         if (isset($input['portal_mode']) && ($input['portal_mode'] == 'domain' || $input['portal_mode'] == 'iframe')) {
             $rules['portal_domain'] = 'bail|nullable|sometimes|url';
         }
 
         if (Ninja::isHosted()) {
-            $rules['subdomain'] = ['nullable', 'regex:/^[a-zA-Z0-9.-]+[a-zA-Z0-9]$/', new ValidSubdomain()];
+            $rules['subdomain'] = ['nullable', 'regex:/^[a-zA-Z0-9-]+[a-zA-Z0-9]$/', new ValidSubdomain()];
         }
+
+        $rules['expense_mailbox'] = ['sometimes','email', 'nullable', new ValidExpenseMailbox(), Rule::unique('companies')->ignore($this->company->id)];
+        $rules['expense_mailbox_active'] = ['sometimes','boolean'];
+        $rules['inbound_mailbox_allow_company_users'] = ['sometimes','boolean'];
+        $rules['inbound_mailbox_allow_vendors'] = ['sometimes','boolean'];
+        $rules['inbound_mailbox_allow_clients'] = ['sometimes','boolean'];
+        $rules['inbound_mailbox_allow_unknown'] = ['sometimes','boolean'];
+        $rules['inbound_mailbox_whitelist'] = ['sometimes', 'string', 'nullable', 'regex:/^[\w\-\.\+]+@([\w-]+\.)+[\w-]{2,4}(,[\w\-\.\+]+@([\w-]+\.)+[\w-]{2,4})*$/'];
+        $rules['inbound_mailbox_blacklist'] = ['sometimes', 'string', 'nullable', 'regex:/^[\w\-\.\+]+@([\w-]+\.)+[\w-]{2,4}(,[\w\-\.\+]+@([\w-]+\.)+[\w-]{2,4})*$/'];
+
+        $rules['settings.ses_secret_key'] = 'required_if:settings.email_sending_method,client_ses'; //ses specific rules
+        $rules['settings.ses_access_key'] = 'required_if:settings.email_sending_method,client_ses'; //ses specific rules
+        $rules['settings.ses_region'] = 'required_if:settings.email_sending_method,client_ses'; //ses specific rules
+        $rules['settings.ses_from_address'] = 'required_if:settings.email_sending_method,client_ses'; //ses specific rules
+        $rules['settings.reply_to_email'] = 'sometimes|nullable|email'; // ensures that the reply to email address is a valid email address
+        $rules['settings.bcc_email'] = ['sometimes', 'nullable', new \App\Rules\CommaSeparatedEmails()]; //ensure that the BCC's are valid comma separated emails
+        $rules['settings.e_invoice_forward_email'] = 'sometimes|nullable|email';
+        $rules['settings.e_expense_forward_email'] = 'sometimes|nullable|email';
+        $rules['settings.skip_automatic_email_with_peppol'] = 'sometimes|boolean';
+        // $rules['settings.france_reporting_enabled'] = [
+        //     'bail',
+        //     'sometimes',
+        //     'boolean',
+        //     new FranceReportingEnabled($this->company),
+        // ];
+        // $franceReportingEnabled = FranceReportingEnabled::normalize(data_get(
+        //     $input,
+        //     'settings.france_reporting_enabled',
+        //     $this->company->getSetting('france_reporting_enabled'),
+        // ));
+
+        // $rules['settings.france_reporting_schedule'] = ['bail', 'sometimes'];
+
+        // if (Ninja::isHosted() && $franceReportingEnabled === true) {
+        //     $rules['settings.france_reporting_schedule'][] = Rule::enum(ReportingProfile::class);
+        // }
 
         return $rules;
     }
 
-    public function prepareForValidation()
+    public function prepareForValidation(): void
     {
         $input = $this->all();
 
@@ -86,40 +134,90 @@ class UpdateCompanyRequest extends Request
         }
 
         if (isset($input['settings'])) {
-            $input['settings'] = (array)$this->filterSaveableSettings($input['settings']);
+            $input['settings'] = (array) $this->filterSaveableSettings($input['settings']);
+            // FRREPORTING:: - force false.
+            $input['settings']['france_reporting_enabled'] = false;
+
+        //     if (array_key_exists('france_reporting_enabled', $input['settings'])) {
+        //         $input['settings']['france_reporting_enabled'] = FranceReportingEnabled::normalize(
+        //             $input['settings']['france_reporting_enabled'],
+        //         );
+        //     } elseif (Ninja::isHosted()
+        //         && (bool) $this->company->getSetting('france_reporting_enabled')) {
+        //         $input['settings']['france_reporting_enabled'] = true;
+        //     }
         }
 
-        if(isset($input['subdomain']) && $this->company->subdomain == $input['subdomain']) {
+        /**
+         * @var \App\Models\User $user
+         */
+        $user = auth()->user();
+
+        /**
+         * @var \App\Models\Company $company
+         */
+        $company = $user->company();
+
+        if (isset($company->legal_entity_id) && intval($company->legal_entity_id) > 0) {
+            $input['settings']['e_invoice_type'] = 'PEPPOL';
+        }
+
+        if (isset($input['subdomain']) && $this->company->subdomain == $input['subdomain']) {
             unset($input['subdomain']);
         }
 
-        if(isset($input['e_invoice_certificate_passphrase']) && empty($input['e_invoice_certificate_passphrase'])) {
+        if (isset($input['e_invoice_certificate_passphrase']) && empty($input['e_invoice_certificate_passphrase'])) {
             unset($input['e_invoice_certificate_passphrase']);
         }
 
-        if(isset($input['smtp_username']) && strlen(str_replace("*","", $input['smtp_username'])) < 2) {
+        if (isset($input['smtp_username']) && strlen(str_replace("*", "", $input['smtp_username'])) < 2) {
             unset($input['smtp_username']);
         }
 
-        if(isset($input['smtp_password']) && strlen(str_replace("*", "", $input['smtp_password'])) < 2) {
+        if (isset($input['smtp_password']) && strlen(str_replace("*", "", $input['smtp_password'])) < 2) {
             unset($input['smtp_password']);
         }
-        
-        if(isset($input['smtp_port'])) {
-            $input['smtp_port'] = (int)$input['smtp_port'];
+
+        if (isset($input['smtp_port'])) {
+            $input['smtp_port'] = (int) $input['smtp_port'];
         }
 
-        if(isset($input['smtp_verify_peer']) && is_string($input['smtp_verify_peer'])) {
-            $input['smtp_verify_peer'] == 'true' ? true : false;
+        if (isset($input['smtp_verify_peer']) && is_string($input['smtp_verify_peer'])) {
+            $input['smtp_verify_peer'] = $input['smtp_verify_peer'] == 'true' ? true : false;
         }
 
-        // if(isset($input['e_invoice'])){
-        //     nlog("am i set?");
-        //     $r = FatturaElettronica::validate($input['e_invoice']);
-        // }
+        if (isset($input['e_invoice']) && is_array($input['e_invoice'])) {
+            //ensure it is normalized first!
+            $input['e_invoice'] = $this->company->filterNullsRecursive($input['e_invoice']);
+        }
+
+        if (isset($input['calculate_taxes']) && $input['calculate_taxes'] == true) {
+            $input['settings']['tax_name1'] = '';
+            $input['settings']['tax_rate1'] = 0;
+            $input['settings']['tax_name2'] = '';
+            $input['settings']['tax_rate2'] = 0;
+            $input['settings']['tax_name3'] = '';
+            $input['settings']['tax_rate3'] = 0;
+            $input['enabled_tax_rates'] = 0;
+            $input['enabled_item_tax_rates'] = 1;
+        }
+
+        if (isset($input['session_timeout']) && $input['session_timeout'] < 0) {
+            $input['session_timeout'] = 0;
+        }
+
+        if ($company->settings->e_invoice_type == 'VERIFACTU') {
+            $input['calculate_taxes'] = false;
+        }
 
         $this->replace($input);
     }
+
+
+    // private function getCountryCode()
+    // {
+    //     return auth()->user()->company()->country()->iso_3166_2;
+    // }
 
     /**
      * For the hosted platform, we restrict the feature settings.
@@ -128,7 +226,7 @@ class UpdateCompanyRequest extends Request
      * down to the free plan setting properties which
      * are saveable
      *
-     * @param  object $settings
+     * @param  object|array $settings
      * @return \stdClass $settings
      */
     private function filterSaveableSettings($settings)
@@ -136,26 +234,44 @@ class UpdateCompanyRequest extends Request
         $account = $this->company->account;
 
         if (Ninja::isHosted()) {
+
             foreach ($this->protected_input as $protected_var) {
-                $settings[$protected_var] = str_replace("script", "", $settings[$protected_var]);
+
+                if (isset($settings[$protected_var])) {
+                    $settings[$protected_var] = Purify::clean($settings[$protected_var], true);
+                }
             }
+
+            /** Verifactu is not compulsory until 2027 */
+            // if ($this->company->getSetting('e_invoice_type') == 'VERIFACTU') {
+            //     $settings['e_invoice_type'] = 'VERIFACTU';
+            // }
+
+        }
+
+        if (isset($settings['e_invoice_type']) && $settings['e_invoice_type'] == 'VERIFACTU' && $this->company->verifactuEnabled()) {
+            $settings['lock_invoices'] = 'when_sent';
         }
 
         if (isset($settings['email_style_custom'])) {
-            $settings['email_style_custom'] = str_replace(['{!!','!!}','{{','}}','@checked','@dd', '@dump', '@if', '@if(','@endif','@isset','@unless','@auth','@empty','@guest','@env','@section','@switch', '@foreach', '@while', '@include', '@each', '@once', '@push', '@use', '@forelse', '@verbatim', '<?php', '@php', '@for','@class','</sc','<sc','html;base64', '@elseif', '@else', '@endunless', '@endisset', '@endempty', '@endauth', '@endguest', '@endproduction', '@endenv', '@hasSection', '@endhasSection', '@sectionMissing', '@endsectionMissing', '@endfor', '@endforeach', '@empty', '@endforelse', '@endwhile', '@continue', '@break', '@includeIf', '@includeWhen', '@includeUnless', '@includeFirst', '@component', '@endcomponent', '@endsection', '@yield', '@show', '@append', '@overwrite', '@stop', '@extends', '@endpush', '@stack', '@prepend', '@endprepend', '@slot', '@endslot', '@endphp', '@method', '@csrf', '@error', '@enderror', '@json', '@endverbatim', '@inject'], '', $settings['email_style_custom']);
+            $settings['email_style_custom'] = str_replace(['{!!', '!!}', '{{', '}}', '@checked', '@dd', '@dump', '@if', '@if(', '@endif', '@isset', '@unless', '@auth', '@empty', '@guest', '@env', '@section', '@switch', '@foreach', '@while', '@include', '@each', '@once', '@push', '@use', '@forelse', '@verbatim', '<?php', '@php', '@for', '@class', '</sc', '<sc', 'html;base64', '@elseif', '@else', '@endunless', '@endisset', '@endempty', '@endauth', '@endguest', '@endproduction', '@endenv', '@hasSection', '@endhasSection', '@sectionMissing', '@endsectionMissing', '@endfor', '@endforeach', '@empty', '@endforelse', '@endwhile', '@continue', '@break', '@includeIf', '@includeWhen', '@includeUnless', '@includeFirst', '@component', '@endcomponent', '@endsection', '@yield', '@show', '@append', '@overwrite', '@stop', '@extends', '@endpush', '@stack', '@prepend', '@endprepend', '@slot', '@endslot', '@endphp', '@method', '@csrf', '@error', '@enderror', '@json', '@endverbatim', '@inject'], '', $settings['email_style_custom']);
         }
 
-        if(isset($settings['company_logo']) && strlen($settings['company_logo']) > 2)
-            $settings['company_logo'] = $this->forceScheme($settings['company_logo']);
+        // Only allow company_logo to be cleared via settings.
+        // Logo changes are handled exclusively by file upload.
+        if (isset($settings['company_logo']) && $settings['company_logo'] !== '') {
+            $settings['company_logo'] = $this->company->settings->company_logo ?? '';
+        }
 
-        if (! $account->isFreeHostedClient()) {
+        if (!$account->isFreeHostedClient()) {
             return $settings;
         }
 
+        $settings = is_array($settings) ? (object) $settings : $settings;
         $saveable_casts = CompanySettings::$free_plan_casts;
 
         foreach ($settings as $key => $value) {
-            if (! array_key_exists($key, $saveable_casts)) {
+            if (!array_key_exists($key, $saveable_casts)) {
                 unset($settings->{$key});
             }
         }
@@ -163,18 +279,20 @@ class UpdateCompanyRequest extends Request
         return $settings;
     }
 
-    private function addScheme($url, $scheme = 'https://')
+    /**
+     * addScheme
+     *
+     * @param  string $url
+     * @param  string $scheme
+     * @return string
+     */
+    private function addScheme(string $url, $scheme = 'https://'): string
     {
         if (Ninja::isHosted()) {
             $url = str_replace('http://', '', $url);
-            $url = parse_url($url, PHP_URL_SCHEME) === null ? $scheme.$url : $url;
+            $url = parse_url($url, PHP_URL_SCHEME) === null ? $scheme . $url : $url;
         }
 
         return rtrim($url, '/');
     }
-
-    private function forceScheme($url){
-        return stripos($url, 'http') !== false ? $url : "https://{$url}";
-    }
-
 }

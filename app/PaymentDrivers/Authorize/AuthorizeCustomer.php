@@ -5,7 +5,7 @@
  *
  * @link https://github.com/invoiceninja/invoiceninja source repository
  *
- * @copyright Copyright (c) 2024. Invoice Ninja LLC (https://invoiceninja.com)
+ * @copyright Copyright (c) 2026. Invoice Ninja LLC (https://invoiceninja.com)
  *
  * @license https://www.elastic.co/licensing/elastic-license
  */
@@ -51,7 +51,7 @@ class AuthorizeCustomer
 
             nlog("GetCustomerProfileId's ERROR :  Invalid response");
             $errorMessages = $response->getMessages()->getMessage();
-            nlog('Response : '.$errorMessages[0]->getCode().'  '.$errorMessages[0]->getText());
+            nlog('Response : ' . $errorMessages[0]->getCode() . '  ' . $errorMessages[0]->getText());
         }
     }
 
@@ -74,19 +74,19 @@ class AuthorizeCustomer
         } else {
             nlog('ERROR :  GetCustomerProfile: Invalid response');
             $errorMessages = $response->getMessages()->getMessage();
-            nlog('Response : '.$errorMessages[0]->getCode().'  '.$errorMessages[0]->getText());
+            nlog('Response : ' . $errorMessages[0]->getCode() . '  ' . $errorMessages[0]->getText());
 
             return [
                 'profile' => null,
                 'payment_profiles' => null,
-                'error' => $errorMessages[0]->getCode().'  '.$errorMessages[0]->getText(),
+                'error' => $errorMessages[0]->getCode() . '  ' . $errorMessages[0]->getText(),
             ];
         }
     }
 
     public function importCustomers()
     {
-        $auth_customers = $this->getCustomerProfileIds();
+        $auth_customers = $this->getCustomerProfileIds() ?? [];
         $company = $this->authorize->company_gateway->company;
         $user = $company->owner();
 
@@ -115,7 +115,7 @@ class AuthorizeCustomer
                 $client->city = $billTo->getCity();
                 $client->state = $billTo->getState();
                 $client->postal_code = $billTo->getZip();
-                $client->country_id = $billTo->getCountry() ? $this->getCountryCode($billTo->getCountry()) : $company->settings->country_id;
+                $client->country_id = $billTo->getCountry() && strlen($billTo->getCountry()) <= 3 ? $this->getCountryCode($billTo->getCountry()) : $company->settings->country_id;
                 $client->save();
 
                 $client_contact = ClientContactFactory::create($company->id, $user->id);
@@ -161,11 +161,13 @@ class AuthorizeCustomer
 
     private function getCountryCode($country_code)
     {
-        $countries = Cache::get('countries');
 
-        $country = $countries->filter(function ($item) use ($country_code) {
+        /** @var \Illuminate\Support\Collection<\App\Models\Country> */
+        $countries = app('countries');
+
+        $country = $countries->first(function ($item) use ($country_code) {
             return $item->iso_3166_2 == $country_code || $item->iso_3166_3 == $country_code;
-        })->first();
+        });
 
         return (string) $country->id;
     }

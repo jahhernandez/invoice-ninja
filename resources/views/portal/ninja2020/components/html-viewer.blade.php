@@ -33,14 +33,14 @@ span {
     <div class="px-3 border-fuchsia-600 border-b-2 pb-3">
     
         <div id="company-details" class="mx-auto">
-            {!! $company_details !!}
+            {!! App\Services\Pdf\Purify::clean($company_details) !!}
         </div>
 
     </div>
 
     <div class="border-fuchsia-600 border-b-2 pb-3 mt-3">
 
-        <div id="entity-details"> {!! $entity_details !!} </div>
+        <div id="entity-details"> {!! App\Services\Pdf\Purify::clean($entity_details) !!} </div>
 
     </div>
 
@@ -54,7 +54,7 @@ span {
             </button>
 
             <div id="terms" class="py-3"  x-show="show_user">
-                {!! $user_details !!}
+                {!! App\Services\Pdf\Purify::clean($user_details) !!}
             </div>
 
 
@@ -78,7 +78,14 @@ span {
                         <div class="product-information">
                             <div class="item-details">
 
-                                <p class="overflow-ellipsis overflow-hidden px-1 mb-2">{!! $product['notes'] !!}</p>
+                                <p class="overflow-ellipsis overflow-hidden px-1 mb-2">{!! App\Services\Pdf\Purify::clean($product['notes']) !!}</p>
+                                @if($show_tags && count($product['tags']) > 0)
+                                    <div class="flex flex-wrap gap-1 px-1 mb-2">
+                                        @foreach($product['tags'] as $tag)
+                                            <span wire:key="product-tag-{{ $loop->parent->index }}-{{ $loop->index }}" class="inline-flex rounded bg-gray-100 px-2 py-0.5 text-xs text-gray-700">{{ $tag }}</span>
+                                        @endforeach
+                                    </div>
+                                @endif
                                 <p class="mt-2">
                                     @if($show_quantity)
                                     {{ $product['quantity'] }} x
@@ -120,7 +127,7 @@ span {
                         <div class="">
                             <div class="">
                                 <p class="mt-2">{{ $service['quantity'] }} × {{ $service['cost'] }}</p> 
-                                <p class="overflow-ellipsis overflow-hidden px-1 mb-2">{!! $service['notes'] !!}</p>
+                                <p class="overflow-ellipsis overflow-hidden px-1 mb-2">{!! App\Services\Pdf\Purify::clean($service['notes']) !!}</p>
                             </div>
                         </div>
                     </td>
@@ -152,7 +159,7 @@ span {
                 </tr>
                 @if(!$is_quote)
                  <tr>
-                    <td style="text-align:left; padding-right:10px;" class="text-lg">{{ ctrans('texts.balance') }}</td>
+                    <td style="text-align:left; padding-right:10px;" class="text-lg">{{ ctrans('texts.balance_due') }}</td>
                     <td style="text-align:right; padding-right:10px;" class="text-lg">{{ $balance }}</td>
                 </tr>
                 @endif
@@ -161,7 +168,7 @@ span {
 
     </div>
 
-    @if(strlen($entity->public_notes) > 3)
+    @if(strlen($entity->public_notes ?? '') > 3)
     <div x-data="{ show_notes: false }" class="mb-10 mr-5 ml-5 flex flex-col items-end">
         
         <button @click="show_notes = !show_notes" :aria-expanded="show_notes ? 'true' : 'false'" :class="{ 'active': show_notes }" class="bg-gray-100 hover:bg-gray-200 text-gray-800 font-bold py-2 px-4 rounded inline-flex items-center">
@@ -170,13 +177,13 @@ span {
         </button>
         
         <div id="notes" class="py-10 border-b-2 border-fuschia-600"  x-show="show_notes">     
-            {!! html_entity_decode(e($entity->public_notes)) !!}
+            {!! html_entity_decode(e($public_notes)) !!}
         </div>
 
     </div>
     @endif
 
-    @if(strlen($entity->terms) > 3)
+    @if(strlen($entity->terms ?? '') > 3)
     <div x-data="{ show_terms: false }" class="mb-10 mr-5 ml-5 flex flex-col items-end">
 
         <button @click="show_terms = !show_terms" :aria-expanded="show_terms ? 'true' : 'false'" :class="{ 'active': show_terms }" class="bg-gray-100 hover:bg-gray-200 text-gray-800 font-bold py-2 px-4 rounded inline-flex items-center">
@@ -185,13 +192,13 @@ span {
         </button>
 
         <div id="terms" class="py-10 border-b-2 border-fuschia-600"  x-show="show_terms">
-            {!! html_entity_decode($entity->terms) !!}
+            {!! \App\Services\Pdf\Purify::clean(html_entity_decode($terms), true) !!}
         </div>
 
     </div>
     @endif
 
-    @if(strlen($entity->footer) > 3)
+    @if(strlen($entity->footer ?? '') > 3)
     <div x-data="{ show_footer: false }" class="mb-10 mr-5 ml-5 flex flex-col items-end">
 
         <button @click="show_footer = !show_footer" :aria-expanded="show_footer ? 'true' : 'false'" :class="{ 'active': show_footer }" class="bg-gray-100 hover:bg-gray-200 text-gray-800 font-bold py-2 px-4 rounded inline-flex items-center">
@@ -200,7 +207,7 @@ span {
         </button>
 
         <div id="terms" class="py-10 border-b-2 border-fuschia-600"  x-show="show_footer">
-            {!! html_entity_decode($entity->footer) !!}
+            {!! \App\Services\Pdf\Purify::clean(html_entity_decode($entity->footer), true) !!}
         </div>
 
     </div>

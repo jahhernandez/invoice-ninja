@@ -1,4 +1,5 @@
 <?php
+
 /**
  * Invoice Ninja (https://invoiceninja.com).
  *
@@ -15,10 +16,6 @@ use App\Utils\Traits\Recurring\HasRecurrence;
 use Illuminate\Support\Carbon;
 use Tests\TestCase;
 
-/**
- * @test
- * @covers App\Utils\Traits\Recurring\HasRecurrence
- */
 class RecurringDueDatesTest extends TestCase
 {
     use HasRecurrence;

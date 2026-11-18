@@ -1,10 +1,11 @@
 <?php
+
 /**
  * Invoice Ninja (https://invoiceninja.com).
  *
  * @link https://github.com/invoiceninja/invoiceninja source repository
  *
- * @copyright Copyright (c) 2024. Invoice Ninja LLC (https://invoiceninja.com)
+ * @copyright Copyright (c) 2026. Invoice Ninja LLC (https://invoiceninja.com)
  *
  * @license https://www.elastic.co/licensing/elastic-license
  */
@@ -12,6 +13,8 @@
 namespace App\Http\Requests\User;
 
 use App\Http\Requests\Request;
+use App\Http\ValidationRules\Account\BlackListRule;
+use App\Http\ValidationRules\Account\EmailBlackListRule;
 use App\Http\ValidationRules\UniqueUserRule;
 use App\Http\ValidationRules\User\HasValidPhoneNumber;
 use App\Utils\Ninja;
@@ -19,6 +22,7 @@ use App\Utils\Ninja;
 class UpdateUserRequest extends Request
 {
     private bool $phone_has_changed = false;
+    private bool $email_is_changing = false;
 
     /**
      * Determine if the user is authorized to make this request.
@@ -27,7 +31,18 @@ class UpdateUserRequest extends Request
      */
     public function authorize(): bool
     {
-        return auth()->user()->id == $this->user->id || auth()->user()->isAdmin();
+
+        $user = auth()->user();
+        
+        if ($user->id == $this->user->id) {
+            return true;
+        }
+    
+        return $user->isAdmin()
+            && $this->user->company_users()->where('company_id', $user->companyId())->exists()
+            && (!$this->user->hasOwnerFlag() || $user->isOwner());
+
+        // return auth()->user()->id == $this->user->id || auth()->user()->isAdmin();
     }
 
     public function rules()
@@ -38,13 +53,26 @@ class UpdateUserRequest extends Request
             'password' => 'nullable|string|min:6',
         ];
 
-        if (isset($input['email'])) {
-            $rules['email'] = ['email', 'sometimes', new UniqueUserRule($this->user, $input['email'])];
+        $rules['email'] = ['email:rfc', 'bail', 'sometimes', new UniqueUserRule($this->user, $input['email'])];
+
+        if (Ninja::isHosted() && $this->email_is_changing) {
+            $rules['email'] = [
+                'bail', 
+                'sometimes', 
+                'email:rfc,dns', 
+                'max:255',
+                'indisposable:mx', 
+                new UniqueUserRule($this->user, $input['email']),
+                new BlackListRule(),
+                new EmailBlackListRule(),
+            ];
         }
 
         if (Ninja::isHosted() && $this->phone_has_changed && $this->phone && isset($this->phone)) {
             $rules['phone'] = ['sometimes', 'bail', 'string', new HasValidPhoneNumber()];
         }
+
+        $rules['language_id'] = 'bail|nullable|sometimes|exists:languages,id';
 
         return $rules;
     }
@@ -53,9 +81,17 @@ class UpdateUserRequest extends Request
     {
         $input = $this->all();
 
-        if (array_key_exists('email', $input)) {
+        if (isset($input['email']) && is_string($input['email']) && strlen($input['email']) > 2) {
             $input['email'] = trim($input['email']);
+        } elseif (isset($input['email'])) {
+            $input['email'] = false;
+        } else {
+            $input['email'] = $this->user->email;
         }
+
+        $this->email_is_changing = array_key_exists('email', $this->all())
+                                    && is_string($input['email'])
+                                    && trim($input['email']) !== $this->user->email;
 
         if (array_key_exists('first_name', $input)) {
             $input['first_name'] = strip_tags($input['first_name']);
@@ -77,6 +113,9 @@ class UpdateUserRequest extends Request
             unset($input['oauth_user_token']);
         }
 
+        if (isset($input['password']) && is_string($input['password'])) {
+            $input['password'] = trim($input['password']);
+        }
 
         $this->replace($input);
     }

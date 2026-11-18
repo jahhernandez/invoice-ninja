@@ -1,4 +1,5 @@
 <?php
+
 /**
  * Invoice Ninja (https://invoiceninja.com).
  *
@@ -17,14 +18,14 @@ use Tests\MockAccountData;
 use Tests\TestCase;
 
 /**
- * @test
+ *
  */
 class MarkInvoicePaidTest extends TestCase
 {
     use MockAccountData;
     use DatabaseTransactions;
 
-    protected function setUp() :void
+    protected function setUp(): void
     {
         parent::setUp();
 
@@ -57,6 +58,9 @@ class MarkInvoicePaidTest extends TestCase
         }
 
         //events are not firing which makes this impossible to control.
+
+        $invoice = $invoice->fresh();
+        $client = $client->fresh();
 
         $this->assertEquals(0.00, $invoice->balance);
         $this->assertEquals(($client_balance - $invoice_balance), $client->balance);

@@ -1,28 +1,36 @@
 <?php
+
 /**
  * Invoice Ninja (https://invoiceninja.com).
  *
  * @link https://github.com/invoiceninja/invoiceninja source repository
  *
- * @copyright Copyright (c) 2024. Invoice Ninja LLC (https://invoiceninja.com)
+ * @copyright Copyright (c) 2026. Invoice Ninja LLC (https://invoiceninja.com)
  *
  * @license https://www.elastic.co/licensing/elastic-license
  */
 
 namespace App\Models;
 
-use App\Helpers\Invoice\InvoiceSum;
-use App\Helpers\Invoice\InvoiceSumInclusive;
-use App\Models\Presenters\QuotePresenter;
-use App\Services\Quote\QuoteService;
-use App\Utils\Traits\MakesDates;
-use App\Utils\Traits\MakesHash;
-use App\Utils\Traits\MakesInvoiceValues;
-use App\Utils\Traits\MakesReminders;
-use Illuminate\Database\Eloquent\SoftDeletes;
+use App\DataMapper\QuoteSync;
+use App\Utils\Ninja;
+use App\Utils\Number;
+use Elastic\ScoutDriverPlus\Searchable;
 use Illuminate\Support\Carbon;
+use App\Utils\Traits\MakesHash;
+use App\Helpers\Invoice\InvoiceSum;
+use Illuminate\Support\Facades\App;
+use App\Services\Quote\QuoteService;
+use App\Utils\Traits\MakesReminders;
+use App\Events\Quote\QuoteWasEmailed;
+use App\Utils\Traits\MakesInvoiceValues;
+use App\Models\Presenters\QuotePresenter;
 use Laracasts\Presenter\PresentableTrait;
-
+use App\Helpers\Invoice\InvoiceSumInclusive;
+use App\Events\Quote\QuoteReminderWasEmailed;
+use Illuminate\Database\Eloquent\SoftDeletes;
+use App\Models\Traits\HasTags;
+use App\Models\Traits\IndexableItems;
 /**
  * App\Models\Quote
  *
@@ -35,6 +43,7 @@ use Laracasts\Presenter\PresentableTrait;
  * @property int $status_id
  * @property int|null $project_id
  * @property int|null $vendor_id
+ * @property int|null $location_id
  * @property int|null $recurring_id
  * @property int|null $design_id
  * @property int|null $invoice_id
@@ -48,20 +57,21 @@ use Laracasts\Presenter\PresentableTrait;
  * @property string|null|Carbon $due_date
  * @property string|null $next_send_date
  * @property bool $is_deleted
- * @property object|null $line_items
+ * @property object|array|string $line_items
  * @property object|null $backup
+ * @property QuoteSync|null $sync
  * @property string|null $footer
  * @property string|null $public_notes
  * @property string|null $private_notes
  * @property string|null $terms
  * @property string|null $tax_name1
- * @property string $tax_rate1
+ * @property float $tax_rate1
  * @property string|null $tax_name2
- * @property string $tax_rate2
+ * @property float $tax_rate2
  * @property string|null $tax_name3
- * @property string $tax_rate3
- * @property string $total_taxes
- * @property int $uses_inclusive_taxes
+ * @property float $tax_rate3
+ * @property float $total_taxes
+ * @property bool $uses_inclusive_taxes
  * @property string|null $custom_value1
  * @property string|null $custom_value2
  * @property string|null $custom_value3
@@ -74,9 +84,12 @@ use Laracasts\Presenter\PresentableTrait;
  * @property int $custom_surcharge_tax2
  * @property int $custom_surcharge_tax3
  * @property int $custom_surcharge_tax4
+ * @property int|null $location_id
  * @property float $exchange_rate
  * @property float $amount
  * @property float $balance
+ * @property int|null $location_id
+ * @property object|null $tax_data
  * @property float|null $partial
  * @property \Carbon\Carbon|null $partial_due_date
  * @property string|null $last_viewed
@@ -87,7 +100,11 @@ use Laracasts\Presenter\PresentableTrait;
  * @property string|null $reminder2_sent
  * @property string|null $reminder3_sent
  * @property string|null $reminder_last_sent
- * @property string $paid_to_date
+ * @property int|null $location_id
+ * @property object|null $tax_data
+ * @property object|null $e_invoice
+ * @property float $paid_to_date
+ * @property object|null $tax_data
  * @property int|null $subscription_id
  * @property \App\Models\User|null $assigned_user
  * @property \App\Models\Client $client
@@ -103,23 +120,26 @@ use Laracasts\Presenter\PresentableTrait;
  * @property-read \App\Models\Project|null $project
  * @property-read \App\Models\User $user
  * @property-read \App\Models\Vendor|null $vendor
+ * @property-read \App\Models\Location|null $location
  * @property-read \Illuminate\Database\Eloquent\Collection<int, \App\Models\Activity> $activities
  * @property-read \Illuminate\Database\Eloquent\Collection<int, \App\Models\Document> $documents
  * @property-read \Illuminate\Database\Eloquent\Collection<int, \App\Models\Backup> $history
  * @property-read \Illuminate\Database\Eloquent\Collection<int, \App\Models\QuoteInvitation> $invitations
- * @method static \Illuminate\Database\Eloquent\Builder|BaseModel company()
+ * @property-read \Illuminate\Database\Eloquent\Collection<int, \App\Models\Tag> $tags
  * @mixin \Eloquent
  * @mixin \Illuminate\Database\Eloquent\Builder
  */
 class Quote extends BaseModel
 {
     use MakesHash;
-    use MakesDates;
     use Filterable;
     use SoftDeletes;
     use MakesReminders;
     use PresentableTrait;
     use MakesInvoiceValues;
+    use Searchable;
+    use HasTags;
+    Use IndexableItems;
 
     protected $presenter = QuotePresenter::class;
 
@@ -161,6 +181,7 @@ class Quote extends BaseModel
         'subscription_id',
         'uses_inclusive_taxes',
         'vendor_id',
+        'location_id',
     ];
 
     protected $casts = [
@@ -176,6 +197,8 @@ class Quote extends BaseModel
         'is_deleted' => 'boolean',
         'is_amount_discount' => 'bool',
         'e_invoice' => 'object',
+        'sync' => QuoteSync::class,
+
     ];
 
     public const STATUS_DRAFT = 1;
@@ -186,7 +209,55 @@ class Quote extends BaseModel
 
     public const STATUS_CONVERTED = 4;
 
+    public const STATUS_REJECTED = 5;
+
+    public const STATUS_CANCELLED = 6;
+
     public const STATUS_EXPIRED = -1;
+
+    /**
+     * Get the index name for the model.
+     *
+     * @return string
+     */
+    public function searchableAs(): string
+    {
+        return 'quotes';
+    }
+
+    public function toSearchableArray(): array
+    {
+        
+        $locale = $this->company->locale();
+        App::setLocale($locale);
+
+        return [
+            'id' => $this->company->db . ":" . $this->id,
+            'name' => ctrans('texts.quote') . " " . ($this->number ?? '') . " | " . $this->client->present()->name() . ' | ' . Number::formatMoney($this->amount, $this->client) . ' | ' . $this->translateDate($this->date, $this->company->date_format(), $locale),
+            'hashed_id' => $this->hashed_id,
+            'user_id' => (string) $this->user_id,
+            'assigned_user_id' => (string) $this->assigned_user_id,
+            'number' => (string) $this->number,
+            'is_deleted' => (bool) $this->is_deleted,
+            'amount' => (float) $this->amount,
+            'balance' => (float) $this->balance,
+            'due_date' => $this->due_date,
+            'date' => $this->date,
+            'custom_value1' => (string) $this->custom_value1,
+            'custom_value2' => (string) $this->custom_value2,
+            'custom_value3' => (string) $this->custom_value3,
+            'custom_value4' => (string) $this->custom_value4,
+            'company_key' => $this->company->company_key,
+            'po_number' => (string) $this->po_number,
+            'tags' => $this->tags->pluck('name')->values()->all(),
+            'line_items' => $this->indexLineItems(),
+        ];
+    }
+
+    public function getScoutKey()
+    {
+        return $this->company->db . ":" . $this->id;
+    }
 
     public function getEntityType()
     {
@@ -198,23 +269,27 @@ class Quote extends BaseModel
         return $this->dateMutator($value);
     }
 
-//    public function getDueDateAttribute($value)
-//    {
-//        return $value ? $this->dateMutator($value) : null;
-//    }
-
-    // public function getPartialDueDateAttribute($value)
-    // {
-    //     return $this->dateMutator($value);
-    // }
-
     public function getStatusIdAttribute($value)
     {
-        if ($this->due_date && ! $this->is_deleted && $value == self::STATUS_SENT && Carbon::parse($this->due_date)->lte(now()->startOfDay())) {
+        if (! $this->is_deleted && $value == self::STATUS_SENT && $this->hasLapsedValidUntil()) {
             return self::STATUS_EXPIRED;
         }
 
         return $value;
+    }
+
+    /**
+     * Valid-until is inclusive of the due date. The quote expires the following day.
+     */
+    public function hasLapsedValidUntil(mixed $due_date = null): bool
+    {
+        $due = $due_date ?? $this->due_date;
+
+        if (! $due) {
+            return false;
+        }
+
+        return Carbon::parse($due)->addDay()->lte(now()->setTimezone($this->client->timezone()->name)->startOfDay());
     }
 
     public function company(): \Illuminate\Database\Eloquent\Relations\BelongsTo
@@ -228,7 +303,7 @@ class Quote extends BaseModel
     }
 
     /**
-     * @return \Illuminate\Database\Eloquent\Relations\HasManyThrough<Backup>
+     * @return \Illuminate\Database\Eloquent\Relations\HasManyThrough
      */
     public function history(): \Illuminate\Database\Eloquent\Relations\HasManyThrough
     {
@@ -237,12 +312,17 @@ class Quote extends BaseModel
 
     public function activities(): \Illuminate\Database\Eloquent\Relations\HasMany
     {
-        return $this->hasMany(Activity::class)->orderBy('id', 'DESC')->take(50);
+        return $this->hasMany(Activity::class)->where('company_id', $this->company_id)->where('client_id', $this->client_id)->orderBy('id', 'DESC')->take(50);
     }
 
     public function user(): \Illuminate\Database\Eloquent\Relations\BelongsTo
     {
         return $this->belongsTo(User::class)->withTrashed();
+    }
+
+    public function location(): \Illuminate\Database\Eloquent\Relations\BelongsTo
+    {
+        return $this->belongsTo(Location::class)->withTrashed();
     }
 
     public function client(): \Illuminate\Database\Eloquent\Relations\BelongsTo
@@ -253,6 +333,11 @@ class Quote extends BaseModel
     public function invoice(): \Illuminate\Database\Eloquent\Relations\BelongsTo
     {
         return $this->belongsTo(Invoice::class)->withTrashed();
+    }
+
+    public function purchase_orders(): \Illuminate\Database\Eloquent\Relations\HasMany
+    {
+        return $this->hasMany(PurchaseOrder::class);
     }
 
     public function assigned_user(): \Illuminate\Database\Eloquent\Relations\BelongsTo
@@ -271,7 +356,7 @@ class Quote extends BaseModel
     }
 
     /**
-     * @return \Illuminate\Database\Eloquent\Relations\MorphMany<Document>
+     * @return \Illuminate\Database\Eloquent\Relations\MorphMany
      */
     public function documents(): \Illuminate\Database\Eloquent\Relations\MorphMany
     {
@@ -283,7 +368,7 @@ class Quote extends BaseModel
      *
      * @return InvoiceSumInclusive | InvoiceSum The quote calculator object getters
      */
-    public function calc(): InvoiceSumInclusive | InvoiceSum
+    public function calc(): InvoiceSumInclusive|InvoiceSum
     {
         $quote_calc = null;
 
@@ -322,17 +407,21 @@ class Quote extends BaseModel
     {
         switch ($status) {
             case self::STATUS_DRAFT:
-                return '<h5><span class="badge badge-light">'.ctrans('texts.draft').'</span></h5>';
+                return '<h5><span class="badge badge-light">' . ctrans('texts.draft') . '</span></h5>';
             case self::STATUS_SENT:
-                return '<h5><span class="badge badge-primary">'.ctrans('texts.pending').'</span></h5>';
+                return '<h5><span class="badge badge-primary">' . ctrans('texts.pending') . '</span></h5>';
             case self::STATUS_APPROVED:
-                return '<h5><span class="badge badge-success">'.ctrans('texts.approved').'</span></h5>';
+                return '<h5><span class="badge badge-success">' . ctrans('texts.approved') . '</span></h5>';
             case self::STATUS_EXPIRED:
-                return '<h5><span class="badge badge-danger">'.ctrans('texts.expired').'</span></h5>';
+                return '<h5><span class="badge badge-danger">' . ctrans('texts.expired') . '</span></h5>';
             case self::STATUS_CONVERTED:
-                return '<h5><span class="badge badge-light">'.ctrans('texts.converted').'</span></h5>';
+                return '<h5><span class="badge badge-light">' . ctrans('texts.converted') . '</span></h5>';
+            case self::STATUS_REJECTED:
+                return '<h5><span class="badge badge-danger">' . ctrans('texts.rejected') . '</span></h5>';
+            case self::STATUS_CANCELLED:
+                return '<h5><span class="badge badge-secondary">' . ctrans('texts.cancelled') . '</span></h5>';
             default:
-                return '<h5><span class="badge badge-light">'.ctrans('texts.draft').'</span></h5>';
+                return '<h5><span class="badge badge-light">' . ctrans('texts.draft') . '</span></h5>';
         }
     }
 
@@ -349,6 +438,10 @@ class Quote extends BaseModel
                 return ctrans('texts.expired');
             case self::STATUS_CONVERTED:
                 return ctrans('texts.converted');
+            case self::STATUS_REJECTED:
+                return ctrans('texts.rejected');
+            case self::STATUS_CANCELLED:
+                return ctrans('texts.cancelled');
             default:
                 return ctrans('texts.draft');
 
@@ -367,6 +460,20 @@ class Quote extends BaseModel
         }
 
         return false;
+    }
+
+    public function isRejected(): bool
+    {
+        if ($this->status_id === $this::STATUS_REJECTED) {
+            return true;
+        }
+
+        return false;
+    }
+
+    public function isCancelled(): bool
+    {
+        return $this->status_id === $this::STATUS_CANCELLED;
     }
 
     public function getValidUntilAttribute()
@@ -397,6 +504,81 @@ class Quote extends BaseModel
      */
     public function calculateTemplate(string $entity_string): string
     {
-        return $entity_string;
+
+        $client = $this->client;
+
+        if ($entity_string != 'quote') {
+            return $entity_string;
+        }
+
+        if ($this->inReminderWindow(
+            $client->getSetting('quote_schedule_reminder1'),
+            $client->getSetting('quote_num_days_reminder1')
+        ) && ! $this->reminder1_sent) {
+            return 'reminder1';
+            // } elseif ($this->inReminderWindow(
+            //     $client->getSetting('schedule_reminder2'),
+            //     $client->getSetting('num_days_reminder2')
+            // ) && ! $this->reminder2_sent) {
+            //     return 'reminder2';
+            // } elseif ($this->inReminderWindow(
+            //     $client->getSetting('schedule_reminder3'),
+            //     $client->getSetting('num_days_reminder3')
+            // ) && ! $this->reminder3_sent) {
+            //     return 'reminder3';
+            // } elseif ($this->checkEndlessReminder(
+            //     $this->reminder_last_sent,
+            //     $client->getSetting('endless_reminder_frequency_id')
+            // )) {
+            //     return 'endless_reminder';
+        } else {
+            return $entity_string;
+        }
+
     }
+
+
+    /**
+     * @return bool
+     */
+    public function canRemind(): bool
+    {
+        if (in_array($this->status_id, [self::STATUS_DRAFT, self::STATUS_APPROVED, self::STATUS_CONVERTED, self::STATUS_CANCELLED]) || $this->is_deleted) {
+            return false;
+        }
+
+        return true;
+
+    }
+
+    /**
+     * entityEmailEvent
+     *
+     * Translates the email type into an activity + notification
+     * that matches.
+     */
+    public function entityEmailEvent($invitation, $reminder_template, $template = '')
+    {
+
+        switch ($reminder_template) {
+            case 'quote':
+                event(new QuoteWasEmailed($invitation, $invitation->company, Ninja::eventVars(auth()->user() ? auth()->user()->id : null), $reminder_template));
+                break;
+            case 'email_quote_template_reminder1':
+            case 'reminder1':
+                event(new QuoteReminderWasEmailed($invitation, $invitation->company, Ninja::eventVars(auth()->user() ? auth()->user()->id : null), 'email_quote_template_reminder1'));
+                break;
+            case 'custom1':
+            case 'custom2':
+            case 'custom3':
+                event(new QuoteWasEmailed($invitation, $invitation->company, Ninja::eventVars(auth()->user() ? auth()->user()->id : null), $reminder_template));
+                break;
+            default:
+                event(new QuoteWasEmailed($invitation, $invitation->company, Ninja::eventVars(auth()->user() ? auth()->user()->id : null), $reminder_template));
+                break;
+        }
+    }
+
+
+
 }

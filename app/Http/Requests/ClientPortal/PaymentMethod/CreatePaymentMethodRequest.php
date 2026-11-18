@@ -1,5 +1,13 @@
 <?php
-
+/**
+ * Invoice Ninja (https://invoiceninja.com).
+ *
+ * @link https://github.com/invoiceninja/invoiceninja source repository
+ *
+ * @copyright Copyright (c) 2026. Invoice Ninja LLC (https://invoiceninja.com)
+ *
+ * @license https://www.elastic.co/licensing/elastic-license
+ */
 namespace App\Http\Requests\ClientPortal\PaymentMethod;
 
 use App\Http\Requests\Request;
@@ -18,21 +26,20 @@ class CreatePaymentMethodRequest extends FormRequest
      */
     public function authorize(): bool
     {
+
+        auth()->guard('contact')->user()->loadMissing(['client' => function ($query) {
+            $query->without('gateway_tokens', 'documents', 'contacts.company', 'contacts'); // Exclude 'grandchildren' relation of 'client'
+        }]);
+
         /** @var Client $client */
         $client = auth()->guard('contact')->user()->client;
 
-        $available_methods = [];
+        $available_methods = collect($client->service()->getPaymentMethods(-1))
+            ->pluck('gateway_type_id')
+            ->toArray();
 
-        collect($client->service()->getPaymentMethods(-1))
-            ->filter(function ($method) use (&$available_methods) {
-                $available_methods[] = $method['gateway_type_id'];
-            });
+        return in_array($this->query('method'), $available_methods);
 
-        if (in_array($this->query('method'), $available_methods)) {
-            return true;
-        }
-
-        return false;
     }
 
     /**

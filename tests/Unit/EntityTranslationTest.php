@@ -1,4 +1,5 @@
 <?php
+
 /**
  * Invoice Ninja (https://invoiceninja.com).
  *
@@ -31,13 +32,13 @@ use App\Models\Vendor;
 use Tests\TestCase;
 
 /**
- * @test
+ *
  */
 class EntityTranslationTest extends TestCase
 {
     public $faker;
 
-    protected function setUp() :void
+    protected function setUp(): void
     {
         parent::setUp();
 
@@ -56,7 +57,7 @@ class EntityTranslationTest extends TestCase
         ]);
 
         $u = User::factory()->create([
-            'email' => $this->faker->email(),
+            'email' => uniqid('testuser') . '@gmail.com',
             'account_id' => $account->id,
         ]);
 

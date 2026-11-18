@@ -1,10 +1,11 @@
 <?php
+
 /**
  * Invoice Ninja (https://invoiceninja.com).
  *
  * @link https://github.com/invoiceninja/invoiceninja source repository
  *
- * @copyright Copyright (c) 2024. Invoice Ninja LLC (https://invoiceninja.com)
+ * @copyright Copyright (c) 2026. Invoice Ninja LLC (https://invoiceninja.com)
  *
  * @license https://www.elastic.co/licensing/elastic-license
  */
@@ -22,6 +23,7 @@ use Illuminate\Database\Eloquent\SoftDeletes;
  * @property int $user_id
  * @property string $integration_type
  * @property string $provider_name
+ * @property string|null $requisition_id
  * @property int $provider_id
  * @property int $bank_account_id
  * @property string|null $bank_account_name
@@ -29,7 +31,7 @@ use Illuminate\Database\Eloquent\SoftDeletes;
  * @property string|null $bank_account_status
  * @property string|null $bank_account_type
  * @property float $balance
- * @property int|null $currency
+ * @property string|null $currency
  * @property string $nickname
  * @property string $nordigen_account_id
  * @property string $nordigen_institution_id

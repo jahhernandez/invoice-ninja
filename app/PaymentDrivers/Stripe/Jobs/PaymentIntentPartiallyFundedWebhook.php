@@ -1,10 +1,11 @@
 <?php
+
 /**
  * Invoice Ninja (https://invoiceninja.com).
  *
  * @link https://github.com/invoiceninja/invoiceninja source repository
  *
- * @copyright Copyright (c) 2024. Invoice Ninja LLC (https://invoiceninja.com)
+ * @copyright Copyright (c) 2026. Invoice Ninja LLC (https://invoiceninja.com)
  *
  * @license https://www.elastic.co/licensing/elastic-license
  */
@@ -35,9 +36,7 @@ class PaymentIntentPartiallyFundedWebhook implements ShouldQueue
 
     public $deleteWhenMissingModels = true;
 
-    public function __construct(public array $stripe_request, public string $company_key, public int $company_gateway_id)
-    {
-    }
+    public function __construct(public array $stripe_request, public string $company_key, public int $company_gateway_id) {}
 
     public function handle()
     {
@@ -72,7 +71,7 @@ class PaymentIntentPartiallyFundedWebhook implements ShouldQueue
             $company_gateway = CompanyGateway::query()->find($this->company_gateway_id);
             $stripe_driver = $company_gateway->driver()->init();
 
-            $hash = isset($transaction['metadata']['payment_hash']) ? $transaction['metadata']['payment_hash'] : false;
+            $hash = $transaction['metadata']['payment_hash'] ?? false;
 
             if (!$hash) {
                 nlog("no hash found");
@@ -90,8 +89,8 @@ class PaymentIntentPartiallyFundedWebhook implements ShouldQueue
 
             $pi = \Stripe\PaymentIntent::retrieve($payment_intent, $stripe_driver->stripe_connect_auth);
 
-            $amount = $stripe_driver->convertFromStripeAmount($pi->amount, $stripe_driver->client->currency()->precision, $stripe_driver->client->currency()->precision);
-            $amount_received =  $stripe_driver->convertFromStripeAmount($pi->amount_received, $stripe_driver->client->currency()->precision, $stripe_driver->client->currency()->precision);
+            $amount = $stripe_driver->convertFromStripeAmount($pi->amount, $stripe_driver->client->currency()->precision, $stripe_driver->client->currency());
+            $amount_received =  $stripe_driver->convertFromStripeAmount($pi->amount_received, $stripe_driver->client->currency()->precision, $stripe_driver->client->currency());
 
             //at this point we just send notification emails to the client and advise of over/under payments.
         }

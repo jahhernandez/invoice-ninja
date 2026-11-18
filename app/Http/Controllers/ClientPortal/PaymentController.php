@@ -5,7 +5,7 @@
  *
  * @link https://github.com/invoiceninja/invoiceninja source repository
  *
- * @copyright Copyright (c) 2024. Invoice Ninja LLC (https://invoiceninja.com)
+ * @copyright Copyright (c) 2026. Invoice Ninja LLC (https://invoiceninja.com)
  *
  * @license https://www.elastic.co/licensing/elastic-license
  */
@@ -24,13 +24,16 @@ use App\Models\CompanyGateway;
 use App\Factory\PaymentFactory;
 use App\Utils\Traits\MakesHash;
 use App\Utils\Traits\MakesDates;
+use Illuminate\Routing\Redirector;
 use App\Http\Controllers\Controller;
 use Illuminate\Http\RedirectResponse;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Contracts\View\Factory;
 use App\PaymentDrivers\Stripe\BankTransfer;
 use App\Services\ClientPortal\InstantPayment;
 use App\Services\Subscription\SubscriptionService;
 use App\Http\Requests\ClientPortal\Payments\PaymentResponseRequest;
+use App\Http\Requests\ClientPortal\Payments\ShowPaymentRequest;
 
 /**
  * Class PaymentController.
@@ -53,17 +56,30 @@ class PaymentController extends Controller
     /**
      * Display the specified resource.
      *
-     * @param Request $request
+     * @param ShowPaymentRequest $request
      * @param Payment $payment
-     * @return Factory|View
+     * @return Factory|View|RedirectResponse|Redirector
      */
-    public function show(Request $request, Payment $payment)
+    public function show(ShowPaymentRequest $request, Payment $payment)
     {
         $payment->load('invoices');
         $bank_details = false;
         $payment_intent = false;
         $data = false;
         $gateway = false;
+
+        $invoice = $payment->invoices->filter(function ($invoice) {
+            return isset($invoice->backup->redirect);
+        })->first();
+
+        if ($invoice) {
+            $backup = $invoice->backup;
+            $url = $backup->redirect;
+            $backup->redirect = null;
+            $invoice->backup = $backup;
+            $invoice->saveQuietly();
+            return redirect($url);
+        }
 
         if ($payment->gateway_type_id == GatewayType::DIRECT_DEBIT && $payment->type_id == PaymentType::DIRECT_DEBIT) {
             if (method_exists($payment->company_gateway->driver($payment->client), 'getPaymentIntent')) {
@@ -77,6 +93,7 @@ class PaymentController extends Controller
                     'EUR' => $data = $bt->formatDataforEur($payment_intent),
                     'JPY' => $data = $bt->formatDataforJp($payment_intent),
                     'GBP' => $data = $bt->formatDataforUk($payment_intent),
+                    default => $data = $bt->formatDataforUk($payment_intent),
                 };
 
                 $gateway = $stripe;
@@ -93,6 +110,14 @@ class PaymentController extends Controller
 
     public function catch_process(Request $request)
     {
+        /** If there is a request_hash prop, this is part of a DocuNinja Workflow which we need to handle */
+        if ($request->has('request_hash')) {
+            $request_hash = $request->input('request_hash');
+            $request_array = Cache::get($request_hash);
+            $request->merge($request_array);
+            return $this->process($request);
+        }
+
         return $this->render('payments.index');
     }
 
@@ -103,15 +128,45 @@ class PaymentController extends Controller
      * and invoice ids for reference.
      *
      * @param Request $request
-     * @return RedirectResponse|mixed
+     * @return \Illuminate\Http\RedirectResponse|mixed
      */
     public function process(Request $request)
     {
-        $request->validate([
-            'contact_first_name' => ['required'],
-            'contact_last_name' => ['required'],
-            'contact_email' => ['required', 'email'],
-        ]);
+
+        if (auth()->guard('contact')->user()->client->requiresDocuNinjaSigning()) {
+
+            $request_hash = \Illuminate\Support\Str::random(64);
+            $payable_invoices = array_column($request->input('payable_invoices'), 'invoice_id');
+            $ids = $this->transformKeys($payable_invoices);
+
+            $invitations = \App\Models\InvoiceInvitation::with('invoice')
+                                                        ->whereIn('invoice_id', $ids)
+                                                        ->where('client_contact_id', auth()->guard('contact')->user()->id)
+                                                        ->get()
+                                                        ->filter(function ($invitation) {
+                                                            return !$invitation->invoice->sync?->dn_completed;
+                                                        });
+
+            if ($invitations->count() > 0) {
+
+                $invitation = $invitations->first();
+
+                $request->merge(['entity_type' => 'invoice', 'db' => auth()->guard('contact')->user()->company->db, 'request_hash' => $request_hash]);
+
+                Cache::put($request_hash, $request->all(), 60 * 60 * 24);
+
+                return $this->render('components.docuninja', [
+                    'invitation_id' => $invitation->id,
+                    'entity_type' => 'invoice',
+                    'entity_number' => $invitation->invoice->number,
+                    'db' => $invitation->company->db,
+                    'request_hash' => $request_hash,
+                    '_key' => $invitation->key,
+                ]);
+
+            }
+        }
+
 
         return (new InstantPayment($request))->run();
     }
@@ -120,8 +175,10 @@ class PaymentController extends Controller
     {
         /** @var \App\Models\CompanyGateway $gateway **/
         $gateway = CompanyGateway::findOrFail($request->input('company_gateway_id'));
-        $payment_hash = PaymentHash::where('hash', $request->payment_hash)->firstOrFail();
-        $invoice = Invoice::with('client')->find($payment_hash->fee_invoice_id);
+        $payment_hash = PaymentHash::with('fee_invoice')->where('hash', $request->payment_hash)->firstOrFail();
+
+        $invoice = $payment_hash->fee_invoice;
+
         $client = $invoice ? $invoice->client : auth()->guard('contact')->user()->client;
 
         // 09-07-2022 catch duplicate responses for invoices that already paid here.
@@ -134,8 +191,12 @@ class PaymentController extends Controller
             $data = [
                 'invoice' => $invoice,
                 'key' => false,
+                '_key' => false,
                 'invitation' => $invitation,
                 'variables' => $variables,
+                'hash' => false,
+                'docuninja_active' => false,
+                'requires_signature' => false,
             ];
 
             if ($request->query('mode') === 'fullscreen') {
@@ -147,7 +208,7 @@ class PaymentController extends Controller
 
         return $gateway
             ->driver($client)
-            ->setPaymentMethod($request->input('payment_method_id'))
+            ->setPaymentMethod($request->input('gateway_type_id') ?? $request->input('payment_method_id'))
             ->setPaymentHash($payment_hash)
             ->checkRequirements()
             ->processPaymentResponse($request);
@@ -157,7 +218,7 @@ class PaymentController extends Controller
      * Pay for invoice/s using credits only.
      *
      * @param Request $request The request object
-     * @return \Response         The response view
+     * @return \Illuminate\Http\RedirectResponse        The response view
      */
     public function credit_response(Request $request)
     {
@@ -177,7 +238,7 @@ class PaymentController extends Controller
             $payment_hash->payment_id = $payment->id;
             $payment_hash->save();
         }
-
+        $payment->type_id = PaymentType::CREDIT;
         $payment = $payment->service()->applyCredits($payment_hash)->save();
 
         /** @var \Illuminate\Database\Eloquent\Collection<\App\Models\Invoice> $invoices */
@@ -200,7 +261,7 @@ class PaymentController extends Controller
 
         if (property_exists($payment_hash->data, 'billing_context')) {
             $billing_subscription = \App\Models\Subscription::find($this->decodePrimaryKey($payment_hash->data->billing_context->subscription_id));
-
+            /** @var \App\Models\Subscription $billing_subscription */
             return (new SubscriptionService($billing_subscription))->completePurchase($payment_hash);
         }
 

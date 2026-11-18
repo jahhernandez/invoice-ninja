@@ -1,10 +1,11 @@
 <?php
+
 /**
  * Invoice Ninja (https://invoiceninja.com).
  *
  * @link https://github.com/invoiceninja/invoiceninja source repository
  *
- * @copyright Copyright (c) 2024. Invoice Ninja LLC (https://invoiceninja.com)
+ * @copyright Copyright (c) 2026. Invoice Ninja LLC (https://invoiceninja.com)
  *
  * @license https://www.elastic.co/licensing/elastic-license
  */
@@ -16,6 +17,7 @@ use Illuminate\Contracts\Validation\Rule;
 
 /**
  * Class LockedInvoiceRule.
+ * @deprecated
  */
 class LockedInvoiceRule implements Rule
 {
@@ -63,6 +65,14 @@ class LockedInvoiceRule implements Rule
 
             case 'when_paid':
                 if ($this->invoice->status_id == Invoice::STATUS_PAID) {
+                    return false;
+                }
+
+                return true;
+
+                //if now is greater than the end of month the invoice was dated - do not modify
+            case 'end_of_month':
+                if (\Carbon\Carbon::parse($this->invoice->date)->setTimezone($this->invoice->company->timezone()->name)->endOfMonth()->lte(now())) {
                     return false;
                 }
 

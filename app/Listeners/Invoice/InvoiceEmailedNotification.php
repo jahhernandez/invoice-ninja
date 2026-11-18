@@ -1,10 +1,11 @@
 <?php
+
 /**
  * Invoice Ninja (https://invoiceninja.com).
  *
  * @link https://github.com/invoiceninja/invoiceninja source repository
  *
- * @copyright Copyright (c) 2024. Invoice Ninja LLC (https://invoiceninja.com)
+ * @copyright Copyright (c) 2026. Invoice Ninja LLC (https://invoiceninja.com)
  *
  * @license https://www.elastic.co/licensing/elastic-license
  */
@@ -25,9 +26,7 @@ class InvoiceEmailedNotification implements ShouldQueue
 
     public $delay = 10;
 
-    public function __construct()
-    {
-    }
+    public function __construct() {}
 
     /**
      * Handle the event.
@@ -37,7 +36,7 @@ class InvoiceEmailedNotification implements ShouldQueue
      */
     public function handle($event)
     {
-        nlog($event->template);
+        // nlog($event->template);
 
         MultiDB::setDb($event->company->db);
 
@@ -53,9 +52,6 @@ class InvoiceEmailedNotification implements ShouldQueue
             /* The User */
             $user = $company_user->user;
 
-            /* This is only here to handle the alternate message channels - ie Slack */
-            // $notification = new EntitySentNotification($event->invitation, 'invoice');
-
             /* Returns an array of notification methods */
             $methods = $this->findUserNotificationTypes($event->invitation, $company_user, 'invoice', ['all_notifications', 'invoice_sent', 'invoice_sent_all', 'invoice_sent_user']);
 
@@ -64,7 +60,7 @@ class InvoiceEmailedNotification implements ShouldQueue
                 unset($methods[$key]);
 
                 $nmo = new NinjaMailerObject();
-                $nmo->mailable = new NinjaMailer((new EntitySentObject($event->invitation, 'invoice', $event->template, $company_user->portalType()))->build());
+                $nmo->mailable = new NinjaMailer((new EntitySentObject($event->invitation, 'invoice', $event->template))->build());
                 $nmo->company = $invoice->company;
                 $nmo->settings = $invoice->company->settings;
                 $nmo->to_user = $user;
@@ -76,11 +72,6 @@ class InvoiceEmailedNotification implements ShouldQueue
                 $first_notification_sent = false;
             }
 
-            /* Override the methods in the Notification Class */
-            // $notification->method = $methods;
-
-            //  Notify on the alternate channels
-            // $user->notify($notification);
         }
     }
 }

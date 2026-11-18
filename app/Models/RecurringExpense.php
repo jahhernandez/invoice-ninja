@@ -1,10 +1,11 @@
 <?php
+
 /**
  * Invoice Ninja (https://invoiceninja.com).
  *
  * @link https://github.com/invoiceninja/invoiceninja source repository
  *
- * @copyright Copyright (c) 2024. Invoice Ninja LLC (https://invoiceninja.com)
+ * @copyright Copyright (c) 2026. Invoice Ninja LLC (https://invoiceninja.com)
  *
  * @license https://www.elastic.co/licensing/elastic-license
  */
@@ -12,6 +13,7 @@
 namespace App\Models;
 
 use App\Services\Recurring\RecurringService;
+use App\Models\Traits\HasTags;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Support\Carbon;
 
@@ -33,30 +35,30 @@ use Illuminate\Support\Carbon;
  * @property int|null $payment_type_id
  * @property int|null $recurring_expense_id
  * @property bool $is_deleted
- * @property int $uses_inclusive_taxes
+ * @property bool $uses_inclusive_taxes
  * @property string|null $tax_name1
  * @property string|null $tax_name2
  * @property string|null $tax_name3
  * @property string|null $date
  * @property string|null $payment_date
- * @property int $should_be_invoiced
- * @property int $invoice_documents
+ * @property bool $should_be_invoiced
+ * @property bool $invoice_documents
  * @property string|null $transaction_id
  * @property string|null $custom_value1
  * @property string|null $custom_value2
  * @property string|null $custom_value3
  * @property string|null $custom_value4
  * @property int|null $category_id
- * @property int $calculate_tax_by_amount
- * @property string|null $tax_amount1
- * @property string|null $tax_amount2
- * @property string|null $tax_amount3
- * @property string|null $tax_rate1
- * @property string|null $tax_rate2
- * @property string|null $tax_rate3
- * @property string|null $amount
- * @property string|null $foreign_amount
- * @property string $exchange_rate
+ * @property bool $calculate_tax_by_amount
+ * @property float|null $tax_amount1
+ * @property float|null $tax_amount2
+ * @property float|null $tax_amount3
+ * @property float|null $tax_rate1
+ * @property float|null $tax_rate2
+ * @property float|null $tax_rate3
+ * @property float|null $amount
+ * @property float|null $foreign_amount
+ * @property float|null $exchange_rate
  * @property int|null $assigned_user_id
  * @property string|null $number
  * @property int|null $invoice_currency_id
@@ -140,12 +142,14 @@ use Illuminate\Support\Carbon;
  * @method static \Illuminate\Database\Eloquent\Builder|RecurringExpense withTrashed()
  * @method static \Illuminate\Database\Eloquent\Builder|RecurringExpense withoutTrashed()
  * @property-read \Illuminate\Database\Eloquent\Collection<int, \App\Models\Document> $documents
+ * @property-read \Illuminate\Database\Eloquent\Collection<int, \App\Models\Tag> $tags
  * @mixin \Eloquent
  */
 class RecurringExpense extends BaseModel
 {
     use SoftDeletes;
     use Filterable;
+    use HasTags;
 
     protected $fillable = [
         'client_id',
@@ -221,16 +225,26 @@ class RecurringExpense extends BaseModel
         return $this->belongsTo(User::class, 'assigned_user_id', 'id');
     }
 
-    public function company():\Illuminate\Database\Eloquent\Relations\BelongsTo
+    public function company(): \Illuminate\Database\Eloquent\Relations\BelongsTo
     {
         return $this->belongsTo(Company::class);
     }
-
+    
+    /**
+     * vendor
+     *
+     * @return \Illuminate\Database\Eloquent\Relations\BelongsTo
+     */
     public function vendor()
     {
         return $this->belongsTo(Vendor::class);
     }
-
+    
+    /**
+     * client
+     *
+     * @return \Illuminate\Database\Eloquent\Relations\BelongsTo
+     */
     public function client()
     {
         return $this->belongsTo(Client::class);
@@ -336,9 +350,9 @@ class RecurringExpense extends BaseModel
     public function recurringDates()
     {
         /* Return early if nothing to send back! */
-        if ($this->status_id == RecurringInvoice::STATUS_COMPLETED ||
-            $this->remaining_cycles == 0 ||
-            ! $this->next_send_date) {
+        if ($this->status_id == RecurringInvoice::STATUS_COMPLETED
+            || $this->remaining_cycles == 0
+            || ! $this->next_send_date) {
             return [];
         }
 

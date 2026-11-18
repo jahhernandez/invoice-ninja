@@ -1,10 +1,11 @@
 <?php
+
 /**
  * Invoice Ninja (https://invoiceninja.com).
  *
  * @link https://github.com/invoiceninja/invoiceninja source repository
  *
- * @copyright Copyright (c) 2024. Invoice Ninja LLC (https://invoiceninja.com)
+ * @copyright Copyright (c) 2026. Invoice Ninja LLC (https://invoiceninja.com)
  *
  * @license https://www.elastic.co/licensing/elastic-license
  */
@@ -12,6 +13,7 @@
 namespace App\Http\Requests\Expense;
 
 use App\Http\Requests\Request;
+use App\Models\Expense;
 use App\Models\Project;
 use App\Utils\Traits\ChecksEntityStatus;
 use App\Utils\Traits\MakesHash;
@@ -21,6 +23,9 @@ class UpdateExpenseRequest extends Request
 {
     use MakesHash;
     use ChecksEntityStatus;
+
+    /** @var class-string */
+    protected ?string $tag_entity_type = Expense::class;
 
     /**
      * Determine if the user is authorized to make this request.
@@ -48,21 +53,28 @@ class UpdateExpenseRequest extends Request
         }
 
         if ($this->client_id) {
-            $rules['client_id'] = 'bail|sometimes|exists:clients,id,company_id,'.$user->company()->id;
+            $rules['client_id'] = 'bail|sometimes|integer|exists:clients,id,company_id,' . $user->company()->id;
         }
 
-        $rules['category_id'] = 'bail|sometimes|nullable|exists:expense_categories,id,company_id,'.$user->company()->id.',is_deleted,0';
-        $rules['transaction_id'] = 'bail|sometimes|nullable|exists:bank_transactions,id,company_id,'.$user->company()->id;
-        $rules['invoice_id'] = 'bail|sometimes|nullable|exists:invoices,id,company_id,'.$user->company()->id;
+        $rules['category_id'] = 'bail|sometimes|nullable|exists:expense_categories,id,company_id,' . $user->company()->id . ',is_deleted,0';
+        $rules['transaction_id'] = 'bail|sometimes|nullable|exists:bank_transactions,id,company_id,' . $user->company()->id;
         $rules['documents'] = 'bail|sometimes|array';
+        $rules['documents.*'] = $this->fileValidation();
         $rules['amount'] = ['sometimes', 'bail', 'nullable', 'numeric', 'max:99999999999999'];
 
-        return $this->globalRules($rules);
+        $rules['file'] = 'bail|sometimes|array';
+        $rules['file.*'] = $this->fileValidation();
+
+        $rules = $this->globalRules($rules);
+
+        $rules['invoice_id'] = 'bail|sometimes|nullable|exists:invoices,id,company_id,' . $user->company()->id;
+
+        return $rules;
     }
 
     public function prepareForValidation()
     {
-        
+
         /** @var \App\Models\User $user */
         $user = auth()->user();
 
@@ -70,12 +82,20 @@ class UpdateExpenseRequest extends Request
 
         $input = $this->decodePrimaryKeys($input);
 
-        if (array_key_exists('documents', $input)) {
+        if ($this->file('file') instanceof \Illuminate\Http\UploadedFile) {
+            $this->files->set('file', [$this->file('file')]);
+        }
+
+        if (isset($input['documents'])) {
             unset($input['documents']);
         }
 
-        if (! array_key_exists('currency_id', $input) || strlen($input['currency_id']) == 0) {
+        if (! array_key_exists('currency_id', $input) || strlen($input['currency_id'] ?? '') == 0) {
             $input['currency_id'] = (string) $user->company()->settings->currency_id;
+        }
+
+        if (isset($input['exchange_rate']) && $input['exchange_rate'] == 0) {
+            $input['exchange_rate'] = 1;
         }
 
         /* Ensure the project is related */

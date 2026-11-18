@@ -1,28 +1,33 @@
 <?php
+
 /**
  * Invoice Ninja (https://invoiceninja.com).
  *
  * @link https://github.com/invoiceninja/invoiceninja source repository
  *
- * @copyright Copyright (c) 2024. Invoice Ninja LLC (https://invoiceninja.com)
+ * @copyright Copyright (c) 2026. Invoice Ninja LLC (https://invoiceninja.com)
  *
  * @license https://www.elastic.co/licensing/elastic-license
  */
 
 namespace App\PaymentDrivers\Stripe\Jobs;
 
-use App\Libraries\MultiDB;
 use App\Models\Company;
-use App\Models\CompanyGateway;
 use App\Models\Payment;
+use App\Libraries\MultiDB;
 use App\Models\PaymentHash;
-use App\PaymentDrivers\Stripe\Utilities;
+use App\Services\Email\Email;
 use Illuminate\Bus\Queueable;
+use App\Models\CompanyGateway;
+use App\Services\Email\EmailObject;
+use Illuminate\Support\Facades\App;
+use Illuminate\Mail\Mailables\Address;
+use Illuminate\Queue\SerializesModels;
+use App\PaymentDrivers\Stripe\Utilities;
+use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
-use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Queue\Middleware\WithoutOverlapping;
-use Illuminate\Queue\SerializesModels;
 
 class ChargeRefunded implements ShouldQueue
 {
@@ -36,20 +41,9 @@ class ChargeRefunded implements ShouldQueue
 
     public $deleteWhenMissingModels = true;
 
-    public $stripe_request;
-
-    public $company_key;
-
-    private $company_gateway_id;
-
     public $payment_completed = false;
 
-    public function __construct($stripe_request, $company_key, $company_gateway_id)
-    {
-        $this->stripe_request = $stripe_request;
-        $this->company_key = $company_key;
-        $this->company_gateway_id = $company_gateway_id;
-    }
+    public function __construct(public array $stripe_request, private string $company_key) {}
 
     public function handle()
     {
@@ -59,30 +53,32 @@ class ChargeRefunded implements ShouldQueue
         $company = Company::query()->where('company_key', $this->company_key)->first();
 
         $source = $this->stripe_request['object'];
-        $charge_id = $source['id'];
+        $charge_id = $source['id'] ?? null;
+        $payment_intent = $source['payment_intent'] ?? null;
         $amount_refunded = $source['amount_refunded'] ?? 0;
 
         $payment_hash_key = $source['metadata']['payment_hash'] ?? null;
 
-        $company_gateway = CompanyGateway::query()->find($this->company_gateway_id);
-        $payment_hash = PaymentHash::query()->where('hash', $payment_hash_key)->first();
+        /** @var \App\Models\Payment|null $payment **/
+        $payment = self::findPaymentByStripeReference($company->id, $source, true);
 
-        $stripe_driver = $company_gateway->driver()->init();
+        /** @var \App\Models\PaymentHash|null $payment_hash **/
+        $payment_hash = $payment_hash_key
+            ? PaymentHash::query()->where('hash', $payment_hash_key)->first()
+            : null;
 
-        $stripe_driver->payment_hash = $payment_hash;
-
-        /** @var \App\Models\Payment $payment **/
-        $payment = Payment::query()
-                         ->withTrashed()
-                         ->where('company_id', $company->id)
-                         ->where('transaction_reference', $charge_id)
-                         ->first();
+        if (! $payment) {
+            $payment = $payment_hash?->payment;
+        }
 
         //don't touch if already refunded
-        if(!$payment || in_array($payment->status_id, [Payment::STATUS_PARTIALLY_REFUNDED, Payment::STATUS_REFUNDED])) {
+        if (!$payment || $payment->status_id == Payment::STATUS_REFUNDED || $payment->is_deleted || !$payment_hash) {
             return;
         }
 
+        $company_gateway = $payment->company_gateway;
+        $stripe_driver = $company_gateway->driver()->init();
+        $stripe_driver->setPaymentHash($payment_hash);
         $stripe_driver->client = $payment->client;
 
         $amount_refunded = $stripe_driver->convertFromStripeAmount($amount_refunded, $payment->client->currency()->precision, $payment->client->currency());
@@ -94,57 +90,86 @@ class ChargeRefunded implements ShouldQueue
             return;
         }
 
-        if($payment->status_id == Payment::STATUS_COMPLETED) {
+        usleep(rand(200000, 300000));
+        $payment = $payment->fresh();
 
-            $invoice_collection = $payment->paymentables
-                        ->where('paymentable_type', 'invoices')
-                        ->map(function ($pivot) {
-                            return [
-                                'invoice_id' => $pivot->paymentable_id,
-                                'amount' => $pivot->amount - $pivot->refunded
-                            ];
-                        });
+        if ($payment->status_id == Payment::STATUS_PARTIALLY_REFUNDED) {
+            //determine the delta in the refunded amount - how much has already been refunded and only apply the delta.
 
-            if($invoice_collection->count() == 1 && $invoice_collection->first()['amount'] >= $amount_refunded) {
-                //If there is only one invoice- and we are refunding _less_ than the amount of the invoice, we can just refund the payment
-
-                $invoice_collection = $payment->paymentables
-                        ->where('paymentable_type', 'invoices')
-                        ->map(function ($pivot) use ($amount_refunded) {
-                            return [
-                                'invoice_id' => $pivot->paymentable_id,
-                                'amount' => $amount_refunded
-                            ];
-                        });
-
-            } elseif($invoice_collection->sum('amount') != $amount_refunded) {
-                //too many edges cases at this point, return early
+            if (floatval($payment->refunded) >= floatval($amount_refunded)) {
                 return;
             }
 
-            $invoices = $invoice_collection->toArray();
+            $amount_refunded -= $payment->refunded;
 
-            $data = [
-                'id' => $payment->id,
-                'amount' => $amount_refunded,
-                'invoices' => $invoices,
-                'date' => now()->format('Y-m-d'),
-                'gateway_refund' => false,
-                'email_receipt' => false,
-            ];
-
-            nlog($data);
-
-            $payment->refund($data);
-
-            $payment->private_notes .= 'Refunded via Stripe';
-            return;
         }
+
+        $invoice_collection = $payment->paymentables
+                    ->where('paymentable_type', 'invoices')
+                    ->map(function ($pivot) {
+                        return [
+                            'invoice_id' => $pivot->paymentable_id,
+                            'amount' => $pivot->amount - $pivot->refunded,
+                        ];
+                    });
+
+        if ($invoice_collection->count() == 1 && $invoice_collection->first()['amount'] >= $amount_refunded) {
+            //If there is only one invoice- and we are refunding _less_ than the amount of the invoice, we can just refund the payment
+
+            $invoice_collection = $payment->paymentables
+                    ->where('paymentable_type', 'invoices')
+                    ->map(function ($pivot) use ($amount_refunded) {
+                        return [
+                            'invoice_id' => $pivot->paymentable_id,
+                            'amount' => $amount_refunded,
+                        ];
+                    });
+
+        } elseif ($invoice_collection->sum('amount') != $amount_refunded) {
+
+            $refund_text = "A partial refund was processed for Payment #{$payment_hash->payment->number}. <br><br> This payment is associated with multiple invoices, so you will need to manually apply the refund to the correct invoice/s.";
+
+            App::setLocale($payment_hash->payment->company->getLocale());
+
+            $mo = new EmailObject();
+            $mo->subject = "Refund processed in Stripe for multiple invoices, action required.";
+            $mo->body = $refund_text;
+            $mo->text_body = $refund_text;
+            $mo->company_key = $payment_hash->payment->company->company_key;
+            $mo->html_template = 'email.template.generic';
+            $mo->to = [new Address($payment_hash->payment->company->owner()->email, $payment_hash->payment->company->owner()->present()->name())];
+
+            Email::dispatch($mo, $payment_hash->payment->company);
+            return;
+
+        }
+
+        $invoices = $invoice_collection->toArray();
+
+        $data = [
+            'id' => $payment->id,
+            'amount' => $amount_refunded,
+            'invoices' => $invoices,
+            'date' => now()->format('Y-m-d'),
+            'gateway_refund' => false,
+            'email_receipt' => false,
+            'via_webhook' => true,
+        ];
+
+        // nlog($data);
+
+        $payment->refund($data);
+
+        $payment->private_notes .= 'Refunded via Stripe  ';
+
+        $payment->saveQuietly();
 
     }
 
     public function middleware()
     {
-        return [new WithoutOverlapping($this->company_gateway_id)];
+        return [(new WithoutOverlapping($this->company_key))
+            ->expireAfter(600)
+            ->dontRelease()];
     }
 }

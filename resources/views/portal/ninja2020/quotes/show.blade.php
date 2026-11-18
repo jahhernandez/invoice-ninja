@@ -3,14 +3,14 @@
 
 @push('head')
     <meta name="show-quote-terms" content="{{ $settings->show_accept_quote_terms ? true : false }}">
-    <meta name="require-quote-signature" content="{{ $client->company->account->hasFeature(\App\Models\Account::FEATURE_INVOICE_SETTINGS) && $settings->require_quote_signature }}">
+    <meta name="require-quote-signature" content="{{ $requires_signature }}">
+    <meta name="docuninja-active" content="{{ $docuninja_active }}">
     <meta name="accept-user-input" content="{{ $client->getSetting('accept_client_input_quote_approval') }}">
-    <script src="{{ asset('vendor/signature_pad@2.3.2/signature_pad.min.js') }}"></script>
 @endpush
 
 @section('body')
 
-    @if(!$quote->isApproved() && $client->getSetting('custom_message_unapproved_quote'))
+    @if(!$quote->isApproved() && !$quote->isRejected() && !$quote->isCancelled() && $client->getSetting('custom_message_unapproved_quote'))
         @component('portal.ninja2020.components.message')
             <pre>{{ $client->getSetting('custom_message_unapproved_quote') }}</pre>
         @endcomponent
@@ -29,25 +29,15 @@
                         <h3 class="text-lg leading-6 font-medium text-gray-900">
                             {{ ctrans('texts.approved') }}
                         </h3>
-
-                            @if($key)
-                            <div class="btn hidden md:block" data-clipboard-text="{{url("client/quote/{$key}")}}" aria-label="Copied!">
-                                <div class="flex text-sm leading-6 font-medium text-gray-500">
-                                    <p class="mr-2">{{url("client/quote/{$key}")}}</p>
-                                    <p><img class="h-5 w-5" src="{{ asset('assets/clippy.svg') }}" alt="Copy to clipboard"></p>
-                                </div>
-                            </div>
-                            @endif
-
                     </div>
 
-                                @if($quote->invoice()->exists())
-                                    <div class="mt-5 sm:mt-0 sm:ml-6 flex justify-end">
-                                        <div class="inline-flex rounded-md shadow-sm">
-                                            <a class="button button-primary bg-primary" href="/client/invoices/{{ $quote->invoice->hashed_id }}">{{ ctrans('texts.view_invoice') }}</a>
-                                        </div>
-                                    </div>
-                                @endif
+                    @if($quote->invoice()->exists())
+                        <div class="mt-5 sm:mt-0 sm:ml-6 flex justify-end">
+                            <div class="inline-flex rounded-md shadow-sm">
+                                <a class="button button-primary bg-primary" href="/client/invoices/{{ $quote->invoice->hashed_id }}">{{ ctrans('texts.view_invoice') }}</a>
+                            </div>
+                        </div>
+                    @endif
                 </div>
             </div>
         </div>
@@ -61,20 +51,36 @@
                         <h3 class="text-lg leading-6 font-medium text-gray-900">
                             {{ ctrans('texts.approved') }}
                         </h3>
-
-                            @if($key)
-                            <div class="btn hidden md:block" data-clipboard-text="{{url("client/quote/{$key}")}}" aria-label="Copied!">
-                                <div class="flex text-sm leading-6 font-medium text-gray-500">
-                                    <p class="mr-2">{{url("client/quote/{$key}")}}</p>
-                                    <p><img class="h-5 w-5" src="{{ asset('assets/clippy.svg') }}" alt="Copy to clipboard"></p>
-                                </div>
-                            </div>
-                            @endif
                     </div>
                 </div>
             </div>
         </div>
+    @elseif($quote->status_id == \App\Models\Quote::STATUS_REJECTED)
 
+        <div class="bg-white shadow sm:rounded-lg mb-4">
+            <div class="px-4 py-5 sm:p-6">
+                <div class="sm:flex sm:items-start sm:justify-between">
+                    <div>
+                        <h3 class="text-lg leading-6 font-medium text-gray-900">
+                            {{ ctrans('texts.rejected') }}
+                        </h3>
+                    </div>
+                </div>
+            </div>
+        </div>
+    @elseif($quote->status_id == \App\Models\Quote::STATUS_CANCELLED)
+
+        <div class="bg-white shadow sm:rounded-lg mb-4">
+            <div class="px-4 py-5 sm:p-6">
+                <div class="sm:flex sm:items-start sm:justify-between">
+                    <div>
+                        <h3 class="text-lg leading-6 font-medium text-gray-900">
+                            {{ ctrans('texts.cancelled') }}
+                        </h3>
+                    </div>
+                </div>
+            </div>
+        </div>
     @else
 
         <div class="bg-white shadow sm:rounded-lg mb-4">
@@ -84,15 +90,6 @@
                         <h3 class="text-lg leading-6 font-medium text-gray-900">
                             {{ ctrans('texts.expired') }}
                         </h3>
-
-                            @if($key)
-                            <div class="btn hidden md:block" data-clipboard-text="{{url("client/quote/{$key}")}}" aria-label="Copied!">
-                                <div class="flex text-sm leading-6 font-medium text-gray-500">
-                                    <p class="mr-2">{{url("client/quote/{$key}")}}</p>
-                                    <p><img class="h-5 w-5" src="{{ asset('assets/clippy.svg') }}" alt="Copy to clipboard"></p>
-                                </div>
-                            </div>
-                            @endif
                     </div>
                 </div>
             </div>
@@ -100,27 +97,49 @@
     @endif
 
     @include('portal.ninja2020.components.entity-documents', ['entity' => $quote])
-    @livewire('pdf-slot', ['entity' => $quote, 'invitation' => $invitation, 'db' => $quote->company->db])
+
+    @if($docuninja_active)
+    <div id="docuninja-container" class="hidden">
+        @livewire('sign', ['_key' => $_key, 'invitation_id' => $invitation->id ?? false, 'entity_type' => 'quote', 'entity_number' => $quote->number, 'db' => $quote->company->db])
+    </div>
+    @endif
+    
+    <div id="pdf-slot-container" class="">
+        @livewire('pdf-slot', ['entity_type' => 'quote', 'entity_key' => $quote->hashed_id, 'invitation_key' => $invitation->key ?? null, 'db' => $quote->company->db])
+    </div>
 
 @endsection
 
 @section('footer')
     @include('portal.ninja2020.quotes.includes.user-input')
+    @include('portal.ninja2020.quotes.includes.reject-input')
     @include('portal.ninja2020.invoices.includes.terms', ['entities' => [$quote], 'variables' => $variables, 'entity_type' => ctrans('texts.quote')])
     @include('portal.ninja2020.invoices.includes.signature')
 @endsection
 
-@push('head')
+@push('footer')
     @vite('resources/js/clients/quotes/approve.js')
-    <script src="{{ asset('vendor/clipboard.min.js') }}" defer></script>
+    @vite('resources/js/clients/quotes/reject.js')
+@endpush
 
+@push('head')
     <script type="text/javascript" defer>
 
     document.addEventListener('DOMContentLoaded', () => {
 
-        var clipboard = new ClipboardJS('.btn');
+        @if($_key)
+            window.history.pushState({}, "", "{{ url("client/quote/{$_key}") }}");
+        @endif
 
+        window.addEventListener('builder:sign.submit.success', function () {
+            Livewire.dispatch('docuninja-signature-captured');
+        });
+
+        Livewire.on('quote-signed', () => {
+            document.getElementById('approve-form').submit();
+        });
     });
+
 
     </script>
 @endpush

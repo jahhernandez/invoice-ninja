@@ -1,4 +1,5 @@
 <?php
+
 /**
  * Invoice Ninja (https://invoiceninja.com).
  *
@@ -27,7 +28,7 @@ use Tests\MockUnitData;
 use Tests\TestCase;
 
 /**
- * @test
+ *
  */
 class CreditPaymentTest extends TestCase
 {
@@ -35,14 +36,11 @@ class CreditPaymentTest extends TestCase
     use DatabaseTransactions;
     use MockUnitData;
 
-    protected function setUp() :void
+    protected function setUp(): void
     {
         parent::setUp();
 
         Session::start();
-
-        $this->faker = \Faker\Factory::create();
-
         Model::reguard();
 
         $this->makeTestData();
@@ -86,15 +84,11 @@ class CreditPaymentTest extends TestCase
 
         $response = false;
 
-        try {
-            $response = $this->withHeaders([
-                'X-API-SECRET' => config('ninja.api_secret'),
-                'X-API-TOKEN' => $this->token,
-            ])->post('/api/v1/payments/', $data);
-        } catch (ValidationException $e) {
-            $message = json_decode($e->validator->getMessageBag(), 1);
-            nlog($e->validator->getMessageBag());
-        }
+        $response = $this->withHeaders([
+            'X-API-SECRET' => config('ninja.api_secret'),
+            'X-API-TOKEN' => $this->token,
+        ])->postJson('/api/v1/payments/', $data);
+
 
         $response->assertStatus(200);
 
@@ -167,7 +161,7 @@ class CreditPaymentTest extends TestCase
             'X-API-SECRET' => config('ninja.api_secret'),
             'X-API-TOKEN' => $this->token,
         ])->postJson('/api/v1/payments/', $data);
-    
+
         $response->assertStatus(200);
 
         $arr = $response->json();

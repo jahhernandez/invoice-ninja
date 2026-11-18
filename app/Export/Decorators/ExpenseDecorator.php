@@ -1,10 +1,11 @@
 <?php
+
 /**
  * Invoice Ninja (https://invoiceninja.com).
  *
  * @link https://github.com/invoiceninja/invoiceninja source repository
  *
- * @copyright Copyright (c) 2024. Invoice Ninja LLC (https://invoiceninja.com)
+ * @copyright Copyright (c) 2026. Invoice Ninja LLC (https://invoiceninja.com)
  *
  * @license https://www.elastic.co/licensing/elastic-license
  */
@@ -19,20 +20,25 @@ class ExpenseDecorator implements DecoratorInterface
     {
         $expense = false;
 
-        if($entity instanceof Expense) {
+        if ($entity instanceof Expense) {
             $expense = $entity;
-        } elseif($entity->expense) {
+        } elseif ($entity->expense) {
             $expense = $entity->expense;
         }
 
-        if($expense && method_exists($this, $key)) {
+        if ($expense && method_exists($this, $key)) {
             return $this->{$key}($expense);
-        } elseif($expense && ($expense->{$key} ?? false)) {
+        } elseif ($expense && ($expense->{$key} ?? false)) {
             return $expense->{$key};
         }
 
         return '';
 
+    }
+
+    public function tags(Expense $expense): string
+    {
+        return $expense->tags->pluck('name')->implode(', ');
     }
 
     public function category(Expense $expense)
@@ -102,7 +108,7 @@ class ExpenseDecorator implements DecoratorInterface
     }
     public function user(Expense $expense)
     {
-        return $expense->user ? $expense->user->present()->name() : '';
+        return $expense->user->present()->name() ?? '';
     }
     public function assigned_user(Expense $expense)
     {

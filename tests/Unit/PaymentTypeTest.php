@@ -1,4 +1,5 @@
 <?php
+
 /**
  * Invoice Ninja (https://invoiceninja.com).
  *
@@ -16,13 +17,12 @@ use Illuminate\Support\Facades\Lang;
 use Tests\TestCase;
 
 /**
- * @test
- * @covers App\Models\PaymentType
+ *
+ *  App\Models\PaymentType
  */
 class PaymentTypeTest extends TestCase
 {
-
-    protected function setUp() :void
+    protected function setUp(): void
     {
         parent::setUp();
 
@@ -30,9 +30,9 @@ class PaymentTypeTest extends TestCase
 
     public function testTranslationsExist()
     {
-        $payment_type_class = new PaymentType;
+        $payment_type_class = new PaymentType();
 
-        foreach($payment_type_class->type_names as $type) {
+        foreach ($payment_type_class->type_names as $type) {
             $this->assertTrue(Lang::has("texts.{$type}"));
         }
     }

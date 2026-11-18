@@ -1,10 +1,11 @@
 <?php
+
 /**
  * Invoice Ninja (https://invoiceninja.com).
  *
  * @link https://github.com/invoiceninja/invoiceninja source repository
  *
- * @copyright Copyright (c) 2024. Invoice Ninja LLC (https://invoiceninja.com)
+ * @copyright Copyright (c) 2026. Invoice Ninja LLC (https://invoiceninja.com)
  *
  * @license https://www.elastic.co/licensing/elastic-license
  */
@@ -46,11 +47,15 @@ class ForgotPasswordController extends Controller
 
     /**
      * @param Request $request
-     * @return \Illuminate\Http\JsonResponse|\Illuminate\Http\RedirectResponse
+     * @return \Illuminate\Http\JsonResponse|\Illuminate\Http\Response|\Illuminate\Http\RedirectResponse
      * @throws \Illuminate\Validation\ValidationException
      */
     public function sendResetLinkEmail(Request $request)
     {
+        $request->validate([
+            'email' => ['required', 'email:dns'],
+        ]);
+
         MultiDB::userFindAndSetDb($request->input('email'));
         $user = MultiDB::hasUser(['email' => $request->input('email')]);
 
@@ -70,7 +75,7 @@ class ForgotPasswordController extends Controller
 
             return $response == Password::RESET_LINK_SENT
                 ? response()->json(['message' => 'Reset link sent to your email.', 'status' => true], 201)
-                : response()->json(['message' => 'Email not found', 'status' => false], 401);
+                : response()->json(['message' => 'Reset link sent to your email.', 'status' => true], 201); //never hint that the email is not found
         }
 
         return $response == Password::RESET_LINK_SENT

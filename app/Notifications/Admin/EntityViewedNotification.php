@@ -1,10 +1,11 @@
 <?php
+
 /**
  * Invoice Ninja (https://invoiceninja.com).
  *
  * @link https://github.com/invoiceninja/invoiceninja source repository
  *
- * @copyright Copyright (c) 2024. Invoice Ninja LLC (https://invoiceninja.com)
+ * @copyright Copyright (c) 2026. Invoice Ninja LLC (https://invoiceninja.com)
  *
  * @license https://www.elastic.co/licensing/elastic-license
  */
@@ -68,9 +69,7 @@ class EntityViewedNotification extends Notification
      * @param  mixed  $notifiable
      *
      */
-    public function toMail($notifiable)
-    {
-    }
+    public function toMail($notifiable) {}
 
     /**
      * Get the array representation of the notification.
@@ -136,16 +135,16 @@ class EntityViewedNotification extends Notification
     //     return $data;
     // }
 
-    private function buildSubject()
-    {
-        $subject = ctrans(
-            "texts.notification_{$this->entity_name}_viewed_subject",
-            [
-                'client' => $this->contact->present()->name(),
-                $this->entity_name => $this->entity->number,
-            ]
-        );
+    // private function buildSubject()
+    // {
+    //     $subject = ctrans(
+    //         "texts.notification_{$this->entity_name}_viewed_subject",
+    //         [
+    //             'client' => $this->contact->present()->name(),
+    //             $this->entity_name => $this->entity->number,
+    //         ]
+    //     );
 
-        return $subject;
-    }
+    //     return $subject;
+    // }
 }

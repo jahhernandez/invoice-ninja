@@ -3,12 +3,10 @@
 @section('gateway_head')
     <meta name="authorize-public-key" content="{{ $public_client_id }}">
     <meta name="authorize-login-id" content="{{ $api_login_id }}">
+    <meta name="instant-payment" content="yes" />
 
     <script src="https://code.jquery.com/jquery-1.11.3.min.js"></script>
     <meta name="authnet-require-cvv" content="{{ $gateway->company_gateway->require_cvv }}">
-
-    <script src="{{ asset('build/public/js/card-js.min.js/card-js.min.js') }}"></script>
-    <link href="{{ asset('build/public/css/card-js.min.css/card-js.min.css') }}" rel="stylesheet" type="text/css">
 @endsection
 
 @section('gateway_content')
@@ -34,28 +32,34 @@
     @include('portal.ninja2020.gateways.includes.payment_details')
 
     @component('portal.ninja2020.components.general.card-element', ['title' => ctrans('texts.pay_with')])
+        <ul class="payment-method-list">
         @if(count($tokens) > 0)
             @foreach($tokens as $token)
-                <label class="mr-4">
+            <li class="payment-method-item">
+            <label class="payment-method-label">
                     <input
                         type="radio"
                         data-token="{{ $token->hashed_id }}"
                         name="payment-type"
                         class="form-radio cursor-pointer toggle-payment-with-token"/>
-                    <span class="ml-1 cursor-pointer">**** {{ $token->meta?->last4 }}</span>
+                    <span class="ml-1">**** {{ $token->meta?->last4 }}</span>
                 </label>
+            </li>
             @endforeach
         @endisset
 
-        <label>
+        <li class="payment-method-item">
+        <label class="payment-method-label">
             <input
                 type="radio"
                 id="toggle-payment-with-credit-card"
                 class="form-radio cursor-pointer"
                 name="payment-type"
                 checked/>
-            <span class="ml-1 cursor-pointer">{{ __('texts.new_card') }}</span>
+            <span class="ml-1">{{ __('texts.new_card') }}</span>
         </label>
+        </li>
+            </ul>
     @endcomponent
 
     @include('portal.ninja2020.gateways.includes.save_card')
@@ -71,25 +75,17 @@
         <script src="https://js.authorize.net/v1/Accept.js" charset="utf-8"></script>
     @endif
 
+    <script src="{{ asset('vendor/simple-card@0.0.5/simple-card.js') }}"></script> 
     @vite('resources/js/clients/payments/authorize-credit-card-payment.js')
 @endsection
 
 @push('footer')
 <script defer>
- 
-$(function() {
+    document.querySelector('#date').addEventListener('change', (e) => {
+        const [month, year] = e.target.value.replace(/\s/g, '').split('/');
 
-    document.getElementsByClassName("expiry")[0].addEventListener('change', function() {
-
-    str = document.getElementsByClassName("expiry")[0].value.replace(/\s/g, '');
-    const expiryArray = str.split("/");
-
-    document.getElementsByName('expiry-month')[0].value = expiryArray[0];
-    document.getElementsByName('expiry-year')[0].value = expiryArray[1];
-
+        document.getElementsByName('expiry-month')[0].value  = month;
+        document.getElementsByName('expiry-year')[0].value = `20${year}`;
     });
-
-});
-
 </script>
 @endpush

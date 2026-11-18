@@ -1,4 +1,5 @@
 <?php
+
 /**
  * Invoice Ninja (https://invoiceninja.com).
  *
@@ -15,13 +16,13 @@ use App\Utils\Traits\SettingsSaver;
 use Tests\TestCase;
 
 /**
- * @test
+ *
  */
 class SettingsSaverTest extends TestCase
 {
     use SettingsSaver;
 
-    protected function setUp() :void
+    protected function setUp(): void
     {
         parent::setUp();
     }

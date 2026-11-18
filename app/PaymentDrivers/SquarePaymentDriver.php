@@ -1,10 +1,11 @@
 <?php
+
 /**
  * Invoice Ninja (https://invoiceninja.com).
  *
  * @link https://github.com/invoiceninja/invoiceninja source repository
  *
- * @copyright Copyright (c) 2024. Invoice Ninja LLC (https://invoiceninja.com)
+ * @copyright Copyright (c) 2026. Invoice Ninja LLC (https://invoiceninja.com)
  *
  * @license https://www.elastic.co/licensing/elastic-license
  */
@@ -18,9 +19,13 @@ use App\Models\GatewayType;
 use App\Models\PaymentHash;
 use App\Models\PaymentType;
 use App\Models\ClientContact;
+use App\Exceptions\PaymentFailed;
 use App\Factory\ClientFactory;
 use App\Jobs\Util\SystemLogger;
+use App\Utils\BcMath;
 use App\Utils\Traits\MakesHash;
+use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\Http;
 use Square\Utils\WebhooksHelper;
 use App\Models\ClientGatewayToken;
 use App\Repositories\ClientRepository;
@@ -55,12 +60,46 @@ class SquarePaymentDriver extends BaseDriver
 
     public function init()
     {
+        if ($this->company_gateway->getConfigField('oauth2')
+           && Carbon::parse($this->company_gateway->getConfigField('expires_at'))->subMinutes(5)->isPast()
+        ) {
+            $this->refreshAccessToken();
+        }
+
         $this->square = new \Square\SquareClient([
             'accessToken' => $this->company_gateway->getConfigField('accessToken'),
             'environment' => $this->company_gateway->getConfigField('testMode') ? \Square\Environment::SANDBOX : \Square\Environment::PRODUCTION,
         ]);
 
-        return $this; /* This is where you boot the gateway with your auth credentials*/
+        return $this;
+    }
+
+    private function refreshAccessToken(): void
+    {
+        $base_url = $this->company_gateway->getConfigField('testMode')
+            ? 'https://connect.squareupsandbox.com'
+            : 'https://connect.squareup.com';
+
+        $response = Http::post("{$base_url}/oauth2/token", [
+            'client_id' => config('services.square.application_id'),
+            'client_secret' => config('services.square.application_secret'),
+            'grant_type' => 'refresh_token',
+            'refresh_token' => $this->company_gateway->getConfigField('refreshToken'),
+        ]);
+
+        if ($response->successful()) {
+            $data = $response->json();
+
+            $config = $this->company_gateway->getConfig();
+            $config->accessToken = $data['access_token'];
+            $config->refreshToken = $data['refresh_token'];
+            $config->expires_at = $data['expires_at'];
+            $this->company_gateway->setConfig($config);
+            $this->company_gateway->save();
+        } else {
+            nlog('Square OAuth token refresh failed: ' . $response->body());
+            throw new PaymentFailed('Square token refresh failed. Please reconnect your Square account.', 401);
+        }
     }
 
     /* Returns an array of gateway types for the payment gateway */
@@ -133,7 +172,7 @@ class SquarePaymentDriver extends BaseDriver
 
             $status = $refundPaymentResponse->getRefund()->getStatus();
 
-            if(in_array($status, ['COMPLETED', 'PENDING'])) {
+            if (in_array($status, ['COMPLETED', 'PENDING'])) {
 
                 $transaction_reference = $refundPaymentResponse->getRefund()->getId();
 
@@ -148,7 +187,7 @@ class SquarePaymentDriver extends BaseDriver
                 SystemLogger::dispatch(
                     [
                         'server_response' => $data,
-                        'data' => request()->all()
+                        'data' => request()->all(),
                     ],
                     SystemLog::CATEGORY_GATEWAY_RESPONSE,
                     SystemLog::EVENT_GATEWAY_SUCCESS,
@@ -158,7 +197,7 @@ class SquarePaymentDriver extends BaseDriver
                 );
 
                 return $data;
-            } elseif(in_array($status, ['REJECTED', 'FAILED'])) {
+            } elseif (in_array($status, ['REJECTED', 'FAILED'])) {
 
                 $transaction_reference = $refundPaymentResponse->getRefund()->getId();
 
@@ -173,7 +212,7 @@ class SquarePaymentDriver extends BaseDriver
                 SystemLogger::dispatch(
                     [
                         'server_response' => $data,
-                        'data' => request()->all()
+                        'data' => request()->all(),
                     ],
                     SystemLog::CATEGORY_GATEWAY_RESPONSE,
                     SystemLog::EVENT_GATEWAY_FAILURE,
@@ -187,21 +226,22 @@ class SquarePaymentDriver extends BaseDriver
 
         } else {
 
-            /** @var \Square\Models\Error $error */
-            $error = end($apiResponse->getErrors());
+            /** @var \Square\Models\Error[] $errors */
+            $errors = $apiResponse->getErrors();
+            $error = end($errors);
 
             $data = [
-                    'transaction_reference' => $payment->transaction_reference,
-                    'transaction_response' => $error->jsonSerialize(),
-                    'success' => false,
-                    'description' => $error->getDetail(),
-                    'code' => $error->getCode(),
-                ];
+                'transaction_reference' => $payment->transaction_reference,
+                'transaction_response' => $error->jsonSerialize(),
+                'success' => false,
+                'description' => $error->getDetail(),
+                'code' => $error->getCode(),
+            ];
 
             SystemLogger::dispatch(
                 [
                     'server_response' => $data,
-                    'data' => request()->all()
+                    'data' => request()->all(),
                 ],
                 SystemLog::CATEGORY_GATEWAY_RESPONSE,
                 SystemLog::EVENT_GATEWAY_FAILURE,
@@ -215,7 +255,7 @@ class SquarePaymentDriver extends BaseDriver
 
     }
 
-    public function tokenBilling(ClientGatewayToken $cgt, PaymentHash $payment_hash)
+    public function tokenBilling(ClientGatewayToken $cgt, PaymentHash $payment_hash): Payment|false
     {
         $this->init();
 
@@ -237,8 +277,15 @@ class SquarePaymentDriver extends BaseDriver
         $body = new \Square\Models\CreatePaymentRequest($cgt->token, \Illuminate\Support\Str::random(32));
         $body->setCustomerId($cgt->gateway_customer_reference);
         $body->setAmountMoney($amount_money);
+        $body->setAutocomplete(true);
+        $body->setLocationId($this->company_gateway->getConfigField('locationId'));
         $body->setReferenceId($payment_hash->hash);
         $body->setNote(substr($description, 0, 500));
+
+        $customer_details = new \Square\Models\CustomerDetails();
+        $customer_details->setCustomerInitiated(false);
+        $customer_details->setSellerKeyedIn(false);
+        $body->setCustomerDetails($customer_details);
 
         $response = $this->square->getPaymentsApi()->createPayment($body);
         $body = json_decode($response->getBody());
@@ -266,13 +313,14 @@ class SquarePaymentDriver extends BaseDriver
             return $payment;
         }
 
-        $this->unWindGatewayFees($payment_hash);
+        $error = $body->errors[0]->detail ?? ($response->getBody() ?: 'Unknown error from Square.');
 
-        $this->sendFailureMail($body->errors[0]->detail);
+        $this->sendFailureMail($error);
 
         $message = [
             'server_response' => $response,
             'data' => $payment_hash->data,
+            'error_code' => $body->errors[0]->code ?? '',
         ];
 
         SystemLogger::dispatch(
@@ -296,8 +344,8 @@ class SquarePaymentDriver extends BaseDriver
         if ($api_response->isSuccess()) {
 
             //array of WebhookSubscription objects
-            foreach($api_response->getResult()->getSubscriptions() ?? [] as $subscription) {
-                if($subscription->getName() == 'Invoice_Ninja_Webhook_Subscription') {
+            foreach ($api_response->getResult()->getSubscriptions() ?? [] as $subscription) {
+                if ($subscription->getName() == 'Invoice_Ninja_Webhook_Subscription') {
                     return $subscription->getId();
                 }
             }
@@ -331,7 +379,7 @@ class SquarePaymentDriver extends BaseDriver
     public function createWebhooks(): void
     {
 
-        if($this->checkWebhooks()) {
+        if ($this->checkWebhooks()) {
             return;
         }
 
@@ -374,7 +422,7 @@ class SquarePaymentDriver extends BaseDriver
 
         $body = '';
         $handle = fopen('php://input', 'r');
-        while(!feof($handle)) {
+        while (!feof($handle)) {
             $body .= fread($handle, 1024);
         }
 
@@ -399,7 +447,7 @@ class SquarePaymentDriver extends BaseDriver
         //getsubscriptionid here
         $subscription_id = $this->checkWebhooks();
 
-        if(!$subscription_id) {
+        if (!$subscription_id) {
             nlog('No Subscription Found');
             return;
         }
@@ -416,99 +464,107 @@ class SquarePaymentDriver extends BaseDriver
 
     }
 
-    public function convertAmount($amount)
+    public function convertAmount($amount): int
     {
-        $precision = $this->client->currency()->precision;
-
-        if ($precision == 0) {
-            return $amount;
-        }
-
-        if ($precision == 1) {
-            return $amount * 10;
-        }
-
-        if ($precision == 2) {
-            return $amount * 100;
-        }
-
-        return $amount;
+        return BcMath::toMinorUnits($amount, (int) $this->client->currency()->precision);
     }
 
-    public function auth(): bool
+    public function auth(): string
     {
+        $accessToken = trim((string) $this->company_gateway->getConfigField('accessToken'));
+        $applicationId = trim((string) $this->company_gateway->getConfigField('applicationId'));
+        $locationId = trim((string) $this->company_gateway->getConfigField('locationId'));
 
-        $api_response = $this->init()
-                    ->square
-                    ->getCustomersApi()
-                    ->listCustomers();
+        if ($accessToken === '' || $applicationId === '' || $locationId === '') {
+            return 'error';
+        }
 
+        try {
+            $square = $this->init()->square;
 
-        return (bool) count($api_response->getErrors()) == 0;
+            $tokenResponse = $square->getOAuthApi()->retrieveTokenStatus('Bearer ' . $accessToken);
+            if (! $tokenResponse->isSuccess()
+                || $tokenResponse->getResult()->getClientId() !== $applicationId) {
+                return 'error';
+            }
+
+            $locationResponse = $square->getLocationsApi()->retrieveLocation($locationId);
+            if (! $locationResponse->isSuccess()) {
+                return 'error';
+            }
+
+            $customerResponse = $square->getCustomersApi()->listCustomers(null, 1);
+
+            return $customerResponse->isSuccess() ? 'ok' : 'error';
+        } catch (\Throwable) {
+            return 'error';
+        }
 
     }
 
     public function importCustomers()
     {
-        
+
         $limit = 100;
 
         $api_response = $this->init()
                     ->square
                     ->getCustomersApi()
-                    ->listCustomers(null,
+                    ->listCustomers(
+                        null,
                         $limit,
                         'DEFAULT',
                         'DESC'
                     );
 
         if ($api_response->isSuccess()) {
-        
-         while ($api_response->getResult()->getCustomers()) {
 
-            $customers = $api_response->getResult()->getCustomers();
+            while ($api_response->getResult()->getCustomers()) {
 
-            $client_repo = new ClientRepository(new ClientContactRepository());
+                $customers = $api_response->getResult()->getCustomers();
 
-            foreach($customers as $customer)
-            {
+                $client_repo = new ClientRepository(new ClientContactRepository());
 
-                $data = (new SquareCustomerFactory())->convertToNinja($customer, $this->company_gateway->company);
-                $client = ClientContact::where('company_id', $this->company_gateway->company_id)->where('email', $customer->getEmailAddress())->first()->client ?? false;
+                foreach ($customers as $customer) {
 
-                if(!$client)
-                    $client = $client_repo->save($data, ClientFactory::create($this->company_gateway->company_id, $this->company_gateway->user_id));
+                    $data = (new SquareCustomerFactory())->convertToNinja($customer, $this->company_gateway->company);
+                    $client = ClientContact::where('company_id', $this->company_gateway->company_id)->where('email', $customer->getEmailAddress())->first()->client ?? false;
 
-                $this->client = $client;
+                    if (!$client) {
+                        $client = $client_repo->save($data, ClientFactory::create($this->company_gateway->company_id, $this->company_gateway->user_id));
+                    }
 
-                foreach($data['cards'] as $card) {
-                 
-                    if(ClientGatewayToken::where('company_id', $this->company_gateway->company_id)->where('token', $card['token'])->exists())
-                        continue;
+                    $this->client = $client;
 
-                    $this->storeGatewayToken($card);
+                    foreach ($data['cards'] as $card) {
 
+                        if (ClientGatewayToken::where('company_id', $this->company_gateway->company_id)->where('token', $card['token'])->exists()) {
+                            continue;
+                        }
+
+                        $this->storeGatewayToken($card);
+
+                    }
                 }
-            }
-        
-            $c = $api_response->getCursor();
-            if ($c) {
 
-                $api_response = $this->init()
-                    ->square
-                    ->getCustomersApi()
-                    ->listCustomers(
+                $c = $api_response->getCursor();
+                if ($c) {
+
+                    $api_response = $this->init()
+                        ->square
+                        ->getCustomersApi()
+                        ->listCustomers(
                             $c,
                             $limit,
                             'DEFAULT',
                             'DESC'
                         );
-            } else {
-                break;
+                } else {
+                    break;
+                }
+
+
             }
-
-
-        }
 
         }
     }
@@ -558,8 +614,9 @@ class SquarePaymentDriver extends BaseDriver
 
     public function findOrCreateClient()
     {
-        if($customer_id = $this->findClient())
+        if ($customer_id = $this->findClient()) {
             return $customer_id;
+        }
 
         return $this->createClient();
     }

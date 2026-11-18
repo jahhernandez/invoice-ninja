@@ -1,4 +1,5 @@
 <?php
+
 /**
  * Invoice Ninja (https://invoiceninja.com).
  *
@@ -25,38 +26,35 @@ use App\Utils\Traits\Notifications\UserNotifies;
 use Illuminate\Routing\Middleware\ThrottleRequests;
 
 /**
- * @test
- * @covers App\Utils\Traits\Notifications\UserNotifies
+ *
+ *  App\Utils\Traits\Notifications\UserNotifies
  */
 class NotificationTest extends TestCase
 {
     use UserNotifies;
     use MockAccountData;
-
-    protected $faker;
-    
-    protected function setUp() :void
+    protected function setUp(): void
     {
         parent::setUp();
 
         $this->withoutMiddleware(
             ThrottleRequests::class
         );
-    
+
         $this->makeTestData();
     }
 
 
-    public function testEntityViewedNotificationWithEntityLate()
+    public function testEInvoiceReceivedNotification()
     {
-        // ['all_notifications', 'all_user_notifications', 'invoice_created_user', 'invoice_sent_user', 'invoice_viewed_user', 'invoice_late_user'];
+
         $u = User::factory()->create([
             'account_id' => $this->account->id,
-            'email' => $this->faker->safeEmail(),
+            'email' => uniqid('testuser') . '@gmail.com',
             'confirmation_code' => uniqid("st", true),
         ]);
 
-        $company_token = new CompanyToken;
+        $company_token = new CompanyToken();
         $company_token->user_id = $u->id;
         $company_token->company_id = $this->company->id;
         $company_token->account_id = $this->account->id;
@@ -76,7 +74,50 @@ class NotificationTest extends TestCase
 
         $company_user = CompanyUser::where('user_id', $u->id)->where('company_id', $this->company->id)->first();
 
-        $notifications = new \stdClass;
+        $notifications = new \stdClass();
+        $notifications->email = ["enable_e_invoice_received_notification"];
+        $company_user->update(['notifications' => (array)$notifications]);
+
+        $notifications = $this->findCompanyUserNotificationType($company_user, ['enable_e_invoice_received_notification']);
+
+        $this->assertEquals(0, array_search('mail', $notifications));
+
+        $notifications = $this->findCompanyUserNotificationType($company_user, ['non_existant_notification']);
+
+        $this->assertFalse(array_search('mail', $notifications));
+
+    }
+
+    public function testEntityViewedNotificationWithEntityLate()
+    {
+        // ['all_notifications', 'all_user_notifications', 'invoice_created_user', 'invoice_sent_user', 'invoice_viewed_user', 'invoice_late_user'];
+        $u = User::factory()->create([
+            'account_id' => $this->account->id,
+            'email' => uniqid('testuser') . '@gmail.com',
+            'confirmation_code' => uniqid("st", true),
+        ]);
+
+        $company_token = new CompanyToken();
+        $company_token->user_id = $u->id;
+        $company_token->company_id = $this->company->id;
+        $company_token->account_id = $this->account->id;
+        $company_token->name = 'test token';
+        $company_token->token = Str::random(64);
+        $company_token->is_system = true;
+        $company_token->save();
+
+        $u->companies()->attach($this->company->id, [
+            'account_id' => $this->account->id,
+            'is_owner' => 1,
+            'is_admin' => 1,
+            'is_locked' => 0,
+            'notifications' => CompanySettings::notificationDefaults(),
+            'settings' => null,
+        ]);
+
+        $company_user = CompanyUser::where('user_id', $u->id)->where('company_id', $this->company->id)->first();
+
+        $notifications = new \stdClass();
         $notifications->email = ["invoice_late_user","quote_approved_user"];
         $company_user->update(['notifications' => (array)$notifications]);
 
@@ -106,7 +147,7 @@ class NotificationTest extends TestCase
 
     public function testNotificationFound()
     {
-        $notifications = new \stdClass;
+        $notifications = new \stdClass();
         $notifications->email = ["inventory_all"];
 
         $this->user->company_users()->where('company_id', $this->company->id)->update(['notifications' => (array)$notifications]);
@@ -130,7 +171,7 @@ class NotificationTest extends TestCase
 
     public function testAllNotificationsFires()
     {
-        $notifications = new \stdClass;
+        $notifications = new \stdClass();
         $notifications->email = ["all_notifications"];
 
         $p = Product::factory()->create([
@@ -146,7 +187,7 @@ class NotificationTest extends TestCase
 
     public function testAllNotificationsFiresForUser()
     {
-        $notifications = new \stdClass;
+        $notifications = new \stdClass();
         $notifications->email = ["all_user_notifications"];
 
         $p = Product::factory()->create([
@@ -164,11 +205,11 @@ class NotificationTest extends TestCase
     {
         $u = User::factory()->create([
             'account_id' => $this->account->id,
-            'email' => $this->faker->safeEmail(),
+            'email' => uniqid('testuser') . '@gmail.com',
             'confirmation_code' => uniqid("st", true),
         ]);
 
-        $company_token = new CompanyToken;
+        $company_token = new CompanyToken();
         $company_token->user_id = $u->id;
         $company_token->company_id = $this->company->id;
         $company_token->account_id = $this->account->id;
@@ -192,7 +233,7 @@ class NotificationTest extends TestCase
         ]);
 
 
-        $notifications = new \stdClass;
+        $notifications = new \stdClass();
         $notifications->email = ["all_user_notifications"];
         $this->user->company_users()->where('company_id', $this->company->id)->update(['notifications' => (array)$notifications]);
 
@@ -210,7 +251,7 @@ class NotificationTest extends TestCase
         $cu->save();
 
         $methods = $this->findUserEntityNotificationType($p, $cu, ["all_notifications"]);
-        
+
         $this->assertCount(1, $methods);
 
         $notifications = [];
@@ -230,7 +271,7 @@ class NotificationTest extends TestCase
 
         $methods = $this->findUserEntityNotificationType($p, $cu, ['inventory_user']);
 
-        nlog($methods);
+        // nlog($methods);
 
         $this->assertCount(1, $methods);
 

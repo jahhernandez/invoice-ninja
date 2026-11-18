@@ -1,10 +1,11 @@
 <?php
+
 /**
  * Invoice Ninja (https://invoiceninja.com).
  *
  * @link https://github.com/invoiceninja/invoiceninja source repository
  *
- * @copyright Copyright (c) 2024. Invoice Ninja LLC (https://invoiceninja.com)
+ * @copyright Copyright (c) 2026. Invoice Ninja LLC (https://invoiceninja.com)
  *
  * @license https://www.elastic.co/licensing/elastic-license
  */
@@ -70,7 +71,7 @@ class RecurringInvoiceController extends BaseController
      *
      * @param RecurringInvoiceFilters $filters  The filters
      *
-     * @return Response
+     * @return Response| \Illuminate\Http\JsonResponse
      *
      *
      * @OA\Get(
@@ -107,7 +108,7 @@ class RecurringInvoiceController extends BaseController
      */
     public function index(RecurringInvoiceFilters $filters)
     {
-        $recurring_invoices = RecurringInvoice::filter($filters);
+        $recurring_invoices = RecurringInvoice::filter($filters)->with('tags');
 
         return $this->listResponse($recurring_invoices);
     }
@@ -117,7 +118,7 @@ class RecurringInvoiceController extends BaseController
      *
      * @param CreateRecurringInvoiceRequest $request  The request
      *
-     * @return Response
+     * @return Response| \Illuminate\Http\JsonResponse
      *
      *
      *
@@ -167,7 +168,7 @@ class RecurringInvoiceController extends BaseController
      *
      * @param StoreRecurringInvoiceRequest $request  The request
      *
-     * @return Response
+     * @return Response| \Illuminate\Http\JsonResponse
      *
      *
      *
@@ -223,7 +224,7 @@ class RecurringInvoiceController extends BaseController
      * @param ShowRecurringInvoiceRequest $request  The request
      * @param RecurringInvoice $recurring_invoice  The RecurringInvoice
      *
-     * @return Response
+     * @return Response| \Illuminate\Http\JsonResponse
      *
      *
      * @OA\Get(
@@ -278,7 +279,7 @@ class RecurringInvoiceController extends BaseController
      * @param EditRecurringInvoiceRequest $request  The request
      * @param RecurringInvoice $recurring_invoice  The RecurringInvoice
      *
-     * @return Response
+     * @return Response| \Illuminate\Http\JsonResponse
      *
      *
      * @OA\Get(
@@ -333,7 +334,7 @@ class RecurringInvoiceController extends BaseController
      * @param UpdateRecurringInvoiceRequest $request  The request
      * @param RecurringInvoice $recurring_invoice  The RecurringInvoice
      *
-     * @return Response
+     * @return Response| \Illuminate\Http\JsonResponse
      *
      *
      * @OA\Put(
@@ -414,21 +415,67 @@ class RecurringInvoiceController extends BaseController
         /** @var \App\Models\User $user */
         $user = auth()->user();
 
+        if ((stripos($request->action, 'send_now') !== false) && $user->hasExactPermission('disable_emails')) {
+            return response(['message' => ctrans('texts.disable_emails_error')], 400);
+        }
+
         $percentage_increase = request()->has('percentage_increase') ? request()->input('percentage_increase') : 0;
 
         if (in_array($request->action, ['increase_prices', 'update_prices'])) {
-            UpdateRecurring::dispatch($request->ids, $user->company(), $user, $request->action, $percentage_increase);
+
+            if ($user->isAdmin()) {
+                UpdateRecurring::dispatch($request->ids, $user->company(), $user, $request->action, $percentage_increase);
+            }
 
             return response()->json(['message' => 'Update in progress.'], 200);
         }
 
-        $recurring_invoices = RecurringInvoice::withTrashed()->find($request->ids);
+        $recurring_invoices = RecurringInvoice::withTrashed()->company()->find($request->ids);
 
+        if ($request->action == 'bulk_update' && $user->can('edit', $recurring_invoices->first())) {
 
-        if($request->action == 'set_payment_link' && $request->has('subscription_id')) {
+            $recurring_invoices = RecurringInvoice::withTrashed()
+                    ->company()
+                    ->whereIn('id', $request->ids);
+
+            $this->recurring_invoice_repo->bulkUpdate($recurring_invoices, $request->column, $request->new_value);
+
+            /** Handle changes to the status of the recurring invoice after the remaining_cycles is updated */
+            if ($request->column == 'remaining_cycles') {
+
+                if ($request->new_value == 0) {
+                    $recurring_invoices->each(function ($recurring_invoice) {
+                        $recurring_invoice->status_id = RecurringInvoice::STATUS_COMPLETED;
+                        $recurring_invoice->save();
+                    });
+                } else {
+                    $recurring_invoices->each(function ($recurring_invoice) {
+
+                        if ($recurring_invoice->status_id == RecurringInvoice::STATUS_COMPLETED) {
+
+                            if (!$recurring_invoice->next_send_date) {
+                                $recurring_invoice->next_send_date = $recurring_invoice->last_sent_date;
+                                $recurring_invoice->next_send_date_client = $recurring_invoice->last_sent_date;
+                                $recurring_invoice->next_send_date = $recurring_invoice->nextSendDate();
+                                $recurring_invoice->next_send_date_client = $recurring_invoice->nextSendDateClient();
+                            }
+
+                            $recurring_invoice->status_id = RecurringInvoice::STATUS_PAUSED;
+                            $recurring_invoice->save();
+
+                        }
+                    });
+                }
+            }
+
+            return $this->listResponse(RecurringInvoice::query()->withTrashed()->company()->whereIn('id', $request->ids));
+
+        }
+
+        if ($request->action == 'set_payment_link' && $request->has('subscription_id')) {
 
             $recurring_invoices->each(function ($invoice) use ($user, $request) {
-                if($user->can('edit', $invoice)) {
+                if ($user->can('edit', $invoice)) {
                     $invoice->service()->setPaymentLink($request->subscription_id)->save();
                 }
             });
@@ -451,7 +498,7 @@ class RecurringInvoiceController extends BaseController
      * @param ActionRecurringInvoiceRequest $request
      * @param RecurringInvoice $recurring_invoice
      * @param $action
-     * @return Response|mixed
+     * @return Response| \Illuminate\Http\JsonResponse|mixed
      */
     public function action(ActionRecurringInvoiceRequest $request, RecurringInvoice $recurring_invoice, $action)
     {
@@ -520,7 +567,7 @@ class RecurringInvoiceController extends BaseController
      *
      * @param UploadRecurringInvoiceRequest $request
      * @param RecurringInvoice $recurring_invoice
-     * @return Response
+     * @return Response| \Illuminate\Http\JsonResponse
      *
      *
      *
@@ -572,7 +619,7 @@ class RecurringInvoiceController extends BaseController
         }
 
         if ($request->has('documents')) {
-            $this->saveDocuments($request->file('documents'), $recurring_invoice, $request->input('is_public', true));
+            $this->saveDocuments($request->file('documents'), $recurring_invoice, $request->has('is_public') ? $request->boolean('is_public') : null);
         }
 
         return $this->itemResponse($recurring_invoice->fresh());
@@ -590,7 +637,7 @@ class RecurringInvoiceController extends BaseController
 
         \Illuminate\Support\Facades\App::setLocale($invitation->contact->preferredLocale());
 
-        $file_name = $invoice->numberFormatter().'.pdf';
+        $file_name = $invoice->numberFormatter() . '.pdf';
 
         $file = (new \App\Jobs\Entity\CreateRawPdf($invitation))->handle();
 

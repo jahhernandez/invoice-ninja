@@ -1,16 +1,19 @@
 <?php
+
 /**
  * Invoice Ninja (https://invoiceninja.com).
  *
  * @link https://github.com/invoiceninja/invoiceninja source repository
  *
- * @copyright Copyright (c) 2024. Invoice Ninja LLC (https://invoiceninja.com)
+ * @copyright Copyright (c) 2026. Invoice Ninja LLC (https://invoiceninja.com)
  *
  * @license https://www.elastic.co/licensing/elastic-license
  */
 
 namespace App\Utils;
 
+use LimitIterator;
+use SplFileObject;
 use App\Libraries\MultiDB;
 use App\Mail\TestMailServer;
 use Exception;
@@ -43,7 +46,7 @@ class SystemHealth
      * @param bool $check_database
      * @return     array  Result set of checks
      */
-    public static function check($check_database = true): array
+    public static function check($check_database = true, $check_file_system = true): array
     {
         $system_health = true;
 
@@ -78,13 +81,16 @@ class SystemHealth
             'open_basedir' => (bool) self::checkOpenBaseDir(),
             'mail_mailer' => (string) self::checkMailMailer(),
             'flutter_renderer' => (string) config('ninja.flutter_canvas_kit'),
-            'jobs_pending' => (int) self::checkQueueSize(),
             'pdf_engine' => (string) self::getPdfEngine(),
             'queue' => (string) config('queue.default'),
+            'queue_data' => self::checkQueueData(),
+            'jobs_pending' => 0, // TODO for backwards compatibility, remove once Flutter AP is updated
             'trailing_slash' => (bool) self::checkUrlState(),
-            'file_permissions' => (string) self::checkFileSystem(),
-            'exchange_rate_api_not_configured' => (bool)self::checkCurrencySanity(),
+            'file_permissions' => (string) ($check_file_system ? self::checkFileSystem() : ''),
+            'exchange_rate_api_not_configured' => (bool) self::checkCurrencySanity(),
             'api_version' => (string) config('ninja.app_version'),
+            'is_docker' => (bool) config('ninja.is_docker'),
+            'pending_migrations' => (bool) ($check_file_system ? self::checkPendingMigrations() : false),
         ];
     }
 
@@ -99,7 +105,7 @@ class SystemHealth
                 $cs = DB::table('clients')
                       ->select('settings->currency_id as id')
                                 ->get();
-            } catch(\Exception $e) {
+            } catch (\Exception $e) {
                 return true; //fresh installs, there may be no DB connection, nor migrations could have run yet.
             }
 
@@ -116,16 +122,28 @@ class SystemHealth
         return false;
     }
 
-    private static function checkQueueSize()
+    private static function checkQueueData()
     {
-        $count = 0;
+        $pending = 0;
+        $failed = 0;
+        $last_error = '';
 
         try {
-            $count = Queue::size();
+            $pending = DB::table('jobs')->count();
+            $failed = DB::table('failed_jobs')->count();
+
+            if ($failed > 0) {
+                $failed_job = DB::table('failed_jobs')->latest('failed_at')->first();
+                $last_error = $failed_job->exception;
+            }
         } catch (\Exception $e) {
         }
 
-        return $count;
+        return [
+            'failed' => $failed,
+            'pending' => $pending,
+            'last_error' => $last_error,
+        ];
     }
 
     public static function checkFileSystem()
@@ -156,12 +174,37 @@ class SystemHealth
         return false;
     }
 
+    /**
+     * Compare filesystem migration files to the **configured** default DB's `migrations` table.
+     *
+     * Always uses {@see config()} `database.default`, not {@see \Illuminate\Support\Facades\DB::getDefaultConnection()},
+     * so callers that temporarily switch the default connection (e.g. shard imports) do not get a false
+     * "pending migrations" result from a tenant DB whose migration history differs from the app codebase.
+     */
+    public static function checkPendingMigrations(): bool
+    {
+        $connectionName = config('database.default');
+
+        $ran = DB::connection($connectionName)->table('migrations')->pluck('migration');
+
+        $directory = base_path('database/migrations');
+
+        $pending = collect(new \FilesystemIterator($directory))
+            ->filter(fn ($file) => $file->getExtension() === 'php')
+            ->map(fn ($file) => $file->getBasename('.php'))
+            ->diff($ran);
+
+        return $pending->isNotEmpty();
+    }
+
     public static function getPdfEngine()
     {
         if (config('ninja.invoiceninja_hosted_pdf_generation') || config('ninja.pdf_generator') == 'hosted_ninja') {
             return 'Invoice Ninja Hosted PDF Generator';
         } elseif (config('ninja.phantomjs_pdf_generation') || config('ninja.pdf_generator') == 'phantom') {
             return 'Phantom JS Web Generator';
+        } elseif (config('ninja.pdf_generator') == 'simulator') {
+            return 'Simulator (blank PDF)';
         } else {
             return 'SnapPDF PDF Generator';
         }
@@ -174,7 +217,7 @@ class SystemHealth
 
     public static function checkOpenBaseDir()
     {
-        if (strlen(ini_get('open_basedir') == 0)) {
+        if (strlen(ini_get('open_basedir')) == 0) {
             return true;
         }
 
@@ -226,7 +269,7 @@ class SystemHealth
             if ($exitCode === 0) {
                 return empty($foo[0]) ? 'Found php cli, but no version information' : $foo[0];
             }
-        } catch (Exception $e) {
+        } catch (\Throwable $e) {
             return false;
         }
     }
@@ -319,6 +362,33 @@ class SystemHealth
 
     private static function checkEnvWritable()
     {
-        return is_writable(base_path().'/.env');
+        return is_writable(base_path() . '/.env');
+    }
+
+    public static function lastError()
+    {
+        $log_path = sprintf('%s/laravel.log', base_path('storage/logs'));
+
+        $log_file = new SplFileObject($log_path);
+
+        if (! is_readable($log_path)) {
+            return '';
+        }
+
+        $log_file->seek(PHP_INT_MAX);
+        $last_line = $log_file->key();
+
+        $lines = new LimitIterator($log_file, max(0, $last_line - 500), $last_line);
+        $log_lines = iterator_to_array($lines);
+        $last_error = '';
+
+        foreach ($lines as $line) {
+            // Match the main error, ie. [2024-07-10 12:23:07] production.ERROR: ...
+            if (preg_match('/^\[[^\]]+\]\s+\S+\.(?:ERROR|CRITICAL|ALERT|EMERGENCY):/', $line) === 1) {
+                $last_error = $line;
+            }
+        }
+
+        return $last_error;
     }
 }

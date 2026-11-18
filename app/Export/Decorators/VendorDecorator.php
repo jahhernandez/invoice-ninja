@@ -1,10 +1,11 @@
 <?php
+
 /**
  * Invoice Ninja (https://invoiceninja.com).
  *
  * @link https://github.com/invoiceninja/invoiceninja source repository
  *
- * @copyright Copyright (c) 2024. Invoice Ninja LLC (https://invoiceninja.com)
+ * @copyright Copyright (c) 2026. Invoice Ninja LLC (https://invoiceninja.com)
  *
  * @license https://www.elastic.co/licensing/elastic-license
  */
@@ -19,15 +20,15 @@ class VendorDecorator extends Decorator implements DecoratorInterface
     {
         $vendor = false;
 
-        if($entity instanceof Vendor) {
+        if ($entity instanceof Vendor) {
             $vendor = $entity;
-        } elseif($entity->vendor) {
+        } elseif ($entity->vendor) {
             $vendor = $entity->vendor;
         }
 
-        if($vendor && method_exists($this, $key)) {
+        if ($vendor && method_exists($this, $key)) {
             return $this->{$key}($vendor);
-        } elseif($vendor->{$key} ?? false) {
+        } elseif ($vendor->{$key} ?? false) {
             return $vendor->{$key} ?? '';
         }
 
@@ -52,7 +53,8 @@ class VendorDecorator extends Decorator implements DecoratorInterface
 
     public function classification(Vendor $vendor)
     {
-        ctrans("texts.{$vendor->classification}") ?? '';
+        $classification = $vendor->classification ?? 'business';
+        return ctrans("texts.{$classification}");
     }
 
     public function status(Vendor $vendor)

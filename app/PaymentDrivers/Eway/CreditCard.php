@@ -5,7 +5,7 @@
  *
  * @link https://github.com/invoiceninja/invoiceninja source repository
  *
- * @copyright Copyright (c) 2024. Invoice Ninja LLC (https://invoiceninja.com)
+ * @copyright Copyright (c) 2026. Invoice Ninja LLC (https://invoiceninja.com)
  *
  * @license https://www.elastic.co/licensing/elastic-license
  */
@@ -17,10 +17,11 @@ use App\Jobs\Util\SystemLogger;
 use App\Models\GatewayType;
 use App\Models\PaymentType;
 use App\Models\SystemLog;
+use App\PaymentDrivers\Common\LivewireMethodInterface;
 use App\PaymentDrivers\EwayPaymentDriver;
 use App\Utils\Traits\MakesHash;
 
-class CreditCard
+class CreditCard implements LivewireMethodInterface
 {
     use MakesHash;
 
@@ -70,7 +71,7 @@ class CreditCard
 
         $response = $this->eway_driver->init()->eway->createCustomer(\Eway\Rapid\Enum\ApiMethod::DIRECT, $transaction);
 
-        if($response->getErrors()) {
+        if ($response->getErrors()) {
 
             $response_status['message'] = \Eway\Rapid::getMessage($response->getErrors()[0]);
 
@@ -78,7 +79,7 @@ class CreditCard
 
             $this->logResponse($response);
 
-            throw new PaymentFailed($response_status['message'] ?? 'Unknown response from gateway, please contact you merchant.', 400);
+            throw new PaymentFailed($response_status['message'] ?? 'Unknown response from gateway, please contact you merchant.', 400); //@phpstan-ignore-line
         }
 
         //success
@@ -102,10 +103,17 @@ class CreditCard
         return $token;
     }
 
-    public function paymentView($data)
+    public function paymentData(array $data): array
     {
         $data['gateway'] = $this->eway_driver;
         $data['public_api_key'] = $this->eway_driver->company_gateway->getConfigField('publicApiKey');
+
+        return $data;
+    }
+
+    public function paymentView($data)
+    {
+        $data = $this->paymentData($data);
 
         return render('gateways.eway.pay', $data);
     }
@@ -135,16 +143,16 @@ class CreditCard
         $invoice_numbers = '';
 
         if ($this->eway_driver->payment_hash->data) {
-            $invoice_numbers = collect($this->eway_driver->payment_hash->data->invoices)->pluck('invoice_number')->implode(',');
+            $invoice_numbers = collect($this->eway_driver->payment_hash->data->invoices)->pluck('invoice_number')->implode(','); //@phpstan-ignore-line
         }
 
-        $amount = array_sum(array_column($this->eway_driver->payment_hash->invoices(), 'amount')) + $this->eway_driver->payment_hash->fee_total;
+        $amount = $this->eway_driver->payment_hash->amount_with_fee();
 
         // $description = "Invoices: {$invoice_numbers} for {$amount} for client {$this->eway_driver->client->present()->name()}";
 
         $transaction = [
             'Payment' => [
-                'TotalAmount' => $this->convertAmountForEway(),
+                'TotalAmount' => $this->eway_driver->convertAmount($amount),
                 'CurrencyCode' => $this->eway_driver->client->currency()->code,
                 'InvoiceNumber' => $invoice_numbers,
                 'InvoiceDescription' => substr($invoice_numbers, 0, 63),
@@ -182,7 +190,7 @@ class CreditCard
 
     private function storePayment($response)
     {
-        $amount = array_sum(array_column($this->eway_driver->payment_hash->invoices(), 'amount')) + $this->eway_driver->payment_hash->fee_total;
+        $amount = $this->eway_driver->payment_hash->amount_with_fee();
 
         $payment_record = [];
         $payment_record['amount'] = $amount;
@@ -193,19 +201,6 @@ class CreditCard
         $payment = $this->eway_driver->createPayment($payment_record);
 
         return $payment;
-    }
-
-    private function convertAmountForEway($amount = false)
-    {
-        if (! $amount) {
-            $amount = array_sum(array_column($this->eway_driver->payment_hash->invoices(), 'amount')) + $this->eway_driver->payment_hash->fee_total;
-        }
-
-        if (in_array($this->eway_driver->client->currency()->code, ['VND', 'JPY', 'KRW', 'GNF', 'IDR', 'PYG', 'RWF', 'UGX', 'VUV', 'XAF', 'XPF'])) {
-            return $amount;
-        }
-
-        return $amount * 100;
     }
 
     private function logResponse($response, $success = true)
@@ -226,7 +221,7 @@ class CreditCard
 
     public function tokenBilling($token, $payment_hash)
     {
-        $amount = array_sum(array_column($payment_hash->invoices(), 'amount')) + $payment_hash->fee_total;
+        $amount = $payment_hash->amount_with_fee();
 
         $invoice_numbers = '';
 
@@ -241,7 +236,7 @@ class CreditCard
                 'TokenCustomerID' => $token,
             ],
             'Payment' => [
-                'TotalAmount' => $this->convertAmountForEway($amount),
+                'TotalAmount' => $this->eway_driver->convertAmount($amount),
                 'CurrencyCode' => $this->eway_driver->client->currency()->code,
                 'InvoiceNumber' => $invoice_numbers,
                 'InvoiceDescription' => substr($invoice_numbers, 0, 63),
@@ -275,5 +270,9 @@ class CreditCard
         }
 
         return $payment;
+    }
+    public function livewirePaymentView(array $data): string
+    {
+        return 'gateways.eway.pay_livewire';
     }
 }

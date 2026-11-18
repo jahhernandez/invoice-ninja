@@ -1,10 +1,11 @@
 <?php
+
 /**
  * Invoice Ninja (https://invoiceninja.com).
  *
  * @link https://github.com/invoiceninja/invoiceninja source repository
  *
- * @copyright Copyright (c) 2024. Invoice Ninja LLC (https://invoiceninja.com)
+ * @copyright Copyright (c) 2026. Invoice Ninja LLC (https://invoiceninja.com)
  *
  * @license https://www.elastic.co/licensing/elastic-license
  */
@@ -23,7 +24,9 @@ class InvoiceItemFactory
         $item = new stdClass();
         $item->quantity = 0;
         $item->cost = 0;
+        $item->net_cost = 0;
         $item->product_key = '';
+        $item->tags = '';
         $item->notes = '';
         $item->discount = 0;
         $item->is_amount_discount = true;
@@ -41,6 +44,7 @@ class InvoiceItemFactory
         $item->custom_value3 = '';
         $item->custom_value4 = '';
         $item->type_id = '1';
+        $item->tax_id = '1';
 
         return $item;
     }
@@ -58,11 +62,11 @@ class InvoiceItemFactory
 
         for ($x = 0; $x < $items; $x++) {
             $item = self::create();
-            $item->quantity = $faker->numberBetween(1, 10);
+            $item->quantity = rand(1, 10);
             $item->cost = $faker->randomFloat(2, 1, 1000);
             $item->line_total = $item->quantity * $item->cost;
             $item->is_amount_discount = true;
-            $item->discount = $faker->numberBetween(1, 10);
+            $item->discount = rand(1, 10);
             $item->notes = str_replace(['"',"'"], ['',""], $faker->realText(20));
             $item->product_key = $faker->word();
             // $item->custom_value1 = $faker->realText(10);
@@ -72,9 +76,31 @@ class InvoiceItemFactory
             $item->tax_name1 = 'GST';
             $item->tax_rate1 = 10.00;
             $item->type_id = '1';
+            $item->tax_id = '1';
 
             $data[] = $item;
         }
+
+
+        $item = self::create();
+        $item->quantity = rand(1, 10);
+        $item->cost = $faker->randomFloat(2, 1, 1000);
+        $item->line_total = $item->quantity * $item->cost;
+        $item->is_amount_discount = true;
+        $item->discount = rand(1, 10);
+        $item->notes = str_replace(['"',"'"], ['',""], $faker->realText(20));
+        $item->product_key = $faker->word();
+        // $item->custom_value1 = $faker->realText(10);
+        // $item->custom_value2 = $faker->realText(10);
+        // $item->custom_value3 = $faker->realText(10);
+        // $item->custom_value4 = $faker->realText(10);
+        $item->tax_name1 = 'GST';
+        $item->tax_rate1 = 10.00;
+        $item->type_id = '2';
+        $item->tax_id = '2';
+
+        $data[] = $item;
+
 
         return $data;
     }
@@ -92,7 +118,7 @@ class InvoiceItemFactory
 
         for ($x = 0; $x < $items; $x++) {
             $item = self::create();
-            $item->quantity = $faker->numberBetween(-1, -10);
+            $item->quantity = rand(-1, -10);
             $item->cost = $faker->randomFloat(2, -1, -1000);
             $item->line_total = $item->quantity * $item->cost;
             $item->is_amount_discount = true;
@@ -106,7 +132,7 @@ class InvoiceItemFactory
             $item->tax_name1 = '';
             $item->tax_rate1 = 0;
             $item->type_id = '1';
-
+            $item->tax_id = '1';
             $data[] = $item;
         }
 

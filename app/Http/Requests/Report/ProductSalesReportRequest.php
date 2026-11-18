@@ -1,10 +1,11 @@
 <?php
+
 /**
  * Invoice Ninja (https://invoiceninja.com).
  *
  * @link https://github.com/invoiceninja/invoiceninja source repository
  *
- * @copyright Copyright (c) 2024. Invoice Ninja LLC (https://invoiceninja.com)
+ * @copyright Copyright (c) 2026. Invoice Ninja LLC (https://invoiceninja.com)
  *
  * @license https://www.elastic.co/licensing/elastic-license
  */
@@ -34,7 +35,7 @@ class ProductSalesReportRequest extends Request
 
     public function rules()
     {
-        
+
         /** @var \App\Models\User $user */
         $user = auth()->user();
 
@@ -44,7 +45,7 @@ class ProductSalesReportRequest extends Request
             'start_date' => 'bail|required_if:date_range,custom|nullable|date',
             'report_keys' => 'bail|present|array',
             'send_email' => 'bail|required|bool',
-            'client_id' => 'bail|nullable|sometimes|exists:clients,id,company_id,'.$user->company()->id.',is_deleted,0',
+            'client_id' => 'bail|nullable|sometimes|exists:clients,id,company_id,' . $user->company()->id . ',is_deleted,0',
         ];
     }
 
@@ -69,9 +70,11 @@ class ProductSalesReportRequest extends Request
             $input['end_date'] = null;
         }
 
-        if (array_key_exists('client_id', $input) && strlen($input['client_id']) >= 1) {
+        if (array_key_exists('client_id', $input) && strlen($input['client_id'] ?? '') > 1) {
             $input['client_id'] = $this->decodePrimaryKey($input['client_id']);
         }
+
+        $input['user_id'] = auth()->user()->id;
 
         $this->replace($input);
     }
@@ -82,13 +85,13 @@ class ProductSalesReportRequest extends Request
 
         /** @var \App\Models\User $user */
         $user = auth()->user();
-        
-        if(Ninja::isHosted() && $user->account->isFreeHostedClient()){
+
+        if (Ninja::isHosted() && $user->account->isFreeHostedClient()) {
             $this->error_message = ctrans('texts.upgrade_to_view_reports');
             return false;
         }
 
-        return $user->isAdmin() || $user->hasPermission('view_reports');
+        return $user->isAdmin() || ($user->hasPermission('view_all') && $user->hasPermission('view_reports'));
 
     }
 

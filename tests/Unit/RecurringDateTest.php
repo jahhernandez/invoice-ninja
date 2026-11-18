@@ -1,4 +1,5 @@
 <?php
+
 /**
  * Invoice Ninja (https://invoiceninja.com).
  *
@@ -17,14 +18,14 @@ use Tests\MockAccountData;
 use Tests\TestCase;
 
 /**
- * @test
+ *
  */
 class RecurringDateTest extends TestCase
 {
     use DatabaseTransactions;
     use MockAccountData;
 
-    protected function setUp() :void
+    protected function setUp(): void
     {
         parent::setUp();
 
@@ -49,10 +50,6 @@ class RecurringDateTest extends TestCase
         $next_month = $today->addMonthNoOverflow();
 
         $this->assertEquals('2022-02-28', $next_month->format('Y-m-d'));
-
-        // $next_month = $today->addMonthNoOverflow();
-
-        // $this->assertEquals('2022-03-31', $next_month->format('Y-m-d'));
 
     }
 

@@ -1,10 +1,11 @@
 <?php
+
 /**
  * Invoice Ninja (https://invoiceninja.com).
  *
  * @link https://github.com/invoiceninja/invoiceninja source repository
  *
- * @copyright Copyright (c) 2024. Invoice Ninja LLC (https://invoiceninja.com)
+ * @copyright Copyright (c) 2026. Invoice Ninja LLC (https://invoiceninja.com)
  *
  * @license https://www.elastic.co/licensing/elastic-license
  */
@@ -59,15 +60,13 @@ class ValidInvoicesRules implements Rule
             $unique_array[] = $invoice['invoice_id'];
 
             if (! array_key_exists('amount', $invoice)) {
-                $this->error_msg = ctrans('texts.amount').' required';
+                $this->error_msg = ctrans('texts.amount') . ' required';
 
                 return false;
             }
 
             /////
             $inv = $inv_collection->firstWhere('id', $invoice['invoice_id']);
-
-            // $inv = Invoice::withTrashed()->whereId($invoice['invoice_id'])->first();
 
             if (! $inv) {
                 $this->error_msg = ctrans('texts.invoice_not_found');
@@ -83,13 +82,20 @@ class ValidInvoicesRules implements Rule
 
             if ($inv->status_id == Invoice::STATUS_DRAFT && $invoice['amount'] <= $inv->amount) {
                 //catch here nothing to do - we need this to prevent the last elseif triggering
+            } elseif ($invoice['amount'] <= 0 && $inv->amount > 0) {
+                $this->error_msg = 'Amount cannot be less than or equal to zero';
+                return false;
             } elseif ($inv->status_id == Invoice::STATUS_DRAFT && floatval($invoice['amount']) > floatval($inv->amount)) {
                 $this->error_msg = 'Amount cannot be greater than invoice balance';
-
+                return false;
+            } elseif ($invoice['amount'] < 0 && $inv->amount >= 0) {
+                $this->error_msg = 'Amount cannot be negative';
                 return false;
             } elseif (floatval($invoice['amount']) > floatval($inv->balance)) {
                 $this->error_msg = ctrans('texts.amount_greater_than_balance_v5');
-
+                return false;
+            } elseif ($inv->is_deleted) {
+                $this->error_msg = 'One or more invoices in this request have since been deleted';
                 return false;
             }
         }

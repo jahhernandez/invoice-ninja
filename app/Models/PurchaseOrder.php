@@ -1,23 +1,30 @@
 <?php
+
 /**
  * Invoice Ninja (https://invoiceninja.com).
  *
  * @link https://github.com/invoiceninja/invoiceninja source repository
  *
- * @copyright Copyright (c) 2024. Invoice Ninja LLC (https://invoiceninja.com)
+ * @copyright Copyright (c) 2026. Invoice Ninja LLC (https://invoiceninja.com)
  *
  * @license https://www.elastic.co/licensing/elastic-license
  */
 
 namespace App\Models;
 
-use App\Helpers\Invoice\InvoiceSum;
-use App\Helpers\Invoice\InvoiceSumInclusive;
-use App\Services\PurchaseOrder\PurchaseOrderService;
-use App\Utils\Traits\MakesDates;
-use Illuminate\Database\Eloquent\SoftDeletes;
+use App\Utils\Ninja;
+use App\Utils\Number;
 use Illuminate\Support\Carbon;
-
+use App\DataMapper\PurchaseOrderSync;
+use App\Helpers\Invoice\InvoiceSum;
+use Illuminate\Support\Facades\App;
+use Elastic\ScoutDriverPlus\Searchable;
+use App\Helpers\Invoice\InvoiceSumInclusive;
+use Illuminate\Database\Eloquent\SoftDeletes;
+use App\Services\PurchaseOrder\PurchaseOrderService;
+use App\Events\PurchaseOrder\PurchaseOrderWasEmailed;
+use App\Models\Traits\HasTags;
+use App\Models\Traits\IndexableItems;
 /**
  * App\Models\PurchaseOrder
  *
@@ -33,6 +40,7 @@ use Illuminate\Support\Carbon;
  * @property int|null $recurring_id
  * @property int|null $design_id
  * @property int|null $invoice_id
+ * @property int|null $quote_id
  * @property string|null $number
  * @property float $discount
  * @property bool $is_amount_discount
@@ -49,12 +57,15 @@ use Illuminate\Support\Carbon;
  * @property string|null $terms
  * @property string|null $tax_name1
  * @property float $tax_rate1
+ * @property bool $has_tasks
+ * @property bool $has_expenses
  * @property string|null $tax_name2
  * @property float $tax_rate2
  * @property string|null $tax_name3
  * @property float $tax_rate3
  * @property float $total_taxes
- * @property int $uses_inclusive_taxes
+ * @property bool $uses_inclusive_taxes
+ * @property int|null $location_id
  * @property string|null $reminder1_sent
  * @property string|null $reminder2_sent
  * @property string|null $reminder3_sent
@@ -84,6 +95,10 @@ use Illuminate\Support\Carbon;
  * @property int|null $updated_at
  * @property int|null $expense_id
  * @property int|null $currency_id
+ * @property int|null $location_id
+ * @property int|null $invoice_id
+ * @property int|null $quote_id
+ * @property object|null $tax_data
  * @property-read int|null $activities_count
  * @property \App\Models\User|null $assigned_user
  * @property \App\Models\Client|null $client
@@ -92,10 +107,17 @@ use Illuminate\Support\Carbon;
  * @property \App\Models\Expense|null $expense
  * @property string $hashed_id
  * @property \App\Models\Invoice|null $invoice
+ * @property \App\Models\Quote|null $quote
  * @property \App\Models\Project|null $project
  * @property \App\Models\User $user
  * @property \App\Models\Vendor $vendor
  * @property \App\Models\PurchaseOrderInvitation $invitation
+ * @property \App\Models\Currency|null $currency
+ * @property \App\Models\Location|null $location
+ * @property object|null $tax_data
+ * @property object|null $e_invoice
+ * @property int|null $location_id
+ * @property \App\DataMapper\PurchaseOrderSync|null $sync
  * @method static \Illuminate\Database\Eloquent\Builder|PurchaseOrder exclude($columns)
  * @method static \Database\Factories\PurchaseOrderFactory factory($count = null, $state = [])
  * @method static \Illuminate\Database\Eloquent\Builder|PurchaseOrder filter(\App\Filters\QueryFilters $filters)
@@ -108,16 +130,28 @@ use Illuminate\Support\Carbon;
  * @property-read \Illuminate\Database\Eloquent\Collection<int, \App\Models\Document> $documents
  * @property-read \Illuminate\Database\Eloquent\Collection<int, \App\Models\Backup> $history
  * @property-read \Illuminate\Database\Eloquent\Collection<int, \App\Models\PurchaseOrderInvitation> $invitations
+ * @property-read \Illuminate\Database\Eloquent\Collection<int, \App\Models\Tag> $tags
  * @method static \Illuminate\Database\Eloquent\Builder|PurchaseOrder withTrashed()
  * @method static \Illuminate\Database\Eloquent\Builder|PurchaseOrder withoutTrashed()
- * @method static \Illuminate\Database\Eloquent\Builder|BaseModel company()
+ * 
  * @mixin \Eloquent
  */
 class PurchaseOrder extends BaseModel
 {
     use Filterable;
     use SoftDeletes;
-    use MakesDates;
+    use Searchable;
+    use HasTags;
+    use IndexableItems;
+    /**
+     * Get the index name for the model.
+     *
+     * @return string
+     */
+    public function searchableAs(): string
+    {
+        return 'purchase_orders';
+    }
 
     protected $hidden = [
         'id',
@@ -171,14 +205,16 @@ class PurchaseOrder extends BaseModel
         'custom_surcharge4',
         'design_id',
         'invoice_id',
+        'quote_id',
         'assigned_user_id',
         'exchange_rate',
-        'balance',
+        // 'balance',
         'partial',
-        'paid_to_date',
+        // 'paid_to_date',
         'vendor_id',
         'last_viewed',
         'currency_id',
+        'location_id',
     ];
 
     protected $casts = [
@@ -189,6 +225,7 @@ class PurchaseOrder extends BaseModel
         'deleted_at' => 'timestamp',
         'is_amount_discount' => 'bool',
         'e_invoice' => 'object',
+        'sync' => PurchaseOrderSync::class,
     ];
 
     public const STATUS_DRAFT = 1;
@@ -196,6 +233,44 @@ class PurchaseOrder extends BaseModel
     public const STATUS_ACCEPTED = 3;
     public const STATUS_RECEIVED = 4;
     public const STATUS_CANCELLED = 5;
+
+
+    public function toSearchableArray(): array
+    {
+        
+        $locale = $this->company->locale();
+        App::setLocale($locale);
+        $vendorName = $this->vendor ? $this->vendor->present()->name() : '';
+
+        return [
+            'id' => $this->company->db . ":" . $this->id,
+            'name' => ctrans('texts.purchase_order') . " " . $this->number . " | " . $vendorName . ' | ' . Number::formatMoney($this->amount, $this->vendor) . ' | ' . $this->translateDate($this->date, $this->company->date_format(), $locale),
+            'hashed_id' => $this->hashed_id,
+            'user_id' => (string) $this->user_id,
+            'assigned_user_id' => (string) $this->assigned_user_id,
+            'number' => (string) $this->number,
+            'is_deleted' => (bool)$this->is_deleted,
+            'amount' => (float) $this->amount,
+            'balance' => (float) $this->balance,
+            'due_date' => $this->due_date,
+            'date' => $this->date,
+            'custom_value1' => (string) $this->custom_value1,
+            'custom_value2' => (string) $this->custom_value2,
+            'custom_value3' => (string) $this->custom_value3,
+            'custom_value4' => (string) $this->custom_value4,
+            'company_key' => $this->company->company_key,
+            'po_number' => (string) $this->po_number,
+            'tags' => $this->tags->pluck('name')->values()->all(),
+            'line_items' => $this->indexLineItems(),
+        ];
+
+    }
+
+    public function getScoutKey()
+    {
+        return $this->company->db . ":" . $this->id;
+    }
+
 
     public static function stringStatus(int $status)
     {
@@ -214,20 +289,19 @@ class PurchaseOrder extends BaseModel
         }
     }
 
-
     public static function badgeForStatus(int $status)
     {
         switch ($status) {
             case self::STATUS_DRAFT:
-                return '<h5><span class="badge badge-light">'.ctrans('texts.draft').'</span></h5>';
+                return '<h5><span class="badge badge-light">' . ctrans('texts.draft') . '</span></h5>';
             case self::STATUS_SENT:
-                return '<h5><span class="badge badge-primary">'.ctrans('texts.sent').'</span></h5>';
+                return '<h5><span class="badge badge-primary">' . ctrans('texts.sent') . '</span></h5>';
             case self::STATUS_ACCEPTED:
-                return '<h5><span class="badge badge-primary">'.ctrans('texts.accepted').'</span></h5>';
+                return '<h5><span class="badge badge-primary">' . ctrans('texts.accepted') . '</span></h5>';
             case self::STATUS_CANCELLED:
-                return '<h5><span class="badge badge-secondary">'.ctrans('texts.cancelled').'</span></h5>';
+                return '<h5><span class="badge badge-secondary">' . ctrans('texts.cancelled') . '</span></h5>';
             default:
-                return '<h5><span class="badge badge-primary">'.ctrans('texts.sent').'</span></h5>';
+                return '<h5><span class="badge badge-primary">' . ctrans('texts.sent') . '</span></h5>';
         }
     }
 
@@ -256,7 +330,7 @@ class PurchaseOrder extends BaseModel
 
     public function activities(): \Illuminate\Database\Eloquent\Relations\HasMany
     {
-        return $this->hasMany(Activity::class)->orderBy('id', 'DESC')->take(50);
+        return $this->hasMany(Activity::class)->where('company_id', $this->company_id)->where('vendor_id', $this->vendor_id)->orderBy('id', 'DESC')->take(50);
     }
 
     public function company(): \Illuminate\Database\Eloquent\Relations\BelongsTo
@@ -272,6 +346,11 @@ class PurchaseOrder extends BaseModel
     public function user(): \Illuminate\Database\Eloquent\Relations\BelongsTo
     {
         return $this->belongsTo(User::class)->withTrashed();
+    }
+
+    public function location(): \Illuminate\Database\Eloquent\Relations\BelongsTo
+    {
+        return $this->belongsTo(Location::class)->withTrashed();
     }
 
     public function client(): \Illuminate\Database\Eloquent\Relations\BelongsTo
@@ -309,6 +388,11 @@ class PurchaseOrder extends BaseModel
         return $this->belongsTo(Invoice::class);
     }
 
+    public function quote(): \Illuminate\Database\Eloquent\Relations\BelongsTo
+    {
+        return $this->belongsTo(Quote::class);
+    }
+
     /** @return PurchaseOrderService  */
     public function service(): PurchaseOrderService
     {
@@ -335,7 +419,7 @@ class PurchaseOrder extends BaseModel
      *
      * @return InvoiceSumInclusive | InvoiceSum The invoice calculator object getters
      */
-    public function calc(): InvoiceSumInclusive | InvoiceSum
+    public function calc(): InvoiceSumInclusive|InvoiceSum
     {
         $purchase_order_calc = null;
 
@@ -353,28 +437,28 @@ class PurchaseOrder extends BaseModel
         return ctrans('texts.purchase_order');
     }
 
-    public function typeIdString($id): string
-    {
-        $type = '';
-        match($id) {
-            '1' => $type = ctrans('texts.product'),
-            '2' => $type = ctrans('texts.service'),
-            '3' => $type = ctrans('texts.gateway_fees'),
-            '4' => $type = ctrans('texts.gateway_fees'),
-            '5' => $type = ctrans('texts.late_fees'),
-            '6' => $type = ctrans('texts.expense'),
-            default => $type = ctrans('texts.product'),
-        };
+    // public function typeIdString($id): string
+    // {
+    //     $type = '';
+    //     match($id) {
+    //         '1' => $type = ctrans('texts.product'),
+    //         '2' => $type = ctrans('texts.service'),
+    //         '3' => $type = ctrans('texts.gateway_fees'),
+    //         '4' => $type = ctrans('texts.gateway_fees'),
+    //         '5' => $type = ctrans('texts.late_fees'),
+    //         '6' => $type = ctrans('texts.expense'),
+    //         default => $type = ctrans('texts.product'),
+    //     };
 
-        return $type;
+    //     return $type;
 
-    }
+    // }
 
     public function taxTypeString($id): string
     {
         $tax_type = '';
 
-        match(intval($id)) {
+        match (intval($id)) {
             Product::PRODUCT_TYPE_PHYSICAL => $tax_type = ctrans('texts.physical_goods'),
             Product::PRODUCT_TYPE_SERVICE => $tax_type = ctrans('texts.services'),
             Product::PRODUCT_TYPE_DIGITAL => $tax_type = ctrans('texts.digital_products'),
@@ -390,4 +474,18 @@ class PurchaseOrder extends BaseModel
         return $tax_type;
     }
 
+
+    public function entityEmailEvent($invitation, $reminder_template, $template = '')
+    {
+
+        switch ($reminder_template) {
+            case 'purchase_order':
+                event(new PurchaseOrderWasEmailed($invitation, $invitation->company, Ninja::eventVars(auth()->user() ? auth()->user()->id : null), $reminder_template));
+                break;
+
+            default:
+                event(new PurchaseOrderWasEmailed($invitation, $invitation->company, Ninja::eventVars(auth()->user() ? auth()->user()->id : null), $reminder_template));
+                break;
+        }
+    }
 }

@@ -5,7 +5,7 @@
  *
  * @link https://github.com/invoiceninja/invoiceninja source repository
  *
- * @copyright Copyright (c) 2024. Invoice Ninja LLC (https://invoiceninja.com)
+ * @copyright Copyright (c) 2026. Invoice Ninja LLC (https://invoiceninja.com)
  *
  * @license https://www.elastic.co/licensing/elastic-license
  */
@@ -32,9 +32,7 @@ class InvoiceCheckLateWebhook implements ShouldQueue
     /**
      * Create a new job instance.
      */
-    public function __construct()
-    {
-    }
+    public function __construct() {}
 
     /**
      * Execute the job.
@@ -48,6 +46,7 @@ class InvoiceCheckLateWebhook implements ShouldQueue
         if (! config('ninja.db.multi_db_enabled')) {
             $company_ids = Webhook::where('event_id', Webhook::EVENT_LATE_INVOICE)
                                   ->where('is_deleted', 0)
+                                  ->whereNull('deleted_at')
                                   ->pluck('company_id');
 
             Invoice::query()
@@ -59,11 +58,11 @@ class InvoiceCheckLateWebhook implements ShouldQueue
                  ->whereIn('company_id', $company_ids)
                  ->whereHas('client', function ($query) {
                      $query->where('is_deleted', 0)
-                            ->where('deleted_at', null);
+                           ->whereNull('deleted_at');
                  })
-                    ->whereHas('company', function ($query) {
-                        $query->where('is_disabled', 0);
-                    })
+                 ->whereHas('company', function ($query) {
+                     $query->where('is_disabled', 0);
+                 })
                  ->whereBetween('due_date', [now()->subDay()->startOfDay(), now()->startOfDay()->subSecond()])
                  ->cursor()
                  ->each(function ($invoice) {
@@ -75,6 +74,7 @@ class InvoiceCheckLateWebhook implements ShouldQueue
 
                 $company_ids = Webhook::where('event_id', Webhook::EVENT_LATE_INVOICE)
                                       ->where('is_deleted', 0)
+                                      ->whereNull('deleted_at')
                                       ->pluck('company_id');
 
                 Invoice::query()
@@ -86,11 +86,11 @@ class InvoiceCheckLateWebhook implements ShouldQueue
                      ->whereIn('company_id', $company_ids)
                      ->whereHas('client', function ($query) {
                          $query->where('is_deleted', 0)
-                                ->where('deleted_at', null);
+                               ->whereNull('deleted_at');
                      })
-                        ->whereHas('company', function ($query) {
-                            $query->where('is_disabled', 0);
-                        })
+                     ->whereHas('company', function ($query) {
+                         $query->where('is_disabled', 0);
+                     })
                      ->whereBetween('due_date', [now()->subDay()->startOfDay(), now()->startOfDay()->subSecond()])
                      ->cursor()
                      ->each(function ($invoice) {

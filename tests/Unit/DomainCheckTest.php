@@ -1,4 +1,5 @@
 <?php
+
 /**
  * Invoice Ninja (https://invoiceninja.com).
  *
@@ -15,12 +16,11 @@ use App\DataProviders\Domains;
 use Tests\TestCase;
 
 /**
- * @test
+ *
  */
 class DomainCheckTest extends TestCase
 {
-
-    protected function setUp() :void
+    protected function setUp(): void
     {
         parent::setUp();
     }

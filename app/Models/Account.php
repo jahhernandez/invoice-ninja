@@ -1,16 +1,19 @@
 <?php
+
 /**
  * Invoice Ninja (https://invoiceninja.com).
  *
  * @link https://github.com/invoiceninja/invoiceninja source repository
  *
- * @copyright Copyright (c) 2024. Invoice Ninja LLC (https://invoiceninja.com)
+ * @copyright Copyright (c) 2026. Invoice Ninja LLC (https://invoiceninja.com)
  *
  * @license https://www.elastic.co/licensing/elastic-license
  */
 
 namespace App\Models;
 
+use App\DataMapper\Billing\BillingContext;
+use App\Helpers\Cache\Atomic;
 use App\Jobs\Mail\NinjaMailerJob;
 use App\Jobs\Mail\NinjaMailerObject;
 use App\Mail\Ninja\EmailQuotaExceeded;
@@ -39,6 +42,7 @@ use Laracasts\Presenter\PresentableTrait;
  * @property string|null $plan_expires
  * @property string|null $user_agent
  * @property string|null $key
+ * @property string|null $e_invoice_token
  * @property int|null $payment_id
  * @property int $default_company_id
  * @property string|null $trial_started
@@ -53,25 +57,30 @@ use Laracasts\Presenter\PresentableTrait;
  * @property string $latest_version
  * @property int $report_errors
  * @property string|null $referral_code
- * @property int|null $created_at
- * @property int|null $updated_at
- * @property int $is_scheduler_running
+ * @property Carbon|int|null $created_at
+ * @property Carbon|int|null $updated_at
+ * @property bool $is_scheduler_running
  * @property int|null $trial_duration
- * @property int $is_onboarding
- * @property object|null $onboarding
- * @property int $is_migrated
+ * @property bool $is_onboarding
+ * @property object|array|null $onboarding
+ * @property bool $is_migrated
  * @property string|null $platform
  * @property int|null $hosted_client_count
  * @property int|null $hosted_company_count
  * @property string|null $inapp_transaction_id
  * @property bool $set_react_as_default_ap
  * @property bool $is_flagged
- * @property int $is_verified_account
+ * @property bool $is_verified_account
  * @property string|null $account_sms_verification_code
  * @property string|null $account_sms_verification_number
  * @property bool $account_sms_verified
  * @property string|null $bank_integration_account_id
- * @property int $is_trial
+ * @property string|null $e_invoicing_token
+ * @property BillingContext|null $billing_context
+ * @property bool $is_trial
+ * @property int $e_invoice_quota
+ * @property int $docuninja_num_users
+ * @property string|null $e_invoicing_token
  * @property-read int|null $bank_integrations_count
  * @property-read int|null $companies_count
  * @property-read int|null $company_users_count
@@ -86,7 +95,6 @@ use Laracasts\Presenter\PresentableTrait;
  * @method static \Illuminate\Database\Eloquent\Builder|Account query()
  * @method static \Illuminate\Database\Eloquent\Builder|BaseModel scope()
  * @method static \Illuminate\Database\Eloquent\Builder|Account first()
- * @method static \Illuminate\Database\Eloquent\Builder|Account with()
  * @method static \Illuminate\Database\Eloquent\Builder|Account count()
  * @method static \Illuminate\Database\Eloquent\Builder|Account where($query)
  * @property-read \Illuminate\Database\Eloquent\Collection<int, \App\Models\BankIntegration> $bank_integrations
@@ -127,6 +135,7 @@ class Account extends BaseModel
         'platform',
         'set_react_as_default_ap',
         'inapp_transaction_id',
+        'e_invoicing_token',
     ];
 
     protected $casts = [
@@ -134,6 +143,7 @@ class Account extends BaseModel
         'created_at' => 'timestamp',
         'deleted_at' => 'timestamp',
         'onboarding' => 'object',
+        'billing_context' => BillingContext::class,
         'set_react_as_default_ap' => 'bool',
         'promo_expires' => 'date',
         'discount_expires' => 'date',
@@ -178,6 +188,11 @@ class Account extends BaseModel
         return self::class;
     }
 
+    public function activities()
+    {
+        return $this->hasMany(Activity::class);
+    }
+
     public function users(): \Illuminate\Database\Eloquent\Relations\HasMany
     {
         return $this->hasMany(User::class)->withTrashed();
@@ -197,7 +212,12 @@ class Account extends BaseModel
     {
         return $this->hasMany(Company::class);
     }
-
+    
+    /**
+     * bank_integrations
+     *
+     * @return \Illuminate\Database\Eloquent\Relations\HasMany
+     */
     public function bank_integrations(): \Illuminate\Database\Eloquent\Relations\HasMany
     {
         return $this->hasMany(BankIntegration::class);
@@ -214,7 +234,8 @@ class Account extends BaseModel
      */
     public function owner()
     {
-        return $this->hasMany(CompanyUser::class)->where('is_owner', true)->first() ? $this->hasMany(CompanyUser::class)->where('is_owner', true)->first()->user : false;
+        $cu = $this->hasMany(CompanyUser::class)->where('is_owner', true)->first();
+        return  $cu ? $cu->user : false;
     }
 
     public function tokens(): \Illuminate\Database\Eloquent\Relations\HasMany
@@ -298,7 +319,7 @@ class Account extends BaseModel
     public function isPremium(): bool
     {
         // return true;
-        return Ninja::isHosted() && $this->isPaidHostedClient() && !$this->isTrial() && Carbon::createFromTimestamp($this->created_at)->diffInMonths() > 2;
+        return Ninja::isHosted() && $this->isPaidHostedClient() && !$this->isTrial() && (int) Carbon::createFromTimestamp($this->created_at)->diffInMonths() > 1;
     }
 
     public function isPaidHostedClient(): bool
@@ -308,7 +329,7 @@ class Account extends BaseModel
         }
 
         // 09-03-2023 - winds forward expiry checks to ensure we don't cut off users prior to billing cycle being commenced
-        if ($this->plan_expires && Carbon::parse($this->plan_expires)->lt(now()->subHours(12))) {
+        if ($this->plan_expires && Carbon::parse($this->plan_expires)->lt(now()->subHours(23))) {
             return false;
         }
 
@@ -364,16 +385,19 @@ class Account extends BaseModel
         return $this->isProClient() && $this->isPaid();
     }
 
+    public function isNewHostedAccount()
+    {
+        return Ninja::isHosted() && (int) Carbon::createFromTimestamp($this->created_at)->diffInWeeks() <= 2;
+    }
+
     public function isTrial(): bool
     {
         if (!Ninja::isNinja()) {
             return false;
         }
 
-        //@27-01-2024 - updates for logic around trials
         return !$this->plan_paid && $this->trial_started && Carbon::parse($this->trial_started)->addDays(14)->gte(now()->subHours(12));
-        // $plan_details = $this->getPlanDetails();
-        // return $plan_details && $plan_details['trial'];
+
     }
 
     public function startTrial($plan): void
@@ -438,7 +462,7 @@ class Account extends BaseModel
         // Should we show plan details or trial details?
         if (($plan && !$trial_plan) || !$include_trial) {
             $use_plan = true;
-        } elseif (!$plan && $trial_plan) {
+        } elseif (!$plan && $trial_plan) { //@phpstan-ignore-line
             $use_plan = false;
         } else {
             // There is both a plan and a trial
@@ -495,11 +519,15 @@ class Account extends BaseModel
             return 0;
         }
 
-        if (Carbon::createFromTimestamp($this->created_at)->diffInWeeks() <= 1) {
+        if ($this->email_quota) {
+            return (int) $this->email_quota;
+        }
+
+        if ((int) Carbon::createFromTimestamp($this->created_at)->diffInWeeks() <= 1) {
             return 20;
         }
 
-        if (Carbon::createFromTimestamp($this->created_at)->diffInWeeks() <= 2 && !$this->payment_id) {
+        if ((int) Carbon::createFromTimestamp($this->created_at)->diffInWeeks() <= 2 && !$this->payment_id) {
             return 20;
         }
 
@@ -507,10 +535,10 @@ class Account extends BaseModel
             $multiplier = $this->plan == 'enterprise' ? 2 : 1.2;
 
             $limit = $this->paid_plan_email_quota;
-            $limit += Carbon::createFromTimestamp($this->created_at)->diffInMonths() * (20 * $multiplier);
+            $limit += (int) Carbon::createFromTimestamp($this->created_at)->diffInMonths() * (20 * $multiplier);
         } else {
             $limit = $this->free_plan_email_quota;
-            $limit += Carbon::createFromTimestamp($this->created_at)->diffInMonths() * 1.5;
+            // $limit += Carbon::createFromTimestamp($this->created_at)->diffInMonths() * 1.5;
         }
 
         return min($limit, 1000);
@@ -518,22 +546,22 @@ class Account extends BaseModel
 
     public function emailsSent()
     {
-        if (is_null(Cache::get("email_quota" . $this->key))) {
+        if (is_null(Atomic::get("email_quota" . $this->key))) {
             return 0;
         }
 
-        return Cache::get("email_quota" . $this->key);
+        return Atomic::get("email_quota" . $this->key);
     }
 
     public function emailQuotaExceeded(): bool
     {
-        if (is_null(Cache::get("email_quota" . $this->key))) {
+        if (is_null(Atomic::get("email_quota" . $this->key))) {
             return false;
         }
 
         try {
-            if (Cache::get("email_quota" . $this->key) > $this->getDailyEmailLimit()) {
-                if (is_null(Cache::get("throttle_notified:{$this->key}"))) {
+            if (Atomic::get("email_quota" . $this->key) > $this->getDailyEmailLimit()) {
+                if (Atomic::set("throttle_notified:{$this->key}", true, 60 * 60 * 24)) {
                     App::forgetInstance('translator');
                     $t = app('translator');
                     $t->replace(Ninja::transformTranslations($this->companies()->first()->settings));
@@ -543,9 +571,8 @@ class Account extends BaseModel
                     $nmo->company = $this->companies()->first();
                     $nmo->settings = $this->companies()->first()->settings;
                     $nmo->to_user = $this->companies()->first()->owner();
-                    NinjaMailerJob::dispatch($nmo, true);
 
-                    Cache::put("throttle_notified:{$this->key}", true, 60 * 60 * 24);
+                    (new NinjaMailerJob($nmo, true))->handle();
 
                     if (config('ninja.notification.slack')) {
                         $this->companies()->first()->notification(new EmailQuotaNotification($this))->ninja();
@@ -619,7 +646,7 @@ class Account extends BaseModel
         $plan_expires = Carbon::parse($this->plan_expires);
 
         if ($plan_expires->gt(now())) {
-            $diff = $plan_expires->diffInDays();
+            $diff = intval(abs($plan_expires->diffInDays()));
 
             if ($diff > 14) {
                 return 0;
@@ -629,5 +656,10 @@ class Account extends BaseModel
         }
 
         return 0;
+    }
+
+    public function canTrial(): bool
+    {
+        return !$this->is_trial && empty($this->plan) && $this->created_at > time() - (60 * 60 * 24 * 14) && !$this->plan_started && !$this->trial_started; //@phpstan-ignore-line
     }
 }

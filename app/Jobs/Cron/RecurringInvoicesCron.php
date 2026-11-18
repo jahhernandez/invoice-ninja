@@ -1,10 +1,11 @@
 <?php
+
 /**
  * Invoice Ninja (https://invoiceninja.com).
  *
  * @link https://github.com/invoiceninja/invoiceninja source repository
  *
- * @copyright Copyright (c) 2024. Invoice Ninja LLC (https://invoiceninja.com)
+ * @copyright Copyright (c) 2026. Invoice Ninja LLC (https://invoiceninja.com)
  *
  * @license https://www.elastic.co/licensing/elastic-license
  */
@@ -30,9 +31,7 @@ class RecurringInvoicesCron
      *
      * @return void
      */
-    public function __construct()
-    {
-    }
+    public function __construct() {}
 
     /**
      * Execute the job.
@@ -43,7 +42,7 @@ class RecurringInvoicesCron
     {
         /* Get all invoices where the send date is less than NOW + 30 minutes() */
         $start = Carbon::now()->format('Y-m-d h:i:s');
-        nlog('Sending recurring invoices '.$start);
+        nlog('Sending recurring invoices ' . $start);
 
         Auth::logout();
 
@@ -55,16 +54,19 @@ class RecurringInvoicesCron
                                                         ->whereNull('deleted_at')
                                                         ->where('next_send_date', '<=', now()->toDateTimeString())
                                                         ->whereHas('client', function ($query) {
-                                                            $query->where('is_deleted', 0)
-                                                                   ->where('deleted_at', null);
+                                                            $query->where('is_deleted', false)
+                                                                   ->whereNull('deleted_at');
                                                         })
                                                         ->whereHas('company', function ($query) {
-                                                            $query->where('is_disabled', 0);
+                                                            $query->where('is_disabled', 0)
+                                                                  ->whereHas('account', function ($q) {
+                                                                      $q->where('is_flagged', false);
+                                                                  });
                                                         })
                                                         ->with('company')
                                                         ->cursor();
 
-            nlog(now()->format('Y-m-d').' Sending Recurring Invoices. Count = '.$recurring_invoices->count());
+            nlog(now()->format('Y-m-d') . ' Sending Recurring Invoices. Count = ' . $recurring_invoices->count());
 
             $recurring_invoices->each(function ($recurring_invoice, $key) {
                 // nlog('Current date = '.now()->format('Y-m-d').' Recurring date = '.$recurring_invoice->next_send_date);
@@ -79,7 +81,7 @@ class RecurringInvoicesCron
                 try {
                     (new SendRecurring($recurring_invoice, $recurring_invoice->company->db))->handle();
                 } catch (\Exception $e) {
-                    nlog("Unable to sending recurring invoice {$recurring_invoice->id} ".$e->getMessage());
+                    nlog("Unable to sending recurring invoice {$recurring_invoice->id} " . $e->getMessage());
                 }
             });
         } else {
@@ -94,16 +96,20 @@ class RecurringInvoicesCron
                                                         ->whereNotNull('next_send_date')
                                                         ->where('next_send_date', '<=', now()->toDateTimeString())
                                                         ->whereHas('client', function ($query) {
-                                                            $query->where('is_deleted', 0)
-                                                                   ->where('deleted_at', null);
+                                                            $query->where('is_deleted', false)
+                                                               ->whereNull('deleted_at');
+
                                                         })
                                                         ->whereHas('company', function ($query) {
-                                                            $query->where('is_disabled', 0);
+                                                            $query->where('is_disabled', 0)
+                                                                  ->whereHas('account', function ($q) {
+                                                                      $q->where('is_flagged', false);
+                                                                  });
                                                         })
                                                         ->with('company')
                                                         ->cursor();
 
-                nlog(now()->format('Y-m-d').' Sending Recurring Invoices. Count = '.$recurring_invoices->count());
+                nlog(now()->format('Y-m-d') . ' Sending Recurring Invoices. Count = ' . $recurring_invoices->count());
 
                 $recurring_invoices->each(function ($recurring_invoice, $key) {
                     nlog("Trying to send {$recurring_invoice->number}");
@@ -117,7 +123,7 @@ class RecurringInvoicesCron
                     try {
                         (new SendRecurring($recurring_invoice, $recurring_invoice->company->db))->handle();
                     } catch (\Exception $e) {
-                        nlog("Unable to sending recurring invoice {$recurring_invoice->id} ".$e->getMessage());
+                        nlog("Unable to sending recurring invoice {$recurring_invoice->id} " . $e->getMessage());
                     }
                 });
             }

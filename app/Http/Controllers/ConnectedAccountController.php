@@ -1,10 +1,11 @@
 <?php
+
 /**
  * Invoice Ninja (https://invoiceninja.com).
  *
  * @link https://github.com/invoiceninja/invoiceninja source repository
  *
- * @copyright Copyright (c) 2024. Invoice Ninja LLC (https://invoiceninja.com)
+ * @copyright Copyright (c) 2026. Invoice Ninja LLC (https://invoiceninja.com)
  *
  * @license https://www.elastic.co/licensing/elastic-license
  */
@@ -38,7 +39,7 @@ class ConnectedAccountController extends BaseController
      * Connect an OAuth account to a regular email/password combination account
      *
      * @param Request $request
-     * @return \Illuminate\Http\JsonResponse
+     * @return \Illuminate\Http\JsonResponse|\Illuminate\Http\Response
      *
      *
      * @OA\Post(
@@ -110,7 +111,7 @@ class ConnectedAccountController extends BaseController
             nlog("microsoft");
             nlog($email);
 
-            if (auth()->user()->email != $email && MultiDB::checkUserEmailExists($email)) {
+            if (strtolower(auth()->user()->email) != strtolower($email) && MultiDB::checkUserEmailExists(strtolower($email))) {
                 return response()->json(['message' => ctrans('texts.email_already_register')], 400);
             }
 
@@ -118,7 +119,7 @@ class ConnectedAccountController extends BaseController
                 'email' => $email,
                 'oauth_user_id' => $user->getId(),
                 'oauth_provider_id' => 'microsoft',
-                'email_verified_at' => now()
+                'email_verified_at' => now(),
             ];
 
 
@@ -146,7 +147,11 @@ class ConnectedAccountController extends BaseController
 
         $google = new Google();
 
-        $user = $google->getTokenResponse(request()->input('id_token'));
+        if (request()->filled('id_token')) {
+            $user = $google->getTokenResponse(request()->input('id_token'));
+        } elseif (request()->filled('access_token')) {
+            $user = $google->harvestUser(request()->input('access_token'));
+        }
 
         if ($user) {
             $client = new Google_Client();

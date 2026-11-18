@@ -1,10 +1,11 @@
 <?php
+
 /**
  * Invoice Ninja (https://invoiceninja.com).
  *
  * @link https://github.com/invoiceninja/invoiceninja source repository
  *
- * @copyright Copyright (c) 2024. Invoice Ninja LLC (https://invoiceninja.com)
+ * @copyright Copyright (c) 2026. Invoice Ninja LLC (https://invoiceninja.com)
  *
  * @license https://www.elastic.co/licensing/elastic-license
  */
@@ -20,7 +21,7 @@ class TaxRateFactory
         $tax_rate = new TaxRate();
 
         $tax_rate->name = '';
-        $tax_rate->rate = '';
+        $tax_rate->rate = 0;
         $tax_rate->company_id = $company_id;
         $tax_rate->user_id = $user_id;
 

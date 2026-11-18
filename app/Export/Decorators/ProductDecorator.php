@@ -1,10 +1,11 @@
 <?php
+
 /**
  * Invoice Ninja (https://invoiceninja.com).
  *
  * @link https://github.com/invoiceninja/invoiceninja source repository
  *
- * @copyright Copyright (c) 2024. Invoice Ninja LLC (https://invoiceninja.com)
+ * @copyright Copyright (c) 2026. Invoice Ninja LLC (https://invoiceninja.com)
  *
  * @license https://www.elastic.co/licensing/elastic-license
  */
@@ -19,20 +20,25 @@ class ProductDecorator implements DecoratorInterface
     {
         $product = false;
 
-        if($entity instanceof Product) {
+        if ($entity instanceof Product) {
             $product = $entity;
-        } elseif($entity->product) {
+        } elseif ($entity->product) {
             $product = $entity->product;
         }
 
-        if($product && method_exists($this, $key)) {
+        if ($product && method_exists($this, $key)) {
             return $this->{$key}($product);
-        } elseif($product->{$key} ?? false) {
+        } elseif ($product->{$key} ?? false) {
             return $product->{$key} ?? '';
         }
 
         return '';
 
+    }
+
+    public function tags(Product $product): string
+    {
+        return $product->tags->pluck('name')->implode(', ');
     }
 
     /*
@@ -51,7 +57,7 @@ class ProductDecorator implements DecoratorInterface
 
         $category = ctrans('texts.physical_goods');
 
-        match($product->tax_id) {
+        match ($product->tax_id) {
             1 => $category =  ctrans('texts.physical_goods'),
             2 => $category = ctrans('texts.services'),
             3 => $category =  ctrans('texts.digital_products'),

@@ -1,24 +1,30 @@
 <?php
-
+/**
+ * Invoice Ninja (https://invoiceninja.com).
+ *
+ * @link https://github.com/invoiceninja/invoiceninja source repository
+ *
+ * @copyright Copyright (c) 2026. Invoice Ninja LLC (https://invoiceninja.com)
+ *
+ * @license https://www.elastic.co/licensing/elastic-license
+ */
 namespace App\Http\Controllers;
 
 use App\Filters\DocumentFilters;
+use App\Http\Requests\Document\BulkActionRequest;
 use App\Http\Requests\Document\DestroyDocumentRequest;
 use App\Http\Requests\Document\EditDocumentRequest;
 use App\Http\Requests\Document\ShowDocumentRequest;
 use App\Http\Requests\Document\StoreDocumentRequest;
 use App\Http\Requests\Document\UpdateDocumentRequest;
-use App\Jobs\Document\ZipDocuments;
+use App\Jobs\Entity\ZipEntity;
 use App\Models\Document;
 use App\Repositories\DocumentRepository;
 use App\Transformers\DocumentTransformer;
-use App\Utils\Traits\MakesHash;
 use Illuminate\Http\Response;
 
 class DocumentController extends BaseController
 {
-    use MakesHash;
-
     protected $entity_type = Document::class;
 
     protected $entity_transformer = DocumentTransformer::class;
@@ -70,7 +76,7 @@ class DocumentController extends BaseController
      *       ),
      *     )
      * @param DocumentFilters $filters
-     * @return Response|mixed
+     * @return Response| \Illuminate\Http\JsonResponse|mixed
      */
     public function index(DocumentFilters $filters)
     {
@@ -105,7 +111,7 @@ class DocumentController extends BaseController
      *
      * @param ShowDocumentRequest $request
      * @param Document $document
-     * @return Response
+     * @return Response| \Illuminate\Http\JsonResponse
      */
     public function show(ShowDocumentRequest $request, Document $document)
     {
@@ -131,7 +137,7 @@ class DocumentController extends BaseController
      *
      * @param EditDocumentRequest $request
      * @param Document $document
-     * @return Response
+     * @return Response| \Illuminate\Http\JsonResponse
      */
     public function edit(EditDocumentRequest $request, Document $document)
     {
@@ -143,12 +149,16 @@ class DocumentController extends BaseController
      *
      * @param UpdateDocumentRequest $request
      * @param Document $document
-     * @return Response
+     * @return Response| \Illuminate\Http\JsonResponse
      */
     public function update(UpdateDocumentRequest $request, Document $document)
     {
         $document->fill($request->all());
         $document->save();
+
+        if ($document->documentable) { //@phpstan-ignore-line
+            $document->documentable->touch();
+        }
 
         return $this->itemResponse($document->fresh());
     }
@@ -158,7 +168,7 @@ class DocumentController extends BaseController
      *
      * @param DestroyDocumentRequest $request
      * @param Document $document
-     * @return Response
+     * @return Response| \Illuminate\Http\JsonResponse
      */
     public function destroy(DestroyDocumentRequest $request, Document $document)
     {
@@ -167,36 +177,41 @@ class DocumentController extends BaseController
         return response()->json(['message' => ctrans('texts.success')]);
     }
 
-    public function bulk()
+    public function bulk(BulkActionRequest $request)
     {
         /** @var \App\Models\User $user */
         $user = auth()->user();
+        $action = $request->input('action');
+        $ids = $request->input('ids');
 
-        $action = request()->input('action');
-
-        $ids = request()->input('ids');
-
-        $documents = Document::withTrashed()->whereIn('id', $this->transformKeys($ids))->company()->get();
-
-        if (! $documents) {
-            return response()->json(['message' => ctrans('texts.no_documents_found')]);
-        }
+        $documents = Document::withTrashed()->with('documentable')->whereIn('id', $ids)->company()->get();
 
         if ($action == 'download') {
-            ZipDocuments::dispatch($documents->pluck('id'), $user->company(), auth()->user());
 
+            $downloadable_documents = $documents->filter(function($document) use ($user) {
+                                                return $user->can('view', $document);
+                                            })
+                                            ->pluck('id');
+
+            if ($downloadable_documents->isEmpty()) {
+                return response()->json(['message' => ctrans('texts.no_documents_found')], 422);
+            }
+
+            ZipEntity::dispatch($downloadable_documents, $user->company(), auth()->user(), Document::class); //@phpstan-ignore-line
+            
             return response()->json(['message' => ctrans('texts.sent_message')], 200);
         }
+
         /*
          * Send the other actions to the switch
          */
         $documents->each(function ($document, $key) use ($action, $user) {
-            if ($user->can('edit', $document)) {
+            if ($user->can('edit', $document->documentable)) {
                 $this->document_repo->{$action}($document);
             }
         });
 
         /* Need to understand which permission are required for the given bulk action ie. view / edit */
-        return $this->listResponse(Document::withTrashed()->whereIn('id', $this->transformKeys($ids))->company());
+        return $this->listResponse(Document::withTrashed()->whereIn('id', $ids)->company());
     }
 }

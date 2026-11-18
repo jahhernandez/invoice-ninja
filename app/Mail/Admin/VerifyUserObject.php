@@ -1,10 +1,11 @@
 <?php
+
 /**
  * Invoice Ninja (https://invoiceninja.com).
  *
  * @link https://github.com/invoiceninja/invoiceninja source repository
  *
- * @copyright Copyright (c) 2024. Invoice Ninja LLC (https://invoiceninja.com)
+ * @copyright Copyright (c) 2026. Invoice Ninja LLC (https://invoiceninja.com)
  *
  * @license https://www.elastic.co/licensing/elastic-license
  */
@@ -21,9 +22,7 @@ class VerifyUserObject
 {
     use MakesHash;
 
-    public function __construct(public User $user, public Company $company, private bool $is_react = false)
-    {
-    }
+    public function __construct(public User $user, public Company $company, private bool $is_react = false) {}
 
     public function build()
     {
@@ -35,19 +34,20 @@ class VerifyUserObject
         /* Set customized translations _NOW_ */
         $t->replace(Ninja::transformTranslations($this->company->settings));
 
-        $this->user->confirmation_code = $this->createDbHash($this->company->db);
+        //@phpstan-ignore-next-line
+        $this->user->confirmation_code = $this->user->confirmation_code ?: $this->createDbHash($this->user->companies()->first()->db);
         $this->user->save();
 
         $react_redirect = '';
 
-        if($this->is_react) {
+        if ($this->is_react) {
             $react_redirect = '?react=true';
         }
 
         $data = [
             'title' => ctrans('texts.confirmation_subject'),
             'content' => ctrans('texts.confirmation_message'),
-            'url' => url("/user/confirm/{$this->user->confirmation_code}".$react_redirect),
+            'url' => url("/user/confirm/{$this->user->confirmation_code}" . $react_redirect),
             'button' => ctrans('texts.button_confirmation_message'),
             'settings' => $this->company->settings,
             'logo' => $this->company->present()->logo(),

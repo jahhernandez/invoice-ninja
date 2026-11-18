@@ -1,10 +1,11 @@
 <?php
+
 /**
  * Invoice Ninja (https://invoiceninja.com).
  *
  * @link https://github.com/invoiceninja/invoiceninja source repository
  *
- * @copyright Copyright (c) 2024. Invoice Ninja LLC (https://invoiceninja.com)
+ * @copyright Copyright (c) 2026. Invoice Ninja LLC (https://invoiceninja.com)
  *
  * @license https://www.elastic.co/licensing/elastic-license
  */
@@ -17,9 +18,7 @@ use Illuminate\Support\Facades\App;
 
 class DownloadDocuments extends Mailable
 {
-    public function __construct(public string $file_path, public Company $company)
-    {
-    }
+    public function __construct(public string $file_path, public Company $company) {}
 
     /**
      * Build the message.
@@ -36,7 +35,7 @@ class DownloadDocuments extends Mailable
             ->view('email.admin.download_documents', [
                 'url' => $this->file_path,
                 'logo' => $this->company->present()->logo,
-                'whitelabel' => $this->company->account->isPaid() ? true : false,
+                'whitelabel' => true,
                 'settings' => $this->company->settings,
                 'greeting' => $this->company->present()->name(),
             ]);
