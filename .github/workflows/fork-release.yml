@@ -1,0 +1,102 @@
+name: Fork CI and release validation
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Published release to validate
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  source:
+    if: github.event_name == 'push' || github.event_name == 'pull_request'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: shivammathur/setup-php@eb7c497e18156a6bbabfef1d3a82760b9eda3962 # v2
+        with:
+          php-version: '8.4'
+      - name: Lint PHP source
+        run: git ls-files -z -- 'app/*.php' 'bootstrap/*.php' 'config/*.php' 'database/*.php' 'routes/*.php' | xargs -0 -P 4 -n 25 php -l >/dev/null
+
+  release:
+    if: (github.event_name == 'release' && !github.event.release.prerelease) || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: ${{ inputs.tag || github.event.release.tag_name }}
+      - uses: shivammathur/setup-php@eb7c497e18156a6bbabfef1d3a82760b9eda3962 # v2
+        with:
+          php-version: '8.4'
+          extensions: bcmath, curl, dom, gd, gmp, intl, mbstring, pdo_mysql, redis, xml, zip
+          tools: composer
+      - name: Verify the published install archive
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ inputs.tag || github.event.release.tag_name }}
+        run: |
+          set -euo pipefail
+          [[ "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]
+          export ARCHIVE="invoiceninja-$TAG-white-label.tar.gz"
+          export PACKAGE="$RUNNER_TEMP/invoice-ninja-package"
+          mkdir "$PACKAGE"
+          gh release download "$TAG" --repo "$GITHUB_REPOSITORY" --dir "$RUNNER_TEMP" \
+            --pattern "$ARCHIVE" --pattern SHA256SUMS
+          python3 - <<'PY'
+          from pathlib import Path
+          import hashlib
+          import os
+          import re
+          import subprocess
+          import tarfile
+
+          temporary = Path(os.environ["RUNNER_TEMP"])
+          archive = temporary / os.environ["ARCHIVE"]
+          package = Path(os.environ["PACKAGE"])
+          listed = (temporary / "SHA256SUMS").read_text().strip().split()
+          assert len(listed) == 2 and listed[1] == archive.name
+          with archive.open("rb") as stream:
+              assert hashlib.file_digest(stream, "sha256").hexdigest() == listed[0]
+
+          with tarfile.open(archive, "r:gz") as stream:
+              stream.extractall(package, filter="data")
+          assert not (package / ".env").exists()
+          assert (package / "VERSION.txt").read_text().strip() == os.environ["TAG"][1:]
+          assert (package / "vendor/autoload.php").is_file()
+          with subprocess.Popen(["git", "archive", "HEAD"], stdout=subprocess.PIPE) as tree:
+              with tarfile.open(fileobj=tree.stdout, mode="r|") as source:
+                  for entry in source:
+                      if entry.isfile():
+                          file = package / entry.name
+                          assert file.is_file(), entry.name
+                          assert source.extractfile(entry).read() == file.read_bytes(), entry.name
+              assert tree.wait() == 0
+
+          view = (package / "resources/views/react/index.blade.php").read_text()
+          for asset in re.findall(r'(?:src|href)="(/[^"]+)"', view):
+              assert (package / "public" / asset.lstrip("/")).is_file(), asset
+          checks = 0
+          for file in (package / "public").glob("*.js"):
+              if file.name.startswith("src-"):
+                  continue
+              source = file.read_text()
+              for item in re.finditer(r"white_label_button", source):
+                  preceding = source[max(0, item.start() - 1200):item.start()]
+                  assert "!1&&(0," in preceding and "hidden sm:inline-flex" in preceding, file.name
+                  checks += 1
+          assert checks, "Could not locate the React purchase control"
+          PY
+          cd "$PACKAGE"
+          composer check-platform-reqs --no-dev
+          APP_ENV=testing MAIL_MAILER=log php artisan view:cache
