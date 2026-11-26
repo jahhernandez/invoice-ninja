@@ -1,4 +1,4 @@
-name: Fork CI and release validation
+name: Fork CI and production release
 
 on:
   push:
@@ -32,6 +32,8 @@ jobs:
   release:
     if: (github.event_name == 'release' && !github.event.release.prerelease) || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-24.04
+    outputs:
+      archive_sha256: ${{ steps.verify.outputs.archive_sha256 }}
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
@@ -42,6 +44,7 @@ jobs:
           extensions: bcmath, curl, dom, gd, gmp, intl, mbstring, pdo_mysql, redis, xml, zip
           tools: composer
       - name: Verify the published install archive
+        id: verify
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ inputs.tag || github.event.release.tag_name }}
@@ -100,3 +103,45 @@ jobs:
           cd "$PACKAGE"
           composer check-platform-reqs --no-dev
           APP_ENV=testing MAIL_MAILER=log php artisan view:cache
+
+          printf 'archive_sha256=%s\n' "$(sha256sum "$RUNNER_TEMP/$ARCHIVE" | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
+
+  deploy:
+    name: VPS production deployment
+    needs: release
+    if: github.repository == 'jahhernandez/invoice-ninja' && needs.release.result == 'success'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    environment:
+      name: invoice-ninja-production
+      url: https://bill.jsoftcorporation.com/
+      deployment: ${{ github.event_name == 'release' }}
+    concurrency:
+      group: invoice-ninja-production
+      cancel-in-progress: false
+    steps:
+      - name: Trigger the restricted VPS deployment command
+        env:
+          DEPLOY_KEY: ${{ secrets.VPS_DEPLOY_SSH_KEY }}
+          KNOWN_HOSTS: ${{ vars.VPS_KNOWN_HOSTS }}
+          TAG: ${{ github.event.release.tag_name }}
+          ARCHIVE_SHA256: ${{ needs.release.outputs.archive_sha256 }}
+        run: |
+          set -euo pipefail
+          request=probe
+          if [[ "$GITHUB_EVENT_NAME" == release ]]; then
+            [[ "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]
+            [[ "$GITHUB_RUN_ID" =~ ^[0-9]+$ && "$ARCHIVE_SHA256" =~ ^[0-9a-f]{64}$ ]]
+            request="deploy $TAG $GITHUB_RUN_ID $ARCHIVE_SHA256"
+          fi
+
+          umask 077
+          credentials=$(mktemp -d)
+          trap 'rm -rf -- "$credentials"' EXIT
+          printf '%s\n' "${DEPLOY_KEY:?missing VPS deployment key}" > "$credentials/key"
+          printf '%s\n' "${KNOWN_HOSTS:?missing VPS host key}" > "$credentials/known_hosts"
+          unset DEPLOY_KEY
+          ssh -F /dev/null -i "$credentials/key" -o IdentitiesOnly=yes -o BatchMode=yes \
+            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$credentials/known_hosts" \
+            -o GlobalKnownHostsFile=/dev/null -o ConnectTimeout=15 -o ServerAliveInterval=20 \
+            jah@server.jsoftcorporation.com "$request"
