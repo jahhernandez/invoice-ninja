@@ -1,0 +1,1 @@
+import{m as e}from"./colors-CA6mzArA.js";import{t}from"./enterprise-plan-Ctv27tHe.js";import{t as n}from"./pro-plan-BdauhjCm.js";function r(){return!n()&&!t()&&e()}export{r as t};

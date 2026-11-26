@@ -1,1 +1,0 @@
-import{g as e}from"./colors-0MwZ3ngc.js";import{t}from"./store-CPBYgOhs.js";function n(){return e()?!0:t.getState().companyUsers.api?.[t.getState().companyUsers.currentIndex]?.account.plan===`enterprise`}export{n as t};

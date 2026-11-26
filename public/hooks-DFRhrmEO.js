@@ -1,0 +1,1 @@
+import{fr as e}from"./colors-CA6mzArA.js";import{o as t}from"./company-users-CIv4T04P.js";function n(){let n=e();return(e,r)=>{n(t({object:`company`,property:`settings.${e}`,value:r}))}}export{n as t};

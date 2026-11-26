@@ -1,0 +1,1 @@
+import{An as e}from"./colors-CA6mzArA.js";import{t}from"./useHasPermission-DUf1gXBs.js";function n(){let n=e(),{isAdmin:r,isOwner:i}=t();return(e,t)=>{if(t)return!!(n&&e&&e.user_id===n.id)||r||i;let a=n&&e&&`assigned_user_id`in e&&e.assigned_user_id===n.id;return!!(n&&e&&(e.user_id===n.id||a||r||i))}}export{n as t};

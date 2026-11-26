@@ -1,0 +1,1 @@
+import{Bn as e}from"./colors-CA6mzArA.js";function t(){return e()?.settings.e_invoice_type===`VERIFACTU`}export{t};

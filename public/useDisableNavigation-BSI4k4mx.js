@@ -1,0 +1,1 @@
+import{n as e}from"./useHasPermission-DUf1gXBs.js";function t(){let t=e();return(e,n)=>!t(`view_${e}`,n)&&!t(`edit_${e}`,n)}export{t};

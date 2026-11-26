@@ -1,0 +1,1 @@
+import{Bn as e,br as t}from"./colors-CA6mzArA.js";import{n}from"./CustomField-D132LLmU.js";function r(r){let[i]=t(),a=e()?.custom_fields,{entity:o}=r,s=[];if(a)for(let e=1;e<5;e++){let t=a[o+e.toString()]?n(a[o+e.toString()]).label():i(`custom${e.toString()}`);s.push(t)}return s}export{r as t};

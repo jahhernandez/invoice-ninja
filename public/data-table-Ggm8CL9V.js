@@ -1,0 +1,1 @@
+import{ur as e}from"./colors-CA6mzArA.js";var t=e(void 0),n=e(void 0);export{t as n,n as t};

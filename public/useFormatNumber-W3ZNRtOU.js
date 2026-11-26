@@ -1,0 +1,1 @@
+import{Bn as e}from"./colors-CA6mzArA.js";import{n as t}from"./useFormatMoney-CExapG5s.js";import{t as n}from"./useResolveCurrency-BzSRPXQx.js";function r(){let r=n(),i=e();return e=>{let n=r(i?.settings.currency_id);return n?t.formatValue(isNaN(Number(e))?0:e,n):e}}export{r as t};

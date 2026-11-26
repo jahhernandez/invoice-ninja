@@ -1,0 +1,1 @@
+import{hn as e}from"./colors-CA6mzArA.js";function t(){let t=e();return t?.number_precision&&t?.number_precision>0&&t?.number_precision<=100?t.number_precision:2}export{t};
