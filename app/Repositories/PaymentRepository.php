@@ -335,19 +335,20 @@ class PaymentRepository extends BaseRepository
             }
         }
 
+        $payment->applied += ($invoice_totals - $credit_totals);
+        $payment->saveQuietly();
+
         if (! $is_existing_payment && ! $this->import_mode) {
-            if (array_key_exists('email_receipt', $data) && $data['email_receipt'] == 'true') {
-                $payment->service()->sendEmail();
-            } elseif (!array_key_exists('email_receipt', $data) && $payment->client->getSetting('client_manual_payment_notification')) {
-                $payment->service()->sendEmail();
+            $send_receipt = array_key_exists('email_receipt', $data)
+                ? $data['email_receipt'] == 'true'
+                : $payment->client->getSetting('client_manual_payment_notification');
+
+            if ($send_receipt) {
+                $payment->getConnection()->afterCommit(fn () => rescue(fn () => $payment->service()->sendEmail()));
             }
 
             event(new PaymentWasCreated($payment, $payment->company, Ninja::eventVars(auth()->user() ? auth()->user()->id : null)));
         }
-
-        $payment->applied += ($invoice_totals - $credit_totals);
-
-        $payment->saveQuietly();
 
         return $payment->refresh();
     }

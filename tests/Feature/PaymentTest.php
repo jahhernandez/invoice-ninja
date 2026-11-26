@@ -13,12 +13,15 @@
 namespace Tests\Feature;
 
 use App\DataMapper\ClientSettings;
+use App\Events\Payment\PaymentWasCreated;
+use App\Exceptions\FilePermissionsFailure;
 use App\Factory\ClientFactory;
 use App\Factory\CreditFactory;
 use App\Factory\InvoiceFactory;
 use App\Factory\InvoiceItemFactory;
 use App\Factory\PaymentFactory;
 use App\Helpers\Invoice\InvoiceSum;
+use App\Jobs\Payment\EmailPayment;
 use App\Models\Client;
 use App\Models\ClientContact;
 use App\Models\Credit;
@@ -28,7 +31,11 @@ use App\Repositories\PaymentRepository;
 use App\Utils\Traits\MakesHash;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Foundation\Testing\DatabaseTransactions;
+use Illuminate\Queue\Events\JobProcessing;
 use Illuminate\Routing\Middleware\ThrottleRequests;
+use Illuminate\Support\Facades\Event;
+use Illuminate\Support\Facades\Exceptions;
+use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Facades\Session;
 use Illuminate\Validation\ValidationException;
 use Tests\MockAccountData;
@@ -1944,6 +1951,48 @@ class PaymentTest extends TestCase
 
         $this->assertEquals($payment->applied, 2);
         // }
+    }
+
+    public function testStorePaymentPersistsAllocationsWhenReceiptGenerationFails(): void
+    {
+        $client = Client::factory()->create(['company_id' => $this->company->id, 'user_id' => $this->user->id]);
+        $invoice = InvoiceFactory::create($this->company->id, $this->user->id);
+        $invoice->client_id = $client->id;
+        $invoice->line_items = $this->buildLineItems();
+        $invoice->uses_inclusive_taxes = false;
+        $invoice->save();
+
+        $invoice_calc = new InvoiceSum($invoice);
+        $invoice_calc->build();
+        $invoice = $invoice_calc->getInvoice()->service()->markSent()->save();
+
+        Event::fake([PaymentWasCreated::class]);
+        Exceptions::fake([FilePermissionsFailure::class]);
+        $receipt_failure = new FilePermissionsFailure('Unable to generate receipt PDF');
+        Queue::before(function (JobProcessing $event) use ($receipt_failure): void {
+            if ($event->job->resolveName() === EmailPayment::class) {
+                throw $receipt_failure;
+            }
+        });
+
+        $response = $this->withHeaders([
+            'X-API-SECRET' => config('ninja.api_secret'),
+            'X-API-TOKEN' => $this->token,
+        ])->postJson('/api/v1/payments', [
+            'amount' => 2,
+            'client_id' => $client->hashed_id,
+            'invoices' => [['invoice_id' => $invoice->hashed_id, 'amount' => 2]],
+            'date' => '2020-12-12',
+            'email_receipt' => 'true',
+        ]);
+
+        $response->assertOk();
+        $payment = Payment::findOrFail($this->decodePrimaryKey($response->json('data.id')));
+        $this->assertEquals(2, $payment->applied);
+        $this->assertEquals(8, $invoice->refresh()->balance);
+        $this->assertEquals(2, $payment->invoices()->sole()->pivot->amount);
+        Event::assertDispatched(PaymentWasCreated::class);
+        Exceptions::assertReported(fn (FilePermissionsFailure $exception) => $exception === $receipt_failure);
     }
 
     public function testUpdatePaymentValidationWorks()
